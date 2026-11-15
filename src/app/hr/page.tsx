@@ -179,13 +179,14 @@ export default function HumanResourcesPortalPage() {
   const activeBusinessName = activeSub?.name || 'BEMS Group';
   const activeBrandColor = activeSub?.brandColor || loaderBrandColor || '#ea580c';
   const activeTintHex = computeTintHex(activeBrandColor);
-  const activeLogoUrl = activeSub?.logoUrl || '/bems-group-logo.png?v=20261024';
+  const activeLogoUrl = activeSub ? activeSub.logoUrl || null : '/bems-group-logo.png?v=20261024';
   const activeIndustry = activeSub?.industry || 'Human Resources & Workforce Operations';
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
     try {
       localStorage.setItem('bems_hr_subsidiary_id', selectedSubsidiaryId);
+      window.dispatchEvent(new CustomEvent('bems-hr-subsidiary-change', { detail: selectedSubsidiaryId }));
       if (activeSub?.brandColor) {
         localStorage.setItem('bems_hr_brand_color', activeSub.brandColor);
         setLoaderBrandColor(activeSub.brandColor);
@@ -391,21 +392,29 @@ export default function HumanResourcesPortalPage() {
                 width: 38,
                 height: 38,
                 borderRadius: 8,
-                background: '#ffffff',
+                background: activeLogoUrl ? '#ffffff' : activeBrandColor,
                 border: `1.5px solid ${activeBrandColor}50`,
                 display: 'inline-flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 overflow: 'hidden',
-                padding: 2,
+                padding: activeLogoUrl ? 2 : 0,
                 flexShrink: 0,
+                color: '#ffffff',
+                fontWeight: 800,
+                fontSize: '12px',
+                letterSpacing: '0.02em',
               }}
             >
-              <img
-                src={activeLogoUrl}
-                alt={activeBusinessName}
-                style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-              />
+              {activeLogoUrl ? (
+                <img
+                  src={activeLogoUrl}
+                  alt={activeBusinessName}
+                  style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                />
+              ) : (
+                (activeSub?.code?.replace(/^BEMS-/, '') || activeBusinessName.slice(0, 3)).toUpperCase()
+              )}
             </span>
             <div className="brand-title-wrap" style={{ display: 'inline-flex', alignItems: 'center', minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap' }}>
               <span

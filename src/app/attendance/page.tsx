@@ -118,9 +118,25 @@ export default function AttendanceDeskPage() {
     offDay: number;
   }>({ total: 0, onTime: 0, late: 0, absent: 0, checkedOut: 0, offDay: 0 });
   const [dailySubsidiaries, setDailySubsidiaries] = useState<Array<{ id: string; legalName: string; shortCode?: string }>>([]);
-  const [dailySubsidiaryFilter, setDailySubsidiaryFilter] = useState<string>('ALL');
+  const [dailySubsidiaryFilter, setDailySubsidiaryFilter] = useState<string>(() => {
+    if (typeof window !== 'undefined' && window.location.pathname.startsWith('/hr')) {
+      return localStorage.getItem('bems_hr_subsidiary_id') || 'ALL';
+    }
+    return 'ALL';
+  });
   const [dailySearch, setDailySearch] = useState<string>('');
   const [isDailyLoading, setIsDailyLoading] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (!isEmbedded || typeof window === 'undefined') return;
+    const onSubChange = (e: Event) => {
+      const nextSub = (e as CustomEvent<string>).detail || 'ALL';
+      setDailySubsidiaryFilter(nextSub);
+      loadDailyRoster(dailyDate, nextSub, dailySearch);
+    };
+    window.addEventListener('bems-hr-subsidiary-change', onSubChange);
+    return () => window.removeEventListener('bems-hr-subsidiary-change', onSubChange);
+  }, [isEmbedded, dailyDate, dailySearch]);
 
   // Tab: Staff Monthly Calendar Inspector State
   const [calendarEmployeeId, setCalendarEmployeeId] = useState<string>('');

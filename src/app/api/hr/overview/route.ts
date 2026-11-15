@@ -162,6 +162,22 @@ export async function GET(req: Request) {
       }),
 
       prisma.payrollBatch.findFirst({
+        where: useSubFilter
+          ? {
+              items: {
+                some: {
+                  employee: {
+                    assignments: {
+                      some: {
+                        subsidiaryId: { in: allowedSubIds },
+                        status: 'ACTIVE',
+                      },
+                    },
+                  },
+                },
+              },
+            }
+          : undefined,
         orderBy: { createdAt: 'desc' },
         select: {
           id: true,
@@ -177,6 +193,24 @@ export async function GET(req: Request) {
           _count: {
             select: { items: true },
           },
+          items: useSubFilter
+            ? {
+                where: {
+                  employee: {
+                    assignments: {
+                      some: {
+                        subsidiaryId: { in: allowedSubIds },
+                        status: 'ACTIVE',
+                      },
+                    },
+                  },
+                },
+                select: {
+                  grossMinor: true,
+                  netMinor: true,
+                },
+              }
+            : false,
         },
       }),
 
@@ -317,9 +351,26 @@ export async function GET(req: Request) {
             version: latestPayrollBatch.version,
             status: latestPayrollBatch.status,
             yearMonth: `${latestPayrollBatch.period.year}-${String(latestPayrollBatch.period.month).padStart(2, '0')}`,
-            totalHeadcount: latestPayrollBatch._count.items,
-            totalGrossMinor: latestPayrollBatch.totalGrossMinor.toString(),
-            totalNetMinor: latestPayrollBatch.totalNetMinor.toString(),
+            totalHeadcount:
+              useSubFilter && Array.isArray((latestPayrollBatch as any).items)
+                ? (latestPayrollBatch as any).items.length
+                : latestPayrollBatch._count.items,
+            totalGrossMinor: (
+              useSubFilter && Array.isArray((latestPayrollBatch as any).items)
+                ? (latestPayrollBatch as any).items.reduce(
+                    (acc: bigint, item: { grossMinor: bigint }) => acc + item.grossMinor,
+                    BigInt(0)
+                  )
+                : latestPayrollBatch.totalGrossMinor
+            ).toString(),
+            totalNetMinor: (
+              useSubFilter && Array.isArray((latestPayrollBatch as any).items)
+                ? (latestPayrollBatch as any).items.reduce(
+                    (acc: bigint, item: { netMinor: bigint }) => acc + item.netMinor,
+                    BigInt(0)
+                  )
+                : latestPayrollBatch.totalNetMinor
+            ).toString(),
             createdAt: latestPayrollBatch.createdAt,
           }
         : null,
