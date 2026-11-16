@@ -10,7 +10,7 @@ import { subscribeRealtimeChannel } from '../src/lib/realtime';
 
 initTelemetry('bems-erp-fastify-backend');
 
-const PORT = Number(process.env.BACKEND_PORT || process.env.PORT || 4000);
+const PORT = Number(process.env.PORT || process.env.BACKEND_PORT || 4000);
 const HOST = process.env.BACKEND_HOST || '0.0.0.0';
 
 function parseAllowedOrigins(): string[] {
@@ -204,7 +204,7 @@ export async function buildBackendServer() {
   return app;
 }
 
-if (require.main === module) {
+if (!process.env.VITEST) {
   buildBackendServer()
     .then(async (app) => {
       await app.listen({ port: PORT, host: HOST });
