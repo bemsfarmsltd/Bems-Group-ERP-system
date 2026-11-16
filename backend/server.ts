@@ -11,6 +11,7 @@ import { registerNextApiPlugin } from './next-route-adapter';
 import { registerAllNextApiRoutes } from './routes/register-api-routes';
 
 initTelemetry('bems-erp-fastify-backend');
+logger.info('Step 1: BEMS ERP backend module loaded');
 
 const RAW_PORT = process.env.PORT || process.env.BACKEND_PORT || '4000';
 const IS_NUMERIC_PORT = /^\d+$/.test(RAW_PORT);
@@ -205,7 +206,9 @@ export async function buildBackendServer() {
     });
   });
 
+  logger.info('Step 2: registering Next API routes onto Fastify');
   await registerNextApiPlugin(app, registerAllNextApiRoutes);
+  logger.info('Step 3: all Next API routes registered');
 
   return app;
 }
