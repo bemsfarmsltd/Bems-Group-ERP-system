@@ -330,7 +330,8 @@ export function AiFinancialManagerDrawer({
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-            {/* Agent Mode Selector Pills */}
+            {/* Agent Mode Selector Pills (Control Center Root AI only) */}
+            {String(currentPage || '').startsWith('Control Center') && (
             <div
               style={{
                 display: 'inline-flex',
@@ -372,6 +373,7 @@ export function AiFinancialManagerDrawer({
                 );
               })}
             </div>
+            )}
 
             <button
               type="button"

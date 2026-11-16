@@ -406,7 +406,7 @@ export function AmbientBottomAiBar({
                 </span>
               )}
 
-              {onSetAgentMode && (
+              {onSetAgentMode && String(currentPage || '').startsWith('Control Center') && (
                 <div style={{ display: 'inline-flex', alignItems: 'center', background: '#e2e8f0', borderRadius: '999px', padding: '2px', marginLeft: '6px' }}>
                   <button
                     type="button"
