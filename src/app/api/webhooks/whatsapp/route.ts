@@ -245,7 +245,7 @@ export async function POST(request: Request) {
       try {
         await executeDashboardCommand(actor, "approval_decision", {
           request_id: targetRequestId,
-          decision: "APPROVED",
+          decision: "APPROVE",
           reason: "Approved via WhatsApp with 2FA Security PIN",
         });
 
@@ -257,9 +257,24 @@ export async function POST(request: Request) {
           senderRawPhone,
           `✅ *Requisition Approved Successfully*\n\n• Reference: *${targetRequestNumber}*\n• Title: *${challengeData.title || "Expenditure Request"}*\n• Amount: *₦${formattedAmt}*\n• Authorized By: *${employee.legalName} (${employee.role})*\n• Status: *APPROVED*\n\nThe payment has been authorized and queued for Finance disbursement.`
         );
-
         return NextResponse.json({ status: "APPROVED_VIA_PIN" }, { status: 200 });
       } catch (execErr: any) {
+        if (execErr?.code === 'WALLET_RELEASE_REQUIRED') {
+          try {
+            const { stageWalletRelease } = await import('@/lib/wallet/releases');
+            await stageWalletRelease(actor, { sourceType: 'REQUEST', sourceId: targetRequestId });
+            const formattedAmt = challengeData.amountMinor
+              ? (Number(challengeData.amountMinor) / 100).toLocaleString("en-NG", { minimumFractionDigits: 2 })
+              : "N/A";
+            await sendWhatsAppReply(
+              senderRawPhone,
+              `🔐 *Wallet Release Staged for ${targetRequestNumber}*\n\n• Title: *${challengeData.title || "Expenditure Request"}*\n• Amount: *₦${formattedAmt}*\n\nYour WhatsApp PIN staged the wallet disbursement. Please complete the 1-tap password confirmation in BEMS Finance to credit the staff wallet immediately:\nhttps://bemserp.work/finance?tab=Approvals+%26+payments`
+            );
+            return NextResponse.json({ status: "WALLET_RELEASE_STAGED" }, { status: 200 });
+          } catch (stageErr: any) {
+            execErr = stageErr;
+          }
+        }
         console.error("[WhatsApp Webhook] Approval execution failed:", execErr);
         await sendWhatsAppReply(
           senderRawPhone,

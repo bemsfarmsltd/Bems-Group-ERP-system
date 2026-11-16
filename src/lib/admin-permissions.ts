@@ -267,6 +267,15 @@ export const ADMIN_PERMISSION_CATALOG: PermissionModuleDef[] = [
         ],
       },
       {
+        key: 'id_cards',
+        label: 'ID Cards',
+        actions: [
+          { key: 'view_id_cards', label: 'View Staff ID Cards & QR Codes' },
+          { key: 'issue_revoke_id_cards', label: 'Issue, Reissue & Revoke ID Cards' },
+          { key: 'print_export_id_cards', label: 'Print & Export CR80 ID Cards' },
+        ],
+      },
+      {
         key: 'attendance',
         label: 'Attendance & Scheduling',
         actions: [

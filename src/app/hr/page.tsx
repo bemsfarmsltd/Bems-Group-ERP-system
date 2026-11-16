@@ -6,6 +6,7 @@ import { Lock } from 'lucide-react';
 import { HrOverviewData, HrSectionId, formatNairaMinor } from '@/components/hr/hrTypes';
 import HrOverviewPanel from '@/components/hr/HrOverviewPanel';
 import HrEmployeesPanel from '@/components/hr/HrEmployeesPanel';
+import HrIdCardsPanel from '@/components/hr/HrIdCardsPanel';
 import HrLeavePanel from '@/components/hr/HrLeavePanel';
 import HrPayrollPanel from '@/components/hr/HrPayrollPanel';
 import HrRequestsPanel from '@/components/hr/HrRequestsPanel';
@@ -43,6 +44,7 @@ const NAV_GROUPS: { label: string; items: NavItemDef[] }[] = [
     items: [
       { id: 'overview', label: 'Overview', subtitle: 'Dashboard, action centre & trends', icon: '⌂' },
       { id: 'employees', label: 'Employees', subtitle: 'Directory, profiles, onboarding & exits', icon: '☷' },
+      { id: 'id_cards', label: 'ID Cards', subtitle: 'Subsidiary-branded staff badges & QR', icon: '🪪' },
     ],
   },
   {
@@ -970,6 +972,15 @@ export default function HumanResourcesPortalPage() {
                         }}
                       />
                     )}
+                  </div>
+                )}
+
+                {visitedSections.includes('id_cards') && (
+                  <div style={{ display: activeSection === 'id_cards' ? 'block' : 'none', width: '100%' }}>
+                    <HrIdCardsPanel
+                      selectedSubsidiaryId={selectedSubsidiaryId}
+                      activeBrandColor={activeBrandColor}
+                    />
                   </div>
                 )}
 

@@ -1302,7 +1302,9 @@ export async function executeBusinessCommand(tx: Prisma.TransactionClient, input
       );
       }
     } else if (action.actionType === 'approval_decision') {
-      if (walletEnabled() && String(materialPayload.decision).toUpperCase() === 'APPROVE') throw new WalletError('WALLET_RELEASE_REQUIRED', 'Use the exact GMD wallet release preview to approve and fund this payment.', 409);
+      if (walletEnabled() && ['APPROVE', 'APPROVED'].includes(String(materialPayload.decision).toUpperCase().trim())) {
+        throw new WalletError('WALLET_RELEASE_REQUIRED', 'Use the exact GMD wallet release preview to approve and fund this payment.', 409);
+      }
       const { request_id, request_ids, expected_versions, decision, reason } = materialPayload;
       const targetIds: string[] =
         Array.isArray(request_ids) && request_ids.length > 0

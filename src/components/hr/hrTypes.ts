@@ -1,6 +1,7 @@
 export type HrSectionId =
   | 'overview'
   | 'employees'
+  | 'id_cards'
   | 'attendance'
   | 'leave'
   | 'payroll'

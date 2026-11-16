@@ -169,11 +169,17 @@ interface Props {
 
 const COLOR_PALETTE = [
   { label: 'BEMS Orange', hex: '#ea580c' },
+  { label: 'Cobalt Blue', hex: '#2563eb' },
   { label: 'Emerald Green', hex: '#0d8a70' },
-  { label: 'Deep Slate', hex: '#0b1220' },
-  { label: 'Royal Purple', hex: '#7158de' },
+  { label: 'Royal Purple', hex: '#7c3aed' },
+  { label: 'Deep Slate', hex: '#0f172a' },
   { label: 'Warm Amber', hex: '#d97706' },
-  { label: 'Crimson Red', hex: '#be123c' },
+  { label: 'Crimson Red', hex: '#dc2626' },
+  { label: 'Teal Cyan', hex: '#0891b2' },
+  { label: 'Rose Pink', hex: '#db2777' },
+  { label: 'Indigo', hex: '#4f46e5' },
+  { label: 'Forest Green', hex: '#15803d' },
+  { label: 'Gold', hex: '#ca8a04' },
 ];
 
 const INDUSTRY_PRESETS = [
@@ -1857,7 +1863,7 @@ export function SubsidiaryPortfolioView({
                     <label style={{ fontSize: '11px', fontWeight: '750', color: '#1e293b', display: 'block', marginBottom: '6px' }}>
                       Brand Color Accent
                     </label>
-                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
                       {COLOR_PALETTE.map((c) => (
                         <button
                           key={c.hex}
@@ -1869,7 +1875,7 @@ export function SubsidiaryPortfolioView({
                             height: '24px',
                             borderRadius: '6px',
                             background: c.hex,
-                            border: newSubColor === c.hex ? '3px solid #0f172a' : '1px solid transparent',
+                            border: newSubColor === c.hex ? '3px solid #0f172a' : '1px solid #cbd5e1',
                             cursor: 'pointer',
                             display: 'grid',
                             placeItems: 'center',
@@ -1880,6 +1886,30 @@ export function SubsidiaryPortfolioView({
                           {newSubColor === c.hex && '✓'}
                         </button>
                       ))}
+                      <label
+                        title="Pick any custom color"
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                          padding: '2px 7px',
+                          borderRadius: '6px',
+                          border: '1px solid #cbd5e1',
+                          background: '#f8fafc',
+                          cursor: 'pointer',
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          color: '#334155',
+                        }}
+                      >
+                        <input
+                          type="color"
+                          value={/^#[0-9a-fA-F]{6}$/.test(newSubColor) ? newSubColor : '#ea580c'}
+                          onChange={(e) => setNewSubColor(e.target.value)}
+                          style={{ width: '18px', height: '18px', border: 'none', padding: 0, background: 'transparent', cursor: 'pointer' }}
+                        />
+                        <span>Custom</span>
+                      </label>
                     </div>
                   </div>
 
