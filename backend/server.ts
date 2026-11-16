@@ -7,6 +7,8 @@ import { ApiValidationError, IdCardVerifyBodySchema, parseWithSchema } from '../
 import { verifyIdCardToken } from '../src/lib/id-card-crypto';
 import { clampIdCardLevel, ID_CARD_LEVELS, resolveDefaultCardLevel } from '../src/lib/id-card-levels';
 import { subscribeRealtimeChannel } from '../src/lib/realtime';
+import { registerNextApiPlugin } from './next-route-adapter';
+import { registerAllNextApiRoutes } from './routes/register-api-routes';
 
 initTelemetry('bems-erp-fastify-backend');
 logger.info('Step 1: BEMS ERP backend module loaded');
@@ -203,6 +205,10 @@ export async function buildBackendServer() {
       },
     });
   });
+
+  logger.info('Step 2: registering Next API routes onto Fastify');
+  await registerNextApiPlugin(app, registerAllNextApiRoutes);
+  logger.info('Step 3: all Next API routes registered');
 
   return app;
 }
