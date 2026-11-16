@@ -27,6 +27,7 @@ import { AiScreenEdgeGlow, notifyAiInteraction } from '@/components/ai/AiScreenE
 import { AiMotionEntryScreen } from '@/components/ai/AiMotionEntryScreen';
 import { KineticOptikkaTorus } from '@/components/ai/KineticOptikkaTorus';
 import { UniversalClickToAskProvider } from '@/components/ai/UniversalClickToAskProvider';
+import { getAllowedSubsidiariesForModule, hasCategoryAccess } from '@/lib/admin-permissions';
 
 type NavItemDef = {
   id: HrSectionId;
@@ -108,6 +109,10 @@ export default function HumanResourcesPortalPage() {
   const [aiDrawerOpen, setAiDrawerOpen] = useState(false);
   const [isInspectMode, setIsInspectMode] = useState(false);
   const [motionKey, setMotionKey] = useState(0);
+
+  useEffect(() => {
+    document.title = 'BEMS ERP | Human Resources';
+  }, []);
   const [employeesView, setEmployeesView] = useState<'DIRECTORY' | 'PROFILES'>('DIRECTORY');
   const [visitedSections, setVisitedSections] = useState<HrSectionId[]>(['overview']);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
@@ -203,6 +208,7 @@ export default function HumanResourcesPortalPage() {
     businessId: activeSub?.id || 'BEMS-GROUP',
     currentPage: `HR · ${ALL_NAV_ITEMS.find((i) => i.id === activeSection)?.label || 'Overview'}`,
     businessName: activeBusinessName,
+    moduleDomain: 'hr',
   });
 
   const handleNavigate = (section: HrSectionId, filter?: string) => {
@@ -450,10 +456,16 @@ export default function HumanResourcesPortalPage() {
           </div>
 
           <nav aria-label="HR navigation">
-            {NAV_GROUPS.map((group) => (
+            {NAV_GROUPS.map((group) => {
+              const items = group.items.filter((item) =>
+                !['GMD', 'SUPER_ADMIN', 'SYSTEM_ADMIN'].includes(actorRoleUpper) ||
+                hasCategoryAccess(actorRoleUpper, (overview?.actor as any)?.customAdminPermissions, 'hr', item.id)
+              );
+              if (items.length === 0) return null;
+              return (
               <div className="nav-group" key={group.label}>
                 <p>{group.label}</p>
-                {group.items.map((item) => {
+                {items.map((item) => {
                   const isActive = activeSection === item.id;
                   return (
                     <button
@@ -476,7 +488,8 @@ export default function HumanResourcesPortalPage() {
                   );
                 })}
               </div>
-            ))}
+              );
+            })}
           </nav>
 
           <button

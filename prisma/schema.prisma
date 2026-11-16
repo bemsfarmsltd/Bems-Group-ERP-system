@@ -50,6 +50,17 @@ model Organization {
   grievanceCases       EmployeeGrievanceCase[]
   jobVacancies         JobVacancy[]
   trainingCourses      TrainingCourse[]
+  projectPortfolios    ProjectPortfolio[]
+  projectGoals         ProjectGoal[]
+  projects             Project[]
+  projectWorkflows     ProjectWorkflow[]
+  projectIntakeForms   ProjectIntakeForm[]
+  projectAutomations   ProjectAutomationRule[]
+  projectTeams         ProjectTeam[]
+  projectLabels        ProjectLabel[]
+  projectSavedViews    ProjectSavedView[]
+  projectSlaRules      ProjectSlaRule[]
+  projectActivityLogs  ProjectActivityLog[]
 }
 
 model CompanyBankAccount {
@@ -94,6 +105,8 @@ model Department {
   employeeAssignments EmployeeAssignment[]
   kpiDefinitions      KpiDefinition[]
   jobVacancies        JobVacancy[]
+  projects            Project[]
+  projectWorkItems    ProjectWorkItem[]
 }
 
 model Employee {
@@ -150,6 +163,11 @@ model Employee {
   kioskPin              String?   // 4-digit PIN for /attendance/kiosk check-in without a smartphone
   onboardedById         String?
 
+  // Custom Named Admin Profile (4-Level Granular Access Scope)
+  customAdminProfileId  String?
+  customAdminTitle      String?
+  customAdminProfile    CustomAdminProfile? @relation(fields: [customAdminProfileId], references: [id], onDelete: SetNull)
+
   createdAt      DateTime @default(now())
 
   authSessions   AuthSession[]
@@ -196,6 +214,23 @@ model Employee {
   grievancesReported    EmployeeGrievanceCase[] @relation("GrievanceReporter")
   grievancesAgainst     EmployeeGrievanceCase[] @relation("GrievanceAgainst")
   trainingAssignments   EmployeeTrainingAssignment[]
+  ledProjects           Project[] @relation("ProjectManager")
+  teamLeadProjects      Project[] @relation("ProjectTeamLead")
+  sponsoredProjects     Project[] @relation("ProjectSponsor")
+  projectMemberships    ProjectMember[]
+  staffHandovers        ProjectStaffHandover[]
+  credentialEntries     ProjectCredentialEntry[]
+  chatMessages          ProjectChatMessage[]
+  assignedWorkItems     ProjectWorkItem[] @relation("WorkItemAssignee")
+  reportedWorkItems     ProjectWorkItem[] @relation("WorkItemReporter")
+  reviewedWorkItems     ProjectWorkItem[] @relation("WorkItemReviewer")
+  projectComments       ProjectComment[]
+  projectTimeEntries    ProjectTimeEntry[]
+  ownedProjectRisks     ProjectRisk[]
+  projectTeamMemberships ProjectTeamMember[]
+  workItemSubscriptions  ProjectWorkItemSubscription[]
+  projectStatusUpdates   ProjectStatusUpdate[]
+  projectActivityLogs    ProjectActivityLog[]
 }
 
 model SalaryChangeProposal {
@@ -459,6 +494,10 @@ model ExpenditureRequest {
   invoices             VendorInvoice[]
   goodsReceipts        GoodsReceiptNote[]
   threeWayMatch        ThreeWayMatchRecord?
+  projectId            String?
+  project              Project?      @relation(fields: [projectId], references: [id])
+  workItemId           String?
+  workItem             ProjectWorkItem? @relation(fields: [workItemId], references: [id], onDelete: SetNull)
 }
 
 model RequestChannel {
@@ -760,6 +799,8 @@ model Budget {
   updatedAt        DateTime     @updatedAt
 
   lines            BudgetLine[]
+  projectId        String?
+  project          Project?     @relation(fields: [projectId], references: [id])
 }
 
 model BudgetLine {
@@ -885,18 +926,21 @@ model StagedAction {
 }
 
 model AdminInvitation {
-  id           String       @id @default(uuid())
-  workEmail    String
-  role         String       // SYSTEM_ADMIN (Super admin) | GMD (The Group Managing Director)
-  subsidiaryId String
-  subsidiary   Organization @relation(fields: [subsidiaryId], references: [id], onDelete: Cascade)
-  departmentId String?
-  positionName String?
-  token        String       @unique
-  invitedById  String
-  status       String       @default("PENDING") // PENDING | COMPLETED | EXPIRED | REVOKED
-  expiresAt    DateTime
-  createdAt    DateTime     @default(now())
+  id                   String              @id @default(uuid())
+  workEmail            String
+  role                 String              // SYSTEM_ADMIN (Super admin) | GMD (The Group Managing Director)
+  subsidiaryId         String
+  subsidiary           Organization        @relation(fields: [subsidiaryId], references: [id], onDelete: Cascade)
+  departmentId         String?
+  positionName         String?
+  customAdminProfileId String?
+  customAdminTitle     String?
+  customAdminProfile   CustomAdminProfile? @relation(fields: [customAdminProfileId], references: [id], onDelete: SetNull)
+  token                String              @unique
+  invitedById          String
+  status               String              @default("PENDING") // PENDING | COMPLETED | EXPIRED | REVOKED
+  expiresAt            DateTime
+  createdAt            DateTime            @default(now())
 
   @@index([workEmail, status])
   @@index([token])
@@ -1471,6 +1515,8 @@ model KpiDefinition {
   isActive       Boolean      @default(true)
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
+
+  projects       Project[]
 }
 
 model PerformanceReviewCycle {
@@ -1627,4 +1673,703 @@ model EmployeeTrainingAssignment {
   expiryDate     String?
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
+}
+
+// ============================================================================
+// PROJECT MANAGEMENT SYSTEM (Linear + Jira + Asana Unified Engine)
+// ============================================================================
+
+model ProjectPortfolio {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  name           String
+  description    String?
+  ownerId        String?
+  status         String       @default("ACTIVE") // ACTIVE | ON_HOLD | CLOSED
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  projects       Project[]
+}
+
+model ProjectGoal {
+  id                String       @id @default(uuid())
+  organizationId    String
+  organization      Organization @relation(fields: [organizationId], references: [id])
+  title             String
+  description       String?
+  ownerId           String?
+  measurementPeriod String       @default("Q4 2026")
+  targetValue       Float        @default(100)
+  currentValue      Float        @default(0)
+  unit              String       @default("%")
+  status            String       @default("ON_TRACK") // ON_TRACK | AT_RISK | OFF_TRACK | ACHIEVED
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  projects          Project[]
+}
+
+model ProjectWorkflow {
+  id             String        @id @default(uuid())
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  name           String
+  departmentType String        @default("GENERAL") // ENGINEERING | OPERATIONS | PROCUREMENT | GENERAL
+  version        Int           @default(1)
+  statusesJson   String        // JSON array of { key, label, category, color }
+  transitionsJson String       // JSON map of permitted transitions + rules
+  isDefault      Boolean       @default(false)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  projects       Project[]
+}
+
+model Project {
+  id                 String           @id @default(uuid())
+  projectCode        String           @unique // e.g. BEMS-PM-001
+  organizationId     String
+  organization       Organization     @relation(fields: [organizationId], references: [id])
+  departmentId       String?
+  department         Department?      @relation(fields: [departmentId], references: [id])
+  teamId             String?
+  team               ProjectTeam?     @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  portfolioId        String?
+  portfolio          ProjectPortfolio? @relation(fields: [portfolioId], references: [id])
+  goalId             String?
+  goal               ProjectGoal?     @relation(fields: [goalId], references: [id])
+  kpiDefinitionId    String?
+  kpiDefinition      KpiDefinition?   @relation(fields: [kpiDefinitionId], references: [id], onDelete: SetNull)
+  workflowId         String?
+  workflow           ProjectWorkflow? @relation(fields: [workflowId], references: [id])
+  templateKey        String?          // SOFTWARE_DEV | ERP_IMPL | GOV_REVENUE | HARDWARE | etc.
+  title              String
+  description        String?
+  objectives         String?
+  deliverablesSummary String?
+  projectType        String           @default("OPERATIONS") // SOFTWARE | OPERATIONS | INFRASTRUCTURE | ADMINISTRATION | FINANCE | PROCUREMENT | MEDIA | AGRIBUSINESS
+  methodology        String           @default("HYBRID") // AGILE | SCRUM | KANBAN | WATERFALL | HYBRID
+  visibility         String           @default("COMPANY") // PRIVATE | TEAM | COMPANY | GROUP | EXTERNAL
+  status             String           @default("DRAFT_PROPOSAL") // DRAFT_PROPOSAL | SUBMITTED_FOR_APPROVAL | APPROVED_PLANNED | ACTIVE | ON_HOLD | DELIVERY_ACCEPTANCE | COMPLETED | REJECTED | CANCELLED | REOPENED
+  priority           String           @default("MEDIUM") // URGENT | HIGH | MEDIUM | LOW
+  healthStatus       String           @default("ON_TRACK") // ON_TRACK | AT_RISK | OFF_TRACK | PENDING_REVIEW
+  healthUpdateAt     DateTime?
+  sponsorId          String?
+  sponsor            Employee?        @relation("ProjectSponsor", fields: [sponsorId], references: [id])
+  managerId          String?
+  manager            Employee?        @relation("ProjectManager", fields: [managerId], references: [id])
+  teamLeadId         String?
+  teamLead           Employee?        @relation("ProjectTeamLead", fields: [teamLeadId], references: [id], onDelete: SetNull)
+  parentProjectId    String?
+  parentProject      Project?         @relation("ProjectHierarchy", fields: [parentProjectId], references: [id], onDelete: SetNull)
+  subProjects        Project[]        @relation("ProjectHierarchy")
+  githubRepoUrl      String?
+  githubBranch       String?          @default("main")
+  githubSyncEnabled  Boolean          @default(false)
+  startDate          String?
+  targetDate         String?
+  actualEndDate      String?
+  baselineStartDate  String?
+  baselineTargetDate String?
+  proposedBudgetMinor BigInt          @default(0)
+  approvedBudgetMinor BigInt          @default(0)
+  currency           String           @default("NGN")
+  progressPercent    Int              @default(0)
+  version            Int              @default(1)
+  createdById        String
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  members            ProjectMember[]
+  milestones         ProjectMilestone[]
+  sprints            ProjectSprint[]
+  workItems          ProjectWorkItem[]
+  comments           ProjectComment[]
+  timeEntries        ProjectTimeEntry[]
+  documents          ProjectDocument[]
+  decisions          ProjectDecision[]
+  approvals          ProjectApproval[]
+  risks              ProjectRisk[]
+  changeRequests     ProjectChangeRequest[]
+  releases           ProjectRelease[]
+  testCases          ProjectTestCase[]
+  automations        ProjectAutomationRule[]
+  expenditureRequests ExpenditureRequest[]
+  budgets            Budget[]
+  statusUpdates      ProjectStatusUpdate[]
+  staffHandovers     ProjectStaffHandover[]
+  credentialEntries  ProjectCredentialEntry[]
+  chatChannels       ProjectChatChannel[]
+  chatMessages       ProjectChatMessage[]
+
+  @@index([organizationId, status])
+  @@index([parentProjectId])
+}
+
+model ProjectMember {
+  id                     String    @id @default(uuid())
+  projectId              String
+  project                Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  employeeId             String
+  employee               Employee  @relation(fields: [employeeId], references: [id])
+  projectRole            String    @default("PROJECT_MEMBER") // PROJECT_SPONSOR | PROJECT_MANAGER | PROGRAM_MANAGER | PRODUCT_OWNER | TEAM_LEAD | DEVELOPER | DESIGNER | QA_ENGINEER | OPERATIONS_OFFICER | REVIEWER | APPROVER | OBSERVER | EXTERNAL_COLLABORATOR
+  raciRole               String    @default("R") // R | A | C | I
+  allocationPercent      Int       @default(100)
+  assignedStartDate      String?
+  targetCompletionDate   String?
+  completedAt            DateTime?
+  slaStatus              String    @default("ON_TRACK") // ON_TRACK | AT_RISK | OVERDUE | COMPLETED_ON_TIME | COMPLETED_LATE
+  performanceImpactNote  String?
+  salaryDeductionFlagged Boolean   @default(false)
+  proposedDeductionMinor BigInt    @default(0)
+  deductionAdjustmentId  String?
+  createdAt              DateTime  @default(now())
+
+  @@unique([projectId, employeeId])
+}
+
+model ProjectMilestone {
+  id                  String   @id @default(uuid())
+  projectId           String
+  project             Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title               String
+  description         String?
+  ownerId             String?
+  dueDate             String?
+  completedAt         DateTime?
+  status              String   @default("PENDING") // PENDING | IN_PROGRESS | COMPLETED | DELAYED
+  approvalStatus      String   @default("PENDING") // PENDING | APPROVED | REVISION_REQUESTED
+  deliverablesSummary String?
+  weightPercent       Int      @default(25)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  workItems           ProjectWorkItem[]
+}
+
+model ProjectSprint {
+  id                 String       @id @default(uuid())
+  projectId          String?
+  project            Project?     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  teamId             String?
+  team               ProjectTeam? @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  organizationId     String
+  cycleNumber        Int          @default(1)
+  name               String
+  goal               String?
+  startDate          String
+  endDate            String
+  capacityPoints     Int          @default(40)
+  cooldownDays       Int          @default(0)
+  carriedOverCount   Int          @default(0)
+  status             String       @default("PLANNED") // PLANNED | ACTIVE | COMPLETED
+  reviewNotes        String?
+  retrospectiveNotes String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  workItems          ProjectWorkItem[]
+}
+
+model ProjectWorkItem {
+  id                 String            @id @default(uuid())
+  itemKey            String            @unique // e.g. BEMS-101
+  projectId          String
+  project            Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  organizationId     String
+  departmentId       String?
+  department         Department?       @relation(fields: [departmentId], references: [id])
+  teamId             String?
+  team               ProjectTeam?      @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  milestoneId        String?
+  milestone          ProjectMilestone? @relation(fields: [milestoneId], references: [id])
+  sprintId           String?
+  sprint             ProjectSprint?    @relation(fields: [sprintId], references: [id])
+  parentId           String?
+  parent             ProjectWorkItem?  @relation("WorkItemHierarchy", fields: [parentId], references: [id])
+  subtasks           ProjectWorkItem[] @relation("WorkItemHierarchy")
+  itemType           String            @default("TASK") // TASK | SUBTASK | EPIC | STORY | BUG | FEATURE | IMPROVEMENT | SPIKE | INCIDENT | CHANGE_REQUEST | APPROVAL_ITEM | OPERATIONAL_ACTION | RECURRING_TASK
+  title              String
+  description        String?
+  status             String            @default("TODO") // BACKLOG | TODO | IN_PROGRESS | IN_REVIEW | QA_TESTING | BLOCKED | DONE | ACCEPTED | ARCHIVED
+  priority           String            @default("MEDIUM") // URGENT | HIGH | MEDIUM | LOW
+  severity           String?           // CRITICAL | MAJOR | MINOR | TRIVIAL (for Bugs)
+  environment        String?           // DEVELOPMENT | STAGING | PRODUCTION
+  storyPoints        Int?
+  estimatedHours     Float?
+  assigneeId         String?
+  assignee           Employee?         @relation("WorkItemAssignee", fields: [assigneeId], references: [id])
+  reporterId         String?
+  reporter           Employee?         @relation("WorkItemReporter", fields: [reporterId], references: [id])
+  reviewerId         String?
+  reviewer           Employee?         @relation("WorkItemReviewer", fields: [reviewerId], references: [id])
+  startDate          String?
+  dueDate            String?
+  slaDueAt           DateTime?
+  triagedAt          DateTime?
+  completedAt        DateTime?
+  isBlocked          Boolean           @default(false)
+  blockerReason      String?
+  checklistJson      String?
+  acceptanceCriteria String?
+  labelsJson         String?
+  customFieldsJson   String?
+  version            Int               @default(1)
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  blockedByLinks     ProjectDependency[] @relation("DependencyTarget")
+  blocksLinks        ProjectDependency[] @relation("DependencySource")
+  comments           ProjectComment[]
+  timeEntries        ProjectTimeEntry[]
+  testCases          ProjectTestCase[]
+  subscriptions      ProjectWorkItemSubscription[]
+  activityLogs       ProjectActivityLog[]
+  expenditureRequests ExpenditureRequest[]
+
+  @@index([projectId, status])
+  @@index([assigneeId, status])
+}
+
+model ProjectDependency {
+  id             String          @id @default(uuid())
+  sourceItemId   String
+  sourceItem     ProjectWorkItem @relation("DependencySource", fields: [sourceItemId], references: [id], onDelete: Cascade)
+  targetItemId   String
+  targetItem     ProjectWorkItem @relation("DependencyTarget", fields: [targetItemId], references: [id], onDelete: Cascade)
+  dependencyType String          @default("FINISH_TO_START") // FINISH_TO_START | START_TO_START | FINISH_TO_FINISH | START_TO_FINISH | BLOCKS | RELATED_TO | DUPLICATES
+  lagDays        Int             @default(0)
+  createdAt      DateTime        @default(now())
+
+  @@unique([sourceItemId, targetItemId, dependencyType])
+}
+
+model ProjectComment {
+  id              String           @id @default(uuid())
+  projectId       String
+  project         Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  workItemId      String?
+  workItem        ProjectWorkItem? @relation(fields: [workItemId], references: [id], onDelete: Cascade)
+  authorId        String
+  author          Employee         @relation(fields: [authorId], references: [id])
+  body            String
+  isInternal      Boolean          @default(false)
+  parentCommentId String?
+  mentionsJson    String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+}
+
+model ProjectTimeEntry {
+  id             String           @id @default(uuid())
+  projectId      String
+  project        Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  workItemId     String?
+  workItem       ProjectWorkItem? @relation(fields: [workItemId], references: [id], onDelete: SetNull)
+  employeeId     String
+  employee       Employee         @relation(fields: [employeeId], references: [id])
+  workDate       String
+  hours          Float
+  description    String
+  isBillable     Boolean          @default(true)
+  approvalStatus String           @default("PENDING") // PENDING | APPROVED | REJECTED
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+}
+
+model ProjectDocument {
+  id              String   @id @default(uuid())
+  projectId       String
+  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title           String
+  category        String   @default("SPECIFICATION") // CHARTER | BRD | PRD | TECHNICAL_DESIGN | API_SPEC | ARCHITECTURE | DEPLOYMENT_PLAN | TEST_PLAN | CONTRACT | MEETING_MINUTES | PROGRESS_REPORT | ACCEPTANCE_CERT | CLOSURE_REPORT | FIELD_MEDIA
+  assetKind       String   @default("DOCUMENT") // DOCUMENT | IMAGE | DIAGRAM | FIELD_MEDIA
+  mimeType        String?
+  fileSizeBytes   Int?
+  storagePath     String?
+  contentMarkdown String?
+  fileUrl         String?
+  version         Int      @default(1)
+  approvalStatus  String   @default("DRAFT") // DRAFT | IN_REVIEW | APPROVED
+  authorId        String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model ProjectDecision {
+  id              String   @id @default(uuid())
+  projectId       String
+  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title           String
+  decision        String
+  reason          String
+  alternatives    String?
+  decisionMakerId String
+  impactSummary   String?
+  approvedAt      DateTime @default(now())
+  createdAt       DateTime @default(now())
+}
+
+model ProjectApproval {
+  id            String    @id @default(uuid())
+  projectId     String
+  project       Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  category      String    // PROJECT_AUTH | BUDGET | SCOPE | CHANGE_REQUEST | PROCUREMENT | DESIGN | TASK_ACCEPTANCE | MILESTONE_ACCEPTANCE | TESTING | RELEASE | RESOURCE | CLOSURE
+  title         String
+  requestedById String
+  reviewerId    String?
+  status        String    @default("PENDING") // PENDING | APPROVED | REJECTED | REVISION_REQUESTED
+  snapshotJson  String?
+  decisionNote  String?
+  decidedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model ProjectRisk {
+  id              String    @id @default(uuid())
+  riskCode        String    @unique
+  projectId       String
+  project         Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  recordType      String    @default("RISK") // RISK | ISSUE | BLOCKER
+  title           String
+  description     String
+  category        String    @default("OPERATIONAL")
+  probability     String    @default("MEDIUM")
+  impact          String    @default("MEDIUM")
+  severity        String    @default("MEDIUM") // LOW | MEDIUM | HIGH | CRITICAL
+  status          String    @default("OPEN") // OPEN | MITIGATING | RESOLVED | CLOSED
+  ownerId         String?
+  owner           Employee? @relation(fields: [ownerId], references: [id])
+  mitigationPlan  String?
+  contingencyPlan String?
+  reviewDate      String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
+model ProjectChangeRequest {
+  id                 String   @id @default(uuid())
+  changeCode         String   @unique
+  projectId          String
+  project            Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title              String
+  existingScope      String
+  proposedChange     String
+  reason             String
+  budgetImpactMinor  BigInt   @default(0)
+  timelineImpactDays Int      @default(0)
+  riskImpact         String?
+  status             String   @default("PENDING") // PENDING | APPROVED | REJECTED | IMPLEMENTED
+  requestedById      String
+  approvedById       String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+model ProjectRelease {
+  id           String    @id @default(uuid())
+  projectId    String
+  project      Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  versionTag   String
+  title        String
+  environment  String    @default("PRODUCTION") // STAGING | PRODUCTION | FIELD_DEPLOYMENT
+  plannedDate  String?
+  deployedAt   DateTime?
+  status       String    @default("PLANNED") // PLANNED | DEV_COMPLETE | QA_VERIFIED | RELEASE_CANDIDATE | APPROVED | DEPLOYED | VERIFIED | CLOSED
+  rollbackPlan String?
+  releaseNotes String?
+  ownerId      String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+model ProjectTestCase {
+  id             String           @id @default(uuid())
+  projectId      String
+  project        Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  workItemId     String?
+  workItem       ProjectWorkItem? @relation(fields: [workItemId], references: [id], onDelete: SetNull)
+  title          String
+  suiteName      String           @default("Regression")
+  steps          String
+  expectedResult String
+  lastRunStatus  String           @default("NOT_RUN") // NOT_RUN | PASS | FAIL | BLOCKED
+  executedById   String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+}
+
+model ProjectIntakeForm {
+  id              String       @id @default(uuid())
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  title           String
+  category        String       @default("WORK_REQUEST")
+  fieldsJson      String
+  isActive        Boolean      @default(true)
+  submissionCount Int          @default(0)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+}
+
+model ProjectAutomationRule {
+  id               String       @id @default(uuid())
+  organizationId   String
+  organization     Organization @relation(fields: [organizationId], references: [id])
+  projectId        String?
+  project          Project?     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name             String
+  triggerType      String
+  conditionsJson   String
+  actionType       String
+  actionConfigJson String
+  isActive         Boolean      @default(true)
+  lastTriggeredAt  DateTime?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+}
+
+model ProjectTeam {
+  id                  String              @id @default(uuid())
+  organizationId      String
+  organization        Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  key                 String              // e.g. BEM, OPS, ENG
+  name                String
+  description         String?
+  color               String              @default("#ea580c")
+  cyclesEnabled       Boolean             @default(true)
+  cycleDurationDays   Int                 @default(14)
+  cycleCooldownDays   Int                 @default(0)
+  cycleAutomationJson String?             // { autoAddActive: boolean, autoAddStarted: boolean, autoAddCompleted: boolean, carryOverUnfinished: boolean }
+  triageEnabled       Boolean             @default(true)
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  members             ProjectTeamMember[]
+  projects            Project[]
+  workItems           ProjectWorkItem[]
+  sprints             ProjectSprint[]
+  labels              ProjectLabel[]
+  savedViews          ProjectSavedView[]
+  slaRules            ProjectSlaRule[]
+
+  @@unique([organizationId, key])
+}
+
+model ProjectTeamMember {
+  id         String      @id @default(uuid())
+  teamId     String
+  team       ProjectTeam @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  employeeId String
+  employee   Employee    @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  role       String      @default("MEMBER") // LEAD | MEMBER
+  joinedAt   DateTime    @default(now())
+
+  @@unique([teamId, employeeId])
+}
+
+model ProjectLabel {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  teamId         String?
+  team           ProjectTeam? @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  scope          String       @default("ISSUE") // ISSUE | PROJECT
+  name           String
+  color          String       @default("#3b82f6")
+  description    String?
+  createdAt      DateTime     @default(now())
+
+  @@unique([organizationId, scope, name])
+}
+
+model ProjectSavedView {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  teamId         String?
+  team           ProjectTeam? @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  ownerId        String
+  name           String
+  description    String?
+  visibility     String       @default("WORKSPACE") // PERSONAL | TEAM | WORKSPACE
+  filtersJson    String       @default("{}")
+  displayJson    String       @default("{}")
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+}
+
+model ProjectWorkItemSubscription {
+  id         String          @id @default(uuid())
+  workItemId String
+  workItem   ProjectWorkItem @relation(fields: [workItemId], references: [id], onDelete: Cascade)
+  employeeId String
+  employee   Employee        @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  createdAt  DateTime        @default(now())
+
+  @@unique([workItemId, employeeId])
+}
+
+model ProjectActivityLog {
+  id             String           @id @default(uuid())
+  organizationId String
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  projectId      String?
+  workItemId     String?
+  workItem       ProjectWorkItem? @relation(fields: [workItemId], references: [id], onDelete: Cascade)
+  actorId        String
+  actor          Employee         @relation(fields: [actorId], references: [id], onDelete: Cascade)
+  action         String           // CREATED | STATUS_CHANGED | PRIORITY_CHANGED | ASSIGNED | COMMENTED | CYCLE_MOVED | LABELED
+  field          String?
+  oldValue       String?
+  newValue       String?
+  createdAt      DateTime         @default(now())
+
+  @@index([organizationId, createdAt])
+  @@index([workItemId, createdAt])
+}
+
+model ProjectSlaRule {
+  id                String       @id @default(uuid())
+  organizationId    String
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  teamId            String?
+  team              ProjectTeam? @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  name              String
+  priority          String       @default("URGENT") // URGENT | HIGH | MEDIUM | LOW
+  responseMinutes   Int          @default(60)
+  resolutionMinutes Int          @default(1440)
+  isActive          Boolean      @default(true)
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+}
+
+model ProjectStatusUpdate {
+  id           String   @id @default(uuid())
+  projectId    String
+  project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  authorId     String
+  author       Employee @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  healthStatus String   @default("ON_TRACK") // ON_TRACK | AT_RISK | OFF_TRACK
+  summary      String
+  createdAt    DateTime @default(now())
+
+  @@index([projectId, createdAt])
+}
+
+model ProjectStaffHandover {
+  id                   String    @id @default(uuid())
+  projectId            String
+  project              Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  employeeId           String
+  employee             Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  docTitle             String?
+  docUrl               String?
+  docSummary           String?
+  technologiesUsedJson String?   // JSON array of { name, category, role }
+  submissionStatus     String    @default("PENDING") // PENDING | SUBMITTED | VERIFIED
+  submittedAt          DateTime?
+  verifiedById         String?
+  verifiedAt           DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  @@unique([projectId, employeeId])
+}
+
+model ProjectCredentialEntry {
+  id              String   @id @default(uuid())
+  projectId       String
+  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  employeeId      String
+  employee        Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  toolName        String
+  category        String   @default("TECH_STACK") // TECH_STACK | CLOUD_HOSTING | DATABASE | GITHUB | MEDIA_PLATFORM | OPS_PORTAL | HARDWARE
+  environment     String   @default("PROD") // PROD | STAGING | DEV
+  loginUrl        String?
+  username        String
+  encryptedSecret String
+  iv              String
+  authTag         String
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([projectId, employeeId])
+}
+
+model ProjectIssueTemplate {
+  id                String   @id @default(uuid())
+  organizationId    String
+  teamId            String?
+  name              String
+  projectType       String   @default("SOFTWARE")
+  defaultPriority   String   @default("MEDIUM")
+  defaultLabelsJson String?
+  subtasksJson      String   // JSON array of subtask titles
+  createdById       String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([organizationId])
+}
+
+model ProjectChatChannel {
+  id           String               @id @default(uuid())
+  projectId    String
+  project      Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  departmentId String?
+  channelType  String               @default("DEPARTMENT") // GENERAL | DEPARTMENT | SQUAD | BLOCKERS | HANDOVER
+  slug         String
+  name         String
+  description  String?
+  isPrivate    Boolean              @default(false)
+  createdById  String
+  createdAt    DateTime             @default(now())
+  messages     ProjectChatMessage[]
+
+  @@unique([projectId, slug])
+  @@index([projectId, departmentId])
+}
+
+model ProjectChatMessage {
+  id               String               @id @default(uuid())
+  projectId        String
+  project          Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  channelId        String
+  channel          ProjectChatChannel   @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  authorId         String
+  author           Employee             @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  parentMessageId  String?
+  parentMessage    ProjectChatMessage?  @relation("ChatThread", fields: [parentMessageId], references: [id], onDelete: Cascade)
+  replies          ProjectChatMessage[] @relation("ChatThread")
+  body             String
+  isAnnouncement   Boolean              @default(false)
+  isPinned         Boolean              @default(false)
+  linkedWorkItemId String?
+  attachmentsJson  String?
+  reactionsJson    String?
+  mentionsJson     String?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
+  @@index([channelId, createdAt])
+  @@index([parentMessageId])
+}
+
+model CustomAdminProfile {
+  id              String            @id @default(uuid())
+  name            String            @unique
+  description     String?
+  permissionsJson String            @default("{}")
+  createdById     String?
+  isActive        Boolean           @default(true)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  employees       Employee[]
+  invitations     AdminInvitation[]
 }

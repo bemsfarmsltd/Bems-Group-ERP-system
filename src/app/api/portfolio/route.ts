@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { getServerCache, setServerCache } from '@/lib/server-cache';
 import { getAuthenticatedEmployee, hasAnyRole } from '@/lib/auth';
 import { toSystemRequestId } from '@/lib/request-id';
 
@@ -11,6 +12,11 @@ export async function GET(request: Request) {
     if (!actor) return NextResponse.json({ error: 'Sign in to view the group portfolio.' }, { status: 401 });
     if (!hasAnyRole(actor, ['SYSTEM_ADMIN', 'SUPER_ADMIN', 'GMD'])) {
       return NextResponse.json({ error: 'Executive access is required to view the group portfolio.' }, { status: 403 });
+    }
+    const cacheKey = `portfolio:${actor.id}`;
+    const cached = getServerCache<any>(cacheKey);
+    if (cached) {
+      return NextResponse.json(cached);
     }
     const [organizations, budgets, requests, intercompanyNotes, departments, assignments, disbursements, accountabilityCases, companyBankAccounts, allStaffEmployees] = await Promise.all([
       prisma.organization.findMany({
@@ -353,7 +359,7 @@ export async function GET(request: Request) {
     const totalExecutiveAdmins = assignments.filter((a) => a.employee.role !== 'STAFF').length;
     const totalIntercompanyVolume = serializedNotes.reduce((acc, n) => acc + n.amountNaira, 0);
 
-    return NextResponse.json({
+    const payload = {
       summary: {
         totalCompanies: portfolio.length,
         totalOrganizations: portfolio.length,
@@ -369,7 +375,9 @@ export async function GET(request: Request) {
       portfolio: portfolio,
       allGroupStaff,
       intercompanyNotes: serializedNotes,
-    });
+    };
+    setServerCache(cacheKey, payload, 12_000);
+    return NextResponse.json(payload);
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

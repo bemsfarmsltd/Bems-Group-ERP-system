@@ -27,10 +27,10 @@ import ExecutiveBriefingClient from "../briefing/ExecutiveBriefingClient";
 import { RequestDossierModal, type RequestDossier } from "@/components/requests/RequestDossierModal";
 import { RequestChatModal } from "@/components/requests/RequestChatModal";
 import { StaffAdminChatModal } from "@/components/chat/StaffAdminChatModal";
+import { getAllowedSubsidiariesForModule, hasCategoryAccess } from "@/lib/admin-permissions";
 import {
   AccountabilityModule as LiveAccountabilityModule,
   AnalyticsBIPage as LiveAnalyticsBIPage,
-  AuditLogsModule as LiveAuditLogsModule,
   FollowUpTasksModule as LiveFollowUpTasksModule,
   IntercompanyModule as LiveIntercompanyModule,
   ProofDeliverablesModule as LiveProofDeliverablesModule,
@@ -217,7 +217,6 @@ const gmdNavGroups = [
     label: 'EXECUTIVE',
     items: [
       ['Overview', '⌂'],
-      ['Subsidiary portfolio', '▦'],
       ['Executive briefing', '✦'],
     ]
   },
@@ -232,15 +231,6 @@ const gmdNavGroups = [
       ['Recurring commitments', '◌'],
       ['Hybrid payroll', '⌁'],
       ['Receipt archive', '▣'],
-    ]
-  },
-  {
-    label: 'ADMINISTRATION & GOVERNANCE',
-    items: [
-      ['Admin onboarding', '🛡️'],
-      ['Audit logs', '≡'],
-      ['Admin Settings', '⚙'],
-      ['Mobile App Settings', '📱'],
     ]
   },
 ];
@@ -1752,9 +1742,6 @@ function RoleOverviewModule({role,business,user,cases,setActive,setNotice,onRole
           <h1>Good afternoon, {formatDisplayName(user.fullName)}.</h1>
           <p>Real-time expenditure pipeline, cash run-rate, and accountability governance across {business.name}.</p>
         </div>
-        <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
-          <button className="outline-button" onClick={() => setActive("Subsidiary portfolio")}>Manage Subsidiaries ▦</button>
-        </div>
       </div>
       <WalletDashboardSummary onOpen={() => setActive("Wallets & funded budgets")} />
       <ModernBentoDashboard
@@ -3049,8 +3036,20 @@ function VendorsModule({business,setNotice,onNavigate}:{business:Business;setNot
   </>;
 }
 
-function AppWorkspace({user,onSignOut,onAddBusiness,onEditBusiness,businesses,currentId,setCurrentId,onUpdateBusiness,onShowWelcome}:{user:AuthUser;onSignOut:()=>void;onAddBusiness:()=>void;onEditBusiness?:(b:Business)=>void;businesses:Business[];currentId:string;setCurrentId:(value:string)=>void;onUpdateBusiness:(id:string,patch:Partial<Business>)=>Promise<Business>;onShowWelcome?:()=>void}) {
+function AppWorkspace({user,onSignOut,onAddBusiness,onEditBusiness,businesses:rawBusinesses,currentId,setCurrentId,onUpdateBusiness,onShowWelcome}:{user:AuthUser;onSignOut:()=>void;onAddBusiness:()=>void;onEditBusiness?:(b:Business)=>void;businesses:Business[];currentId:string;setCurrentId:(value:string)=>void;onUpdateBusiness:(id:string,patch:Partial<Business>)=>Promise<Business>;onShowWelcome?:()=>void}) {
   const safeUser: AuthUser = user;
+  useEffect(() => {
+    document.title = 'BEMS ERP | Financial Operations';
+  }, []);
+  const allowedSubIds = getAllowedSubsidiariesForModule(
+    safeUser.role,
+    (safeUser as any).customAdminPermissions,
+    'finance'
+  );
+  const businesses =
+    allowedSubIds === 'ALL'
+      ? rawBusinesses
+      : rawBusinesses.filter((b) => allowedSubIds.includes(b.id));
   const current = (businesses && businesses.length > 0 ? (businesses.find(b=>b.id===currentId) || businesses[0]) : defaultBemsBusinesses[0]) || defaultBemsBusinesses[0];
   const isGroupScope = (current as any).code === 'BEMS-GROUP' || (current as any).type === 'GROUP' || current.id === 'BEMS-GROUP';
   const activeScope = isGroupScope ? 'ALL' : ((current as any).code || current.id);
@@ -3202,6 +3201,7 @@ function AppWorkspace({user,onSignOut,onAddBusiness,onEditBusiness,businesses,cu
     businessName: current?.name || 'BEMS Group',
     businessId: current?.id || 'BEMS-GROUP',
     currentPage: active,
+    moduleDomain: 'financial',
   });
 
   const handleOpenAiDrawer = (prompt?: string) => {
@@ -3226,10 +3226,29 @@ function AppWorkspace({user,onSignOut,onAddBusiness,onEditBusiness,businesses,cu
     return () => window.removeEventListener('keydown', handleAiKey);
   }, [isAiAuthorized]);
 
-  const navigation = getRoleNavigation((currentRole as string) === 'STAFF' ? 'STAFF' : safeUser.role);
+  const rawNavigation = getRoleNavigation((currentRole as string) === 'STAFF' ? 'STAFF' : safeUser.role);
+  const navigation =
+    (currentRole as string) === 'STAFF'
+      ? rawNavigation
+      : rawNavigation
+          .map((group) => ({
+            ...group,
+            items: group.items.filter(([name]) =>
+              hasCategoryAccess(safeUser.role, (safeUser as any).customAdminPermissions, 'finance', name)
+            ),
+          }))
+          .filter((group) => group.items.length > 0);
+
+  useEffect(() => {
+    if ((currentRole as string) === 'STAFF') return;
+    const flatAllowed = navigation.flatMap((g) => g.items.map(([name]) => name));
+    if (flatAllowed.length > 0 && !flatAllowed.includes(active)) {
+      setActive(flatAllowed[0]);
+    }
+  }, [active, currentRole, navigation]);
   const sectorOperations=(navigation[3] && navigation[3].items) ? navigation[3].items.map(([name])=>name) : [];
   const liveOnly=['Inbox','Customers','Campaigns','Cases & SLAs','Commerce & orders','Payments','Bookings','Loyalty & rewards','Analytics & BI'];
-  const incompleteLocked=['Inbox','Customers','Campaigns','Cases & SLAs','Commerce & orders','Payments','Bookings','Loyalty & rewards','Analytics & BI','Quality & experiments','Audit logs'];
+  const incompleteLocked=['Inbox','Customers','Campaigns','Cases & SLAs','Commerce & orders','Payments','Bookings','Loyalty & rewards','Analytics & BI','Quality & experiments'];
   const fullyOnboardedDemo=true;
   const isLocked=(_name:string)=>false;
   const openModule=(name:string)=>{setActive(name);setSearch('')};
@@ -3602,7 +3621,7 @@ function AppWorkspace({user,onSignOut,onAddBusiness,onEditBusiness,businesses,cu
     if(target==='Price benchmarks') return <PriceBenchmarksModule business={current} setNotice={setNotice}/>;
     if(target==='Recurring commitments') return <RecurringCommitmentsModule business={current} setNotice={setNotice}/>;
     if(target==='Notification bridge') return <NotificationBridgeModule business={current} setNotice={setNotice}/>;
-    if(target==='Audit logs') return <LiveAuditLogsModule scope={activeScope} setNotice={setNotice}/>;
+    if(target==='Audit logs') { if (typeof window !== 'undefined') window.location.href = '/control-center'; return null; }
     if(target==='Attendance & Timekeeping' || target==='Attendance') return <AttendanceDeskPage />;
     if(target==='Staff profiles') return <LiveStaffProfilesModule scope={activeScope} setNotice={setNotice} onNavigate={(p) => setActive(p)}/>;
     if(target==='Admin onboarding' || target==='Staff onboarding') return <PeopleAccessWorkspaceModule setNotice={setNotice} onNavigate={(p) => setActive(p)}/>;
@@ -3937,51 +3956,6 @@ function AppWorkspace({user,onSignOut,onAddBusiness,onEditBusiness,businesses,cu
                         </button>
                       );
                     })}
-                  </div>
-
-                  {/* SIMPLE MINIMAL FOOTER */}
-                  <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingLeft: 4, paddingRight: 4 }}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSwitcher(false);
-                        onAddBusiness();
-                      }}
-                      style={{
-                        background: 'transparent',
-                        border: 'none',
-                        color: activeBrandColor,
-                        fontSize: 11,
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                        padding: '6px 8px',
-                        borderRadius: 6,
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: 4,
-                      }}
-                    >
-                      <span>＋</span> Add Subsidiary
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSwitcher(false);
-                        setActive('Subsidiary portfolio');
-                      }}
-                      style={{
-                        background: 'transparent',
-                        border: 'none',
-                        color: '#64748b',
-                        fontSize: 10.5,
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        padding: '6px 8px',
-                        borderRadius: 6,
-                      }}
-                    >
-                      Settings
-                    </button>
                   </div>
                 </div>
               )}

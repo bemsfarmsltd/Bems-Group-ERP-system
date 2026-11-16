@@ -15,6 +15,7 @@ interface TreasuryFinanceHubViewProps {
   businessId?: string;
   businessCode?: string;
   initialTab?: TreasuryTab;
+  payrollMode?: 'hr' | 'finance';
   onNavigate: (page: string) => void;
   onSelectBusiness: (id: string) => void;
 }
@@ -26,6 +27,7 @@ export function TreasuryFinanceHubView({
   businessId,
   businessCode,
   initialTab = 'disbursements',
+  payrollMode = 'finance',
   onNavigate,
   onSelectBusiness,
 }: TreasuryFinanceHubViewProps) {
@@ -66,6 +68,7 @@ export function TreasuryFinanceHubView({
         <PayrollSignOffView
           businessName={businessName}
           userName={userName}
+          mode={payrollMode}
           onNavigate={onNavigate}
           onSelectBusiness={onSelectBusiness}
         />

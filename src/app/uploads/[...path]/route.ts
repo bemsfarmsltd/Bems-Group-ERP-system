@@ -23,7 +23,15 @@ type CachedFile = {
 };
 
 const fileMemoryCache = new Map<string, CachedFile>();
-const MAX_CACHE_ITEMS = 80;
+const MAX_CACHE_ITEMS = 120;
+
+type FileAccessMeta = {
+  isPublicBrandAsset: boolean;
+  ownerIds: string[];
+  expiresAt: number;
+};
+const fileMetaCache = new Map<string, FileAccessMeta>();
+const missingFileCache = new Map<string, number>();
 
 function getFromMemoryCache(filename: string): CachedFile | null {
   const item = fileMemoryCache.get(filename);
@@ -71,30 +79,65 @@ export async function GET(
     const filename = safeSegments[safeSegments.length - 1];
     const ext = path.extname(filename).toLowerCase();
     const defaultContentType = MIME_TYPES[ext] || 'application/octet-stream';
+    const isAvatarPath = safeSegments[0] === 'avatars';
 
-    const attachment = await prisma.attachment.findFirst({
-      where: {
-        OR: [
-          { fileUrl: { endsWith: '/' + filename } },
-          { fileUrl: { endsWith: filename } },
-          { fileName: filename },
-        ],
-      },
-      include: { request: { select: { requestedById: true, disbursementAssigneeId: true } } },
-    });
-    const brand = await prisma.organization.findFirst({ where: { logoUrl: { endsWith: '/' + filename } }, select: { id: true } });
-    const isPublicBrandAsset = Boolean(brand || attachment?.ownerType === 'PUBLIC_AVATAR');
+    const missingUntil = missingFileCache.get(filename);
+    if (missingUntil && missingUntil > Date.now()) {
+      return new NextResponse('File Not Found', {
+        status: 404,
+        headers: { 'Content-Type': 'text/plain', 'Cache-Control': 'private, max-age=60' },
+      });
+    }
+
+    let meta = fileMetaCache.get(filename);
+    if (!meta || meta.expiresAt <= Date.now()) {
+      const [attachment, brand] = await Promise.all([
+        prisma.attachment.findFirst({
+          where: {
+            OR: [
+              { fileUrl: { endsWith: '/' + filename } },
+              { fileUrl: { endsWith: filename } },
+              { fileName: filename },
+            ],
+          },
+          include: { request: { select: { requestedById: true, disbursementAssigneeId: true } } },
+        }),
+        prisma.organization.findFirst({ where: { logoUrl: { endsWith: '/' + filename } }, select: { id: true } }),
+      ]);
+      const ownerIds = [
+        attachment?.uploadedById,
+        attachment?.ownerId,
+        attachment?.request?.requestedById,
+        attachment?.request?.disbursementAssigneeId,
+      ].filter((id): id is string => Boolean(id));
+      meta = {
+        isPublicBrandAsset: Boolean(brand || attachment?.ownerType === 'PUBLIC_AVATAR'),
+        ownerIds,
+        expiresAt: Date.now() + 5 * 60 * 1000,
+      };
+      if (fileMetaCache.size > 300) fileMetaCache.clear();
+      fileMetaCache.set(filename, meta);
+    }
+
+    const isPublicBrandAsset = meta.isPublicBrandAsset;
     if (!isPublicBrandAsset) {
       const actor = await getAuthenticatedEmployee(request, { disallowServiceToken: true });
       if (!actor) return new NextResponse('Authentication required.', { status: 401 });
       const isExecutive = hasAnyRole(actor, ['GMD', 'SYSTEM_ADMIN', 'SUPER_ADMIN']);
-      const ownsAttachment = attachment && (attachment.uploadedById === actor.id || attachment.ownerId === actor.id || attachment.request?.requestedById === actor.id || attachment.request?.disbursementAssigneeId === actor.id);
-      const ownsProfile = await prisma.employee.findFirst({ where: { id: actor.id, avatarUrl: { endsWith: '/' + filename } }, select: { id: true } });
-      if (!isExecutive && !ownsAttachment && !ownsProfile) return new NextResponse('File not found.', { status: 404 });
+      const ownsAttachment = meta.ownerIds.includes(actor.id);
+      if (!isExecutive && !ownsAttachment) {
+        const ownsProfile = await prisma.employee.findFirst({
+          where: { id: actor.id, avatarUrl: { endsWith: '/' + filename } },
+          select: { id: true },
+        });
+        if (!ownsProfile) return new NextResponse('File not found.', { status: 404 });
+      }
     }
 
     const cacheControlHeader = isPublicBrandAsset
       ? 'public, max-age=86400'
+      : isAvatarPath
+      ? 'private, max-age=86400'
       : 'private, no-store, no-cache, must-revalidate';
 
     // 0. Check fast in-memory cache first (<1ms, zero DB load)
@@ -142,11 +185,12 @@ export async function GET(
         },
       });
     } catch {
+      missingFileCache.set(filename, Date.now() + 60_000);
       return new NextResponse('File Not Found', {
         status: 404,
         headers: {
           'Content-Type': 'text/plain',
-          'Cache-Control': 'private, no-store, no-cache, must-revalidate',
+          'Cache-Control': 'private, max-age=60',
           'X-Content-Type-Options': 'nosniff',
         },
       });

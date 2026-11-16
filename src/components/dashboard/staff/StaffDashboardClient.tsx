@@ -1629,6 +1629,16 @@ export function StaffDashboardClient({
               <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin text-orange-600' : ''}`} />
             </button>
 
+            {/* Staff Projects Execution Flow */}
+            <Link
+              href="/staff/projects"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-orange-200 bg-orange-50 hover:bg-orange-100 text-orange-800 text-xs font-bold transition-all shadow-sm"
+              title="Open My Projects, Deadlines & Handover Vault"
+            >
+              <span>📋</span>
+              <span className="hidden sm:inline">My Projects</span>
+            </Link>
+
             {/* Return to Enterprise Systems Launchpad */}
             <Link
               href="/"

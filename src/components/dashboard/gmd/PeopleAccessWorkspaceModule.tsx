@@ -19,7 +19,12 @@ import {
   Search,
   Users,
   ShieldAlert,
+  Plus,
+  SlidersHorizontal,
+  UserCheck,
+  Pencil,
 } from 'lucide-react';
+import { CustomAdminBuilderModal, type CustomAdminProfilePayload } from '@/components/control-center/CustomAdminBuilderModal';
 
 type LeaderAccount = {
   id: string;
@@ -79,7 +84,6 @@ type Dept = { id: string; name: string; code: string; organizationId: string };
 const EXECUTIVE_INVITE_ROLES = [
   { value: 'SYSTEM_ADMIN', label: 'Super admin' },
   { value: 'GMD', label: 'The Group Managing Director' },
-  { value: 'HR', label: 'Human Resources (HR)' },
 ];
 
 const STAFF_APPROVAL_ROLES = [
@@ -99,10 +103,13 @@ const getRoleDisplayName = (r: string) => {
 export function PeopleAccessWorkspaceModule({
   setNotice,
   onNavigate,
+  mode = 'hr',
 }: {
   setNotice: (message: string) => void;
   onNavigate?: (tab: string) => void;
+  mode?: 'control-center' | 'hr';
 }) {
+  const isControlCenter = mode === 'control-center';
   const [employees, setEmployees] = useState<PendingSignup[]>([]);
   const [invitations, setInvitations] = useState<AdminInvitationItem[]>([]);
   const [organizations, setOrganizations] = useState<Org[]>([]);
@@ -116,8 +123,23 @@ export function PeopleAccessWorkspaceModule({
   const [leadershipAccounts, setLeadershipAccounts] = useState<LeaderAccount[]>([]);
 
   // Navigation tab state
-  const [activeTab, setActiveTab] = useState<'approvals' | 'directory' | 'invitations'>('approvals');
+  const [activeTab, setActiveTab] = useState<'approvals' | 'directory' | 'invitations' | 'profiles'>(
+    isControlCenter ? 'directory' : 'approvals'
+  );
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Custom Admin Profiles & 2-Way Onboarding State
+  const [customProfiles, setCustomProfiles] = useState<any[]>([]);
+  const [staffDirectory, setStaffDirectory] = useState<any[]>([]);
+  const [showBuilderModal, setShowBuilderModal] = useState(false);
+  const [editingProfile, setEditingProfile] = useState<CustomAdminProfilePayload | null>(null);
+  const [onboardMode, setOnboardMode] = useState<'invite' | 'promote'>('invite');
+  const [selectedProfileId, setSelectedProfileId] = useState('');
+  const [promoteEmail, setPromoteEmail] = useState('');
+  const [promoteLookupLoading, setPromoteLookupLoading] = useState(false);
+  const [promoteCandidate, setPromoteCandidate] = useState<any | null>(null);
+  const [promoteError, setPromoteError] = useState('');
+  const [promoteBusy, setPromoteBusy] = useState(false);
 
   // Row approval configuration state
   const [approvalRoles, setApprovalRoles] = useState<Record<string, string>>({});
@@ -140,11 +162,13 @@ export function PeopleAccessWorkspaceModule({
     setLoading(true);
     setError('');
     try {
-      const [approvalRes, inviteRes, orgsRes, leaderRes] = await Promise.all([
+      const [approvalRes, inviteRes, orgsRes, leaderRes, profilesRes, staffRes] = await Promise.all([
         fetch('/api/auth/approvals', { credentials: 'include' }).catch(() => null),
         fetch('/api/staff/invite', { credentials: 'include' }).catch(() => null),
         fetch('/api/organizations', { credentials: 'include' }).catch(() => null),
         fetch('/api/admin/leadership', { credentials: 'include' }).catch(() => null),
+        fetch('/api/control-center/admin-profiles', { credentials: 'include' }).catch(() => null),
+        fetch('/api/control-center/admin-onboarding?list=staff', { credentials: 'include' }).catch(() => null),
       ]);
 
       let orgList: Org[] = [];
@@ -185,6 +209,16 @@ export function PeopleAccessWorkspaceModule({
       if (leaderRes && leaderRes.ok) {
         const leaderData = await leaderRes.json();
         setLeadershipAccounts(leaderData.leaders || []);
+      }
+
+      if (profilesRes && profilesRes.ok) {
+        const profilesData = await profilesRes.json();
+        setCustomProfiles(profilesData.profiles || []);
+      }
+
+      if (staffRes && staffRes.ok) {
+        const staffData = await staffRes.json();
+        setStaffDirectory(staffData.staff || []);
       }
 
       if (orgList.length > 0) {
@@ -234,23 +268,36 @@ export function PeopleAccessWorkspaceModule({
     setInviteBusy(true);
     setInviteError('');
     try {
-      const response = await fetch('/api/staff/invite', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(inviteForm),
-      });
+      const useCustomAdminEndpoint = Boolean(selectedProfileId) && inviteForm.role === 'SYSTEM_ADMIN';
+      const response = await fetch(
+        useCustomAdminEndpoint ? '/api/control-center/admin-onboarding' : '/api/staff/invite',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify(
+            useCustomAdminEndpoint
+              ? {
+                  mode: 'INVITE_NEW',
+                  ...inviteForm,
+                  customAdminProfileId: selectedProfileId,
+                }
+              : inviteForm
+          ),
+        }
+      );
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Failed to dispatch executive invitation.');
 
       setNotice(data.message || `Official invitation dispatched to ${inviteForm.workEmail}.`);
       setShowInviteModal(false);
+      setSelectedProfileId('');
       setInviteForm({
         workEmail: '',
-        role: 'GMD',
+        role: 'SYSTEM_ADMIN',
         subsidiaryId: organizations[0]?.id || '',
         departmentId: '',
-        positionName: 'The Group Managing Director',
+        positionName: 'Administrator',
       });
       setActiveTab('invitations');
       await load();
@@ -258,6 +305,87 @@ export function PeopleAccessWorkspaceModule({
       setInviteError(err.message || 'Failed to send invitation.');
     } finally {
       setInviteBusy(false);
+    }
+  };
+
+  const handleLookupStaffByEmail = async () => {
+    const email = promoteEmail.trim().toLowerCase();
+    if (!email) {
+      setPromoteError('Enter the existing staff member work email.');
+      return;
+    }
+    setPromoteLookupLoading(true);
+    setPromoteError('');
+    setPromoteCandidate(null);
+    try {
+      const res = await fetch(
+        `/api/control-center/admin-onboarding?email=${encodeURIComponent(email)}`,
+        { credentials: 'include' }
+      );
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Staff account not found.');
+      setPromoteCandidate(json.employee);
+      if (json.employee?.customAdminProfileId) {
+        setSelectedProfileId(json.employee.customAdminProfileId);
+      }
+    } catch (err: any) {
+      setPromoteError(err?.message || 'Could not locate staff account.');
+    } finally {
+      setPromoteLookupLoading(false);
+    }
+  };
+
+  const handlePromoteStaffSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!promoteCandidate?.workEmail) {
+      setPromoteError('Look up an existing staff account first.');
+      return;
+    }
+    setPromoteBusy(true);
+    setPromoteError('');
+    try {
+      const res = await fetch('/api/control-center/admin-onboarding', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          mode: 'PROMOTE_STAFF',
+          workEmail: promoteCandidate.workEmail,
+          customAdminProfileId: selectedProfileId || null,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Failed to send admin onboarding invitation.');
+      setNotice(
+        json.message ||
+          `Admin onboarding email dispatched to ${promoteCandidate.legalName} (${promoteCandidate.workEmail}).`
+      );
+      setShowInviteModal(false);
+      setPromoteEmail('');
+      setPromoteCandidate(null);
+      setSelectedProfileId('');
+      setActiveTab('invitations');
+      await load();
+    } catch (err: any) {
+      setPromoteError(err?.message || 'Could not promote staff member.');
+    } finally {
+      setPromoteBusy(false);
+    }
+  };
+
+  const handleDeleteCustomProfile = async (id: string, profileName: string) => {
+    if (!window.confirm(`Delete custom admin profile "${profileName}"?`)) return;
+    try {
+      const res = await fetch(`/api/control-center/admin-profiles?id=${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Failed to delete profile.');
+      setNotice(`Custom admin profile "${profileName}" deleted.`);
+      await load();
+    } catch (err: any) {
+      setError(err?.message || 'Could not delete profile.');
     }
   };
 
@@ -414,10 +542,12 @@ export function PeopleAccessWorkspaceModule({
             <ShieldCheck size={14} /> SYSTEM ADMINISTRATION &amp; ACCESS
           </div>
           <h1 style={{ fontSize: 26, fontWeight: 800, color: '#0f172a', margin: '2px 0 6px 0', letterSpacing: '-0.02em' }}>
-            People, Leadership &amp; Access Center
+            {isControlCenter ? 'Admin Onboarding & Custom Access' : 'People, Leadership & Access Center'}
           </h1>
           <p style={{ color: '#64748b', fontSize: 13, margin: 0, lineHeight: 1.5 }}>
-            Invite executive leadership roles via secure 7-day email links, and verify self-registered staff members.
+            {isControlCenter
+              ? 'Onboard new administrators via secure email links, promote existing staff by email, and manage 4-level custom admin profiles.'
+              : 'Invite executive leadership roles via secure 7-day email links, and verify self-registered staff members.'}
           </p>
         </div>
 
@@ -495,40 +625,42 @@ export function PeopleAccessWorkspaceModule({
 
       {/* 2. Top Executive KPI Metric Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
-        {/* Card 1: Executive Leaders (Gradient Primary Hero) */}
+        {/* Card 1: Executive Leaders (Crisp BEMS Light Theme) */}
         <div
           style={{
-            background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
+            background: 'linear-gradient(135deg, #fff7ed 0%, #ffffff 100%)',
+            border: '1.5px solid #fed7aa',
             borderRadius: 14,
             padding: '18px 20px',
-            color: '#ffffff',
+            color: '#0f172a',
             display: 'flex',
             flexDirection: 'column',
             justifyContent: 'space-between',
-            boxShadow: '0 4px 14px rgba(15, 23, 42, 0.12)',
+            boxShadow: '0 2px 8px rgba(234, 88, 12, 0.08)',
             position: 'relative',
             overflow: 'hidden',
           }}
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', color: '#cbd5e1', textTransform: 'uppercase' }}>
+            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', color: '#c2410c', textTransform: 'uppercase' }}>
               Governance Leadership
             </span>
-            <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'rgba(255,255,255,0.1)', display: 'grid', placeItems: 'center', color: '#fed7aa' }}>
+            <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#ffedd5', display: 'grid', placeItems: 'center', color: '#ea580c' }}>
               <ShieldCheck size={16} />
             </div>
           </div>
           <div style={{ margin: '14px 0 6px 0' }}>
-            <strong style={{ fontSize: 32, fontWeight: 800, letterSpacing: '-0.03em', lineHeight: 1 }}>
+            <strong style={{ fontSize: 32, fontWeight: 800, letterSpacing: '-0.03em', lineHeight: 1, color: '#0f172a' }}>
               {leadershipAccounts.length}
             </strong>
           </div>
-          <div style={{ fontSize: 11, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{ fontSize: 11, color: '#64748b', display: 'flex', alignItems: 'center', gap: 6 }}>
             <span>Super admin &amp; GMD verified accounts</span>
           </div>
         </div>
 
-        {/* Card 2: Staff Approvals Queue */}
+        {/* Card 2: Staff Approvals Queue (HR Module only, hidden in Control Center) */}
+        {!isControlCenter && (
         <div
           onClick={() => setActiveTab('approvals')}
           style={{
@@ -570,6 +702,7 @@ export function PeopleAccessWorkspaceModule({
             <span style={{ fontSize: 11, color: '#64748b' }}>self-registrations</span>
           </div>
         </div>
+        )}
 
         {/* Card 3: Executive Invitations */}
         <div
@@ -640,6 +773,7 @@ export function PeopleAccessWorkspaceModule({
       {/* 3. Segmented Navigation Tabs & Search */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, borderBottom: '1px solid #e2e8f0', paddingBottom: 10 }}>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {!isControlCenter && (
           <button
             type="button"
             onClick={() => setActiveTab('approvals')}
@@ -673,6 +807,7 @@ export function PeopleAccessWorkspaceModule({
               {employees.length}
             </span>
           </button>
+          )}
 
           <button
             type="button"
@@ -739,6 +874,40 @@ export function PeopleAccessWorkspaceModule({
               }}
             >
               {pendingInvitations.length}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('profiles')}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '8px 16px',
+              borderRadius: 8,
+              border: 'none',
+              background: activeTab === 'profiles' ? '#0f172a' : '#f1f5f9',
+              color: activeTab === 'profiles' ? '#ffffff' : '#475569',
+              fontSize: 12.5,
+              fontWeight: 700,
+              cursor: 'pointer',
+              transition: 'all 0.15s ease',
+            }}
+          >
+            <SlidersHorizontal size={14} />
+            <span>Custom Admin Profiles</span>
+            <span
+              style={{
+                background: activeTab === 'profiles' ? '#ea580c' : '#cbd5e1',
+                color: activeTab === 'profiles' ? '#ffffff' : '#0f172a',
+                padding: '1px 7px',
+                borderRadius: 999,
+                fontSize: 11,
+                fontWeight: 800,
+              }}
+            >
+              {customProfiles.length}
             </span>
           </button>
         </div>
@@ -1360,7 +1529,125 @@ export function PeopleAccessWorkspaceModule({
         </section>
       )}
 
-      {/* 7. Executive Invite Modal */}
+      {/* 6b. Custom Admin Profiles Tab */}
+      {activeTab === 'profiles' && (
+        <section style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 12, padding: '14px 18px' }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: 15, fontWeight: 800, color: '#0f172a' }}>
+                Named Custom Admin Profiles ({customProfiles.length})
+              </h3>
+              <p style={{ margin: '3px 0 0', fontSize: 12, color: '#64748b' }}>
+                Create flexible, custom-named admin roles scoped by Module → Subsidiary → Left-Bar Category → In-Page Actions.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setEditingProfile(null);
+                setShowBuilderModal(true);
+              }}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '9px 16px',
+                borderRadius: 8,
+                border: 'none',
+                background: '#ea580c',
+                color: '#ffffff',
+                fontSize: 12.5,
+                fontWeight: 700,
+                cursor: 'pointer',
+              }}
+            >
+              <Plus size={14} />
+              <span>New Custom Admin Profile</span>
+            </button>
+          </div>
+
+          {customProfiles.length === 0 ? (
+            <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 12, padding: '40px 24px', textAlign: 'center' }}>
+              <SlidersHorizontal size={24} style={{ color: '#94a3b8', margin: '0 auto 10px' }} />
+              <div style={{ fontSize: 14, fontWeight: 700, color: '#0f172a' }}>No Custom Admin Profiles Yet</div>
+              <p style={{ fontSize: 12.5, color: '#64748b', margin: '6px 0 16px' }}>
+                Create a named profile (e.g. Finance Controller, Abia Projects Lead) and assign it via Fresh Invite or Staff Promotion.
+              </p>
+            </div>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 14 }}>
+              {customProfiles.map((prof) => {
+                const perms = prof.permissions || {};
+                const enabledMods = Object.keys(perms).filter((k) => perms[k]?.enabled);
+                return (
+                  <div
+                    key={prof.id}
+                    style={{
+                      background: '#ffffff',
+                      border: '1px solid #e2e8f0',
+                      borderRadius: 14,
+                      padding: '16px 18px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between',
+                      gap: 12,
+                    }}
+                  >
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                        <strong style={{ fontSize: 14.5, fontWeight: 800, color: '#0f172a' }}>{prof.name}</strong>
+                        <span style={{ fontSize: 10.5, fontWeight: 700, background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa', borderRadius: 999, padding: '2px 8px' }}>
+                          {enabledMods.length} modules
+                        </span>
+                      </div>
+                      {prof.description && (
+                        <p style={{ fontSize: 12, color: '#64748b', margin: '6px 0 0' }}>{prof.description}</p>
+                      )}
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 10 }}>
+                        {enabledMods.map((mk) => (
+                          <span key={mk} style={{ fontSize: 10.5, fontWeight: 700, background: '#f1f5f9', color: '#334155', padding: '2px 8px', borderRadius: 6 }}>
+                            {mk}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #f1f5f9', paddingTop: 10, fontSize: 11.5, color: '#64748b' }}>
+                      <span>{prof._count?.employees || 0} admins · {prof._count?.invitations || 0} invites</span>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingProfile({
+                              id: prof.id,
+                              name: prof.name,
+                              description: prof.description || '',
+                              permissions: prof.permissions || {},
+                            });
+                            setShowBuilderModal(true);
+                          }}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '5px 10px', borderRadius: 6, border: '1px solid #cbd5e1', background: '#ffffff', color: '#0f172a', fontSize: 11.5, fontWeight: 650, cursor: 'pointer' }}
+                        >
+                          <Pencil size={12} /> Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleDeleteCustomProfile(prof.id, prof.name)}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '5px 8px', borderRadius: 6, border: '1px solid #fecaca', background: '#fef2f2', color: '#dc2626', fontSize: 11.5, fontWeight: 650, cursor: 'pointer' }}
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* 7. 2-Way Executive / Admin Onboarding Modal */}
       {showInviteModal && (
         <div
           style={{
@@ -1380,20 +1667,22 @@ export function PeopleAccessWorkspaceModule({
               background: '#ffffff',
               borderRadius: 16,
               width: '100%',
-              maxWidth: 520,
-              padding: '28px',
+              maxWidth: 560,
+              padding: '26px',
               boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
               position: 'relative',
               boxSizing: 'border-box',
+              maxHeight: '92vh',
+              overflowY: 'auto',
             }}
           >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 18, borderBottom: '1px solid #f1f5f9', paddingBottom: 14 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14, borderBottom: '1px solid #f1f5f9', paddingBottom: 12 }}>
               <div>
-                <div style={{ color: 'var(--brand-primary, #0d8a70)', fontSize: 11, fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
-                  GOVERNANCE ACCESS PROVISIONING
+                <div style={{ color: '#ea580c', fontSize: 11, fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+                  FLEXIBLE ADMIN ONBOARDING
                 </div>
-                <h3 style={{ fontSize: 20, fontWeight: 800, color: '#0f172a', margin: '4px 0 0 0' }}>
-                  Invite Executive / Admin Role
+                <h3 style={{ fontSize: 19, fontWeight: 800, color: '#0f172a', margin: '4px 0 0 0' }}>
+                  Onboard or Promote Administrator
                 </h3>
               </div>
               <button
@@ -1405,17 +1694,176 @@ export function PeopleAccessWorkspaceModule({
               </button>
             </div>
 
-            <div style={{ padding: '12px 14px', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 8, color: '#9a3412', marginBottom: 18, fontSize: 12.5, lineHeight: 1.5 }}>
-              Executive invitations are strictly reserved for <strong>Super admin</strong> and <strong>The Group Managing Director</strong>. A secure 7-day link will be emailed to complete profile setup and private credentials.
+            {/* 2-Way Mode Switcher */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16, background: '#f1f5f9', padding: 4, borderRadius: 10 }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setOnboardMode('invite');
+                  setInviteError('');
+                }}
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: 8,
+                  border: 'none',
+                  fontSize: 12.5,
+                  fontWeight: 750,
+                  cursor: 'pointer',
+                  background: onboardMode === 'invite' ? '#ffffff' : 'transparent',
+                  color: onboardMode === 'invite' ? '#0f172a' : '#64748b',
+                  boxShadow: onboardMode === 'invite' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                }}
+              >
+                1. Fresh Admin Invite
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setOnboardMode('promote');
+                  setPromoteError('');
+                }}
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: 8,
+                  border: 'none',
+                  fontSize: 12.5,
+                  fontWeight: 750,
+                  cursor: 'pointer',
+                  background: onboardMode === 'promote' ? '#ffffff' : 'transparent',
+                  color: onboardMode === 'promote' ? '#0f172a' : '#64748b',
+                  boxShadow: onboardMode === 'promote' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                }}
+              >
+                2. Promote Existing Staff
+              </button>
             </div>
 
-            {inviteError && (
-              <div style={{ padding: '10px 14px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, color: '#991b1b', marginBottom: 16, fontSize: 13 }}>
-                {inviteError}
-              </div>
-            )}
+            {onboardMode === 'promote' ? (
+              <form onSubmit={handlePromoteStaffSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <div style={{ padding: '11px 14px', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 8, color: '#9a3412', fontSize: 12.5, lineHeight: 1.5 }}>
+                  Select an existing staff member, configure their admin profile, and send an onboarding email to their <strong>same work email</strong>. Once they enter their information via the link, their configured admin access activates.
+                </div>
 
-            <form onSubmit={handleInviteSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                {promoteError && (
+                  <div style={{ padding: '10px 14px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, color: '#991b1b', fontSize: 12.5 }}>
+                    {promoteError}
+                  </div>
+                )}
+
+                <div>
+                  <label style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: '#334155', marginBottom: 6 }}>
+                    Select Existing Staff Member *
+                  </label>
+                  <select
+                    value={promoteCandidate?.id || ''}
+                    onChange={(e) => {
+                      const picked = staffDirectory.find((s) => s.id === e.target.value) || null;
+                      setPromoteCandidate(picked);
+                      setPromoteEmail(picked?.workEmail || '');
+                      setPromoteError('');
+                    }}
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 13, background: '#fff', fontWeight: 600, boxSizing: 'border-box' }}
+                  >
+                    <option value="">-- Choose a staff member ({staffDirectory.length} active) --</option>
+                    {staffDirectory.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.legalName} ({s.workEmail}) {s.assignments?.[0]?.subsidiary?.code ? `· ${s.assignments[0].subsidiary.code}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#334155', marginBottom: 6 }}>
+                    Or Lookup by Work Email
+                  </label>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <input
+                      type="email"
+                      placeholder="staff@bemsgroup.com"
+                      value={promoteEmail}
+                      onChange={(e) => setPromoteEmail(e.target.value)}
+                      style={{ flex: 1, padding: '9px 12px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 13, boxSizing: 'border-box' }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => void handleLookupStaffByEmail()}
+                      disabled={promoteLookupLoading}
+                      style={{ padding: '9px 14px', borderRadius: 8, border: '1px solid #0f172a', background: '#0f172a', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
+                    >
+                      {promoteLookupLoading ? 'Searching...' : 'Find'}
+                    </button>
+                  </div>
+                </div>
+
+                {promoteCandidate && (
+                  <div style={{ padding: '12px 14px', borderRadius: 10, border: '1px solid #bbf7d0', background: '#f0fdf4', fontSize: 12.5 }}>
+                    <div style={{ fontWeight: 800, color: '#0f172a' }}>{promoteCandidate.legalName}</div>
+                    <div style={{ color: '#475569', marginTop: 2 }}>
+                      {promoteCandidate.employeeNumber} · Current Role: <strong>{promoteCandidate.role}</strong>
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <label style={{ fontSize: 12.5, fontWeight: 700, color: '#334155' }}>
+                      Custom Admin Profile
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingProfile(null);
+                        setShowBuilderModal(true);
+                      }}
+                      style={{ border: 'none', background: 'transparent', color: '#ea580c', fontSize: 11.5, fontWeight: 800, cursor: 'pointer' }}
+                    >
+                      + Create Custom Profile
+                    </button>
+                  </div>
+                  <select
+                    value={selectedProfileId}
+                    onChange={(e) => setSelectedProfileId(e.target.value)}
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 13, background: '#fff', fontWeight: 600 }}
+                  >
+                    <option value="">Full Super Admin (Unrestricted)</option>
+                    {customProfiles.map((p) => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 8, borderTop: '1px solid #f1f5f9', paddingTop: 14 }}>
+                  <button
+                    type="button"
+                    onClick={() => setShowInviteModal(false)}
+                    style={{ padding: '9px 16px', borderRadius: 8, border: '1px solid #cbd5e1', background: '#fff', fontSize: 13, cursor: 'pointer', color: '#475569', fontWeight: 650 }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={promoteBusy || !promoteCandidate}
+                    style={{ padding: '9px 20px', borderRadius: 8, border: 'none', background: '#ea580c', color: '#fff', fontSize: 13, fontWeight: 700, cursor: promoteBusy || !promoteCandidate ? 'not-allowed' : 'pointer', opacity: promoteBusy || !promoteCandidate ? 0.6 : 1, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                  >
+                    <Send size={14} />
+                    <span>{promoteBusy ? 'Sending Email...' : 'Send Admin Onboarding Email →'}</span>
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <>
+                <div style={{ padding: '11px 14px', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 8, color: '#9a3412', marginBottom: 16, fontSize: 12.5, lineHeight: 1.5 }}>
+                  Executive invitations are strictly reserved for <strong>Super admin</strong> (with optional Custom Admin Profile) and <strong>The Group Managing Director</strong>.
+                </div>
+
+                {inviteError && (
+                  <div style={{ padding: '10px 14px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, color: '#991b1b', marginBottom: 16, fontSize: 13 }}>
+                    {inviteError}
+                  </div>
+                )}
+
+                <form onSubmit={handleInviteSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div>
                 <label style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: '#334155', marginBottom: 6 }}>
                   Corporate Work Email Address *
@@ -1490,6 +1938,36 @@ export function PeopleAccessWorkspaceModule({
                 </div>
               )}
 
+              {inviteForm.role === 'SYSTEM_ADMIN' && (
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <label style={{ fontSize: 12.5, fontWeight: 700, color: '#334155' }}>
+                      Custom Admin Profile (Optional)
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingProfile(null);
+                        setShowBuilderModal(true);
+                      }}
+                      style={{ border: 'none', background: 'transparent', color: '#ea580c', fontSize: 11.5, fontWeight: 800, cursor: 'pointer' }}
+                    >
+                      + Create Custom Profile
+                    </button>
+                  </div>
+                  <select
+                    value={selectedProfileId}
+                    onChange={(e) => setSelectedProfileId(e.target.value)}
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 13, background: '#fff', fontWeight: 600 }}
+                  >
+                    <option value="">Full Super Admin (Unrestricted)</option>
+                    {customProfiles.map((p) => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               <div>
                 <label style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: '#334155', marginBottom: 6 }}>
                   Official Position / Title (Optional)
@@ -1534,8 +2012,28 @@ export function PeopleAccessWorkspaceModule({
                 </button>
               </div>
             </form>
+              </>
+            )}
           </div>
         </div>
+      )}
+
+      {showBuilderModal && (
+        <CustomAdminBuilderModal
+          subsidiaries={organizations}
+          initialProfile={editingProfile}
+          onCancel={() => {
+            setShowBuilderModal(false);
+            setEditingProfile(null);
+          }}
+          onSaved={(savedProfile) => {
+            setShowBuilderModal(false);
+            setEditingProfile(null);
+            if (savedProfile?.id) setSelectedProfileId(savedProfile.id);
+            setNotice(`Custom Admin Profile "${savedProfile?.name || 'Profile'}" saved.`);
+            void load();
+          }}
+        />
       )}
     </div>
   );

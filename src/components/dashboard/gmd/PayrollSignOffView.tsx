@@ -193,13 +193,16 @@ export function PayrollSignOffView({
   businessName,
   userName,
   onNavigate,
-  onSelectBusiness
+  onSelectBusiness,
+  mode = 'finance',
 }: {
   businessName: string;
   userName: string;
   onNavigate?: (view: string) => void;
   onSelectBusiness?: (id: string) => void;
+  mode?: 'hr' | 'finance';
 }) {
+  const isHrMode = mode === 'hr';
   const [data, setData] = useState<PayrollBatchData | null>(null);
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState<string | null>(null);
@@ -649,13 +652,15 @@ export function PayrollSignOffView({
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
         <div>
           <span style={{ fontSize: '8px', letterSpacing: '1.2px', fontWeight: 800, color: '#64748b', textTransform: 'uppercase' }}>
-            PAYROLL & COST SPLITS · SECTION 38 / 42
+            {isHrMode ? 'HR PAYROLL PREPARATION · MONTHLY RUN & ROSTER' : 'PAYROLL & COST SPLITS · SECTION 38 / 42'}
           </span>
           <h1 style={{ fontSize: '18px', fontWeight: 700, margin: '3px 0 2px', letterSpacing: '-0.3px', color: '#0f172a' }}>
-            Hybrid Payroll Sign-off & Intercompany Allocation
+            {isHrMode ? 'HR Payroll Preparation & Salary Run' : 'Hybrid Payroll Sign-off & Intercompany Allocation'}
           </h1>
           <p style={{ fontSize: '11px', color: '#64748b', margin: 0 }}>
-            Review the prepared payroll, approve the register, and check actual employee cost allocations.
+            {isHrMode
+              ? 'Prepare the monthly salary register, review lateness deductions, edit salaries, and submit to Finance for payment sign-off.'
+              : 'Review the prepared payroll, approve the register, and check actual employee cost allocations.'}
           </p>
         </div>
 
@@ -749,7 +754,7 @@ export function PayrollSignOffView({
                 : 'Prepare Monthly Payroll Batch ⚡'}
           </button>
 
-          {data?.batch && data.batch.status !== 'PAID' && data?.permissions?.canApprove && (
+          {!isHrMode && data?.batch && data.batch.status !== 'PAID' && data?.permissions?.canApprove && (
             <button
               onClick={handleMarkBatchPaid}
               disabled={markingBatchPaid}
@@ -772,7 +777,7 @@ export function PayrollSignOffView({
             </button>
           )}
 
-          {data?.batch?.status === 'SUBMITTED' && data?.permissions?.canApprove ? (
+          {!isHrMode && data?.batch?.status === 'SUBMITTED' && data?.permissions?.canApprove ? (
             <button
               onClick={async () => {
                 setSignOffModalOpen(true);
@@ -1240,6 +1245,7 @@ export function PayrollSignOffView({
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             {filteredItems.length > 0 && (
               <>
+                {!isHrMode && (
                 <button
                   type="button"
                   onClick={handleDownloadBankSheetCSV}
@@ -1261,6 +1267,7 @@ export function PayrollSignOffView({
                   <Download size={12} style={{ color: '#ea580c' }} />
                   <span>Export Bank Bulk-Transfer Sheet (CSV)</span>
                 </button>
+                )}
                 <button
                   type="button"
                   onClick={handleDownloadCSV}

@@ -7,8 +7,8 @@ export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 export const metadata: Metadata = {
-  title: "BEMS ERP | Financial Operations",
-  description: "BEMS Group multi-subsidiary financial operations, request channels, disbursements and accountability system",
+  title: "BEMS ERP | Enterprise Suite",
+  description: "BEMS Group multi-subsidiary enterprise resource planning, financial operations, HR, projects, and governance system",
   manifest: "/manifest.json",
   icons: {
     icon: [

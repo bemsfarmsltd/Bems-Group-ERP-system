@@ -13,7 +13,15 @@
  * 6. Cross-domain query detection (e.g. payroll spend + attendance deductions)
  */
 
-export type AiAgentDomain = 'financial' | 'hr' | 'both';
+export type AiAgentDomain =
+  | 'financial'
+  | 'hr'
+  | 'projects'
+  | 'operations'
+  | 'media'
+  | 'innovation'
+  | 'master'
+  | 'both';
 
 export type SemanticAiIntent =
   | 'SUBSIDIARY_CREATE'
@@ -25,7 +33,8 @@ export type SemanticAiIntent =
 
 export interface RouteResolutionInput {
   message: string;
-  explicitMode?: 'financial' | 'hr' | 'auto' | 'both';
+  explicitMode?: AiAgentDomain | 'auto';
+  moduleDomain?: AiAgentDomain | null;
   isTagLocked?: boolean;
   threadDomain?: AiAgentDomain | null;
   history?: Array<{ role: string; content: string; domain?: AiAgentDomain }>;
@@ -50,28 +59,27 @@ export interface RouteResolutionResult {
 
 // Extract any leading @agent or /agent command tag from the input prompt
 export function extractAgentCommandTag(rawMessage: string): {
-  tag: 'financial' | 'hr' | 'both' | 'auto' | null;
+  tag: AiAgentDomain | 'auto' | null;
   cleanMessage: string;
 } {
   const trimmed = rawMessage.trim();
-  const match = trimmed.match(/^[@/](finance|financial|hr|people|both|all|auto)\b\s*/i);
+  const match = trimmed.match(
+    /^[@/](finance|financial|hr|people|projects|project|operations|ops|media|innovation|master|root|both|all|auto)\b\s*/i
+  );
   if (!match) {
     return { tag: null, cleanMessage: trimmed };
   }
   const token = match[1].toLowerCase();
   const cleanMessage = trimmed.slice(match[0].length).trim();
-  if (token === 'finance' || token === 'financial') {
-    return { tag: 'financial', cleanMessage };
-  }
-  if (token === 'hr' || token === 'people') {
-    return { tag: 'hr', cleanMessage };
-  }
-  if (token === 'both' || token === 'all') {
-    return { tag: 'both', cleanMessage };
-  }
-  if (token === 'auto') {
-    return { tag: 'auto', cleanMessage };
-  }
+  if (token === 'finance' || token === 'financial') return { tag: 'financial', cleanMessage };
+  if (token === 'hr' || token === 'people') return { tag: 'hr', cleanMessage };
+  if (token === 'projects' || token === 'project') return { tag: 'projects', cleanMessage };
+  if (token === 'operations' || token === 'ops') return { tag: 'operations', cleanMessage };
+  if (token === 'media') return { tag: 'media', cleanMessage };
+  if (token === 'innovation') return { tag: 'innovation', cleanMessage };
+  if (token === 'master' || token === 'root') return { tag: 'master', cleanMessage };
+  if (token === 'both' || token === 'all') return { tag: 'both', cleanMessage };
+  if (token === 'auto') return { tag: 'auto', cleanMessage };
   return { tag: null, cleanMessage: trimmed };
 }
 
@@ -578,14 +586,33 @@ const VALID_INTENTS: ReadonlySet<string> = new Set([
 export async function resolveAiAgentRouteSmart(
   input: RouteResolutionInput
 ): Promise<RouteResolutionResult> {
-  const baseline = resolveAiAgentRoute(input);
   const parsedTag = extractAgentCommandTag(input.message || '');
+  const cleanMessage = parsedTag.cleanMessage || input.message.trim();
 
-  // Never override explicit @tag locks, explicit 'both' mode, or Point & Ask DOM domain locks
+  // Module-scoped AI Agent lock: when inside a specific module (Finance, HR, Projects, etc.),
+  // stay pinned to that module's dedicated AI Agent.
+  if (
+    input.moduleDomain &&
+    input.moduleDomain !== 'master' &&
+    input.moduleDomain !== 'both'
+  ) {
+    return {
+      domain: input.moduleDomain,
+      isCrossDomain: false,
+      confidence: 1,
+      reason: `Pinned to ${input.moduleDomain.toUpperCase()} module AI Agent`,
+      cleanMessage,
+    };
+  }
+
+  const baseline = resolveAiAgentRoute(input);
+
+  // Never override explicit @tag locks, explicit 'both'/'master' mode, or Point & Ask DOM domain locks
   if (
     parsedTag.tag ||
     (input.isTagLocked && input.explicitMode && input.explicitMode !== 'auto') ||
     input.explicitMode === 'both' ||
+    input.explicitMode === 'master' ||
     input.targetElement?.domain
   ) {
     return baseline;
@@ -596,7 +623,6 @@ export async function resolveAiAgentRouteSmart(
     return baseline;
   }
 
-  const cleanMessage = parsedTag.cleanMessage || input.message.trim();
   const recentHistory = (input.history || [])
     .slice(-4)
     .map((m) => `${m.role === 'assistant' ? 'Assistant' : 'User'}: ${String(m.content || '').slice(0, 220)}`)

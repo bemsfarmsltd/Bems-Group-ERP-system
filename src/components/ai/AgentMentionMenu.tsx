@@ -1,10 +1,10 @@
 'use client';
 
 import React from 'react';
-import { ChevronRight, Sparkles, Zap, Users, Compass } from 'lucide-react';
+import { ChevronRight, Sparkles, Zap, Users, Compass, FolderKanban, ShieldCheck, Truck, Video, Code2 } from 'lucide-react';
 
 export interface AgentOption {
-  id: 'both' | 'financial' | 'hr' | 'auto';
+  id: 'both' | 'financial' | 'hr' | 'projects' | 'operations' | 'media' | 'innovation' | 'master' | 'auto';
   tag: string;
   label: string;
   description: string;
@@ -48,6 +48,51 @@ export function AgentMentionMenu({
       icon: <Users size={16} color="#059669" />,
       color: '#059669',
       bgLight: '#ecfdf5',
+    },
+    {
+      id: 'projects',
+      tag: `${prefix}projects`,
+      label: 'Projects & Delivery Manager',
+      description: 'Portfolios, OKRs, sprints, work items, risks & milestones',
+      icon: <FolderKanban size={16} color="#0284c7" />,
+      color: '#0284c7',
+      bgLight: '#f0f9ff',
+    },
+    {
+      id: 'master',
+      tag: `${prefix}master`,
+      label: 'Control Center Root AI',
+      description: 'Cross-module group governance, AI policy & system routing',
+      icon: <ShieldCheck size={16} color="#ea580c" />,
+      color: '#ea580c',
+      bgLight: '#fff7ed',
+    },
+    {
+      id: 'operations',
+      tag: `${prefix}operations`,
+      label: 'Operations & Logistics',
+      description: 'Field coordination, fleet & facility operations',
+      icon: <Truck size={16} color="#059669" />,
+      color: '#059669',
+      bgLight: '#ecfdf5',
+    },
+    {
+      id: 'media',
+      tag: `${prefix}media`,
+      label: 'Media & Production',
+      description: 'Studio assets, production schedules & deliverables',
+      icon: <Video size={16} color="#db2777" />,
+      color: '#db2777',
+      bgLight: '#fdf2f8',
+    },
+    {
+      id: 'innovation',
+      tag: `${prefix}innovation`,
+      label: 'Innovation & Engineering',
+      description: 'Software platforms, R&D & technical roadmaps',
+      icon: <Code2 size={16} color="#0891b2" />,
+      color: '#0891b2',
+      bgLight: '#ecfeff',
     },
     {
       id: 'both',

@@ -1,4 +1,12 @@
 import { canAccessEmployeePortal } from '@/lib/portal-access';
+import {
+  type AdminModuleKey,
+  type CustomAdminPermissionsMap,
+  hasActionPermission,
+  hasCategoryAccess,
+  hasModuleAccess,
+  parsePermissionsJson,
+} from '@/lib/admin-permissions';
 import { createHash, randomBytes, scrypt as nodeScrypt, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import { cookies, headers } from 'next/headers';
@@ -17,7 +25,30 @@ export type AuthenticatedEmployee = {
   phone: string | null;
   role: string;
   avatarUrl: string | null;
+  customAdminProfileId?: string | null;
+  customAdminTitle?: string | null;
+  customAdminPermissions?: CustomAdminPermissionsMap | null;
 };
+
+function buildAuthenticatedEmployee(employee: any): AuthenticatedEmployee {
+  const isGmd = String(employee.role || '').toUpperCase() === 'GMD';
+  const permissions =
+    !isGmd && employee.customAdminProfile?.permissionsJson
+      ? parsePermissionsJson(employee.customAdminProfile.permissionsJson)
+      : null;
+  return {
+    id: employee.id,
+    employeeNumber: employee.employeeNumber,
+    legalName: employee.legalName,
+    workEmail: employee.workEmail,
+    phone: employee.phone,
+    role: employee.role,
+    avatarUrl: employee.avatarUrl,
+    customAdminProfileId: isGmd ? null : employee.customAdminProfileId || null,
+    customAdminTitle: isGmd ? null : employee.customAdminTitle || employee.customAdminProfile?.name || null,
+    customAdminPermissions: permissions,
+  };
+}
 
 export function hashToken(token: string) {
   return createHash('sha256').update(token).digest('hex');
@@ -54,9 +85,21 @@ export async function createEmployeeSession(employeeId: string) {
   return { token, expiresAt };
 }
 
-// Sessions are checked against the database on every authenticated request so
-// suspension, expiry and password resets take effect across all workers.
-export function invalidateSessionCache(_token?: string) {}
+const SESSION_CACHE_TTL_MS = 15_000;
+const globalForAuthCache = globalThis as unknown as {
+  bemsSessionCache?: Map<string, { emp: AuthenticatedEmployee; exp: number }>;
+};
+const SESSION_CACHE =
+  globalForAuthCache.bemsSessionCache ??
+  (globalForAuthCache.bemsSessionCache = new Map<string, { emp: AuthenticatedEmployee; exp: number }>());
+
+export function invalidateSessionCache(token?: string) {
+  if (!token) {
+    SESSION_CACHE.clear();
+    return;
+  }
+  SESSION_CACHE.delete(hashToken(token));
+}
 
 export async function getAuthenticatedEmployee(
   req?: Request,
@@ -113,21 +156,12 @@ export async function getAuthenticatedEmployee(
 
     const session = await prisma.authSession.findUnique({
       where: { tokenHash: tHash },
-      include: { employee: true },
+      include: { employee: { include: { customAdminProfile: true } } },
     });
     if (session && session.expiresAt > new Date()) {
       const employee = session.employee;
       if (canAccessEmployeePortal(employee)) {
-        const authEmp: AuthenticatedEmployee = {
-          id: employee.id,
-          employeeNumber: employee.employeeNumber,
-          legalName: employee.legalName,
-          workEmail: employee.workEmail,
-          phone: employee.phone,
-          role: employee.role,
-          avatarUrl: employee.avatarUrl,
-        };
-        return authEmp;
+        return buildAuthenticatedEmployee(employee);
       }
     }
   }
@@ -145,12 +179,16 @@ export async function getAuthenticatedEmployee(
   if (cookieToken) {
     try {
       const tHash = hashToken(cookieToken);
+      const cached = SESSION_CACHE.get(tHash);
+      if (cached && cached.exp > Date.now()) {
+        return cached.emp;
+      }
 
       let session = null;
       try {
         session = await prisma.authSession.findUnique({
           where: { tokenHash: tHash },
-          include: { employee: true },
+          include: { employee: { include: { customAdminProfile: true } } },
         });
       } catch (poolErr) {
         // Retry once after 120ms on transient connection pool spike
@@ -158,7 +196,7 @@ export async function getAuthenticatedEmployee(
         try {
           session = await prisma.authSession.findUnique({
             where: { tokenHash: tHash },
-            include: { employee: true },
+            include: { employee: { include: { customAdminProfile: true } } },
           });
         } catch {
           session = null;
@@ -167,16 +205,9 @@ export async function getAuthenticatedEmployee(
       if (session && session.expiresAt > new Date()) {
         const employee = session.employee;
         if (canAccessEmployeePortal(employee)) {
-          const authEmp: AuthenticatedEmployee = {
-            id: employee.id,
-            employeeNumber: employee.employeeNumber,
-            legalName: employee.legalName,
-            workEmail: employee.workEmail,
-            phone: employee.phone,
-            role: employee.role,
-            avatarUrl: employee.avatarUrl,
-          };
-            return authEmp;
+          const authEmp = buildAuthenticatedEmployee(employee);
+          SESSION_CACHE.set(tHash, { emp: authEmp, exp: Date.now() + SESSION_CACHE_TTL_MS });
+          return authEmp;
         }
       }
     } catch (err) {
@@ -219,6 +250,9 @@ export function publicEmployee(employee: AuthenticatedEmployee) {
     role: employee.role,
     avatarUrl: employee.avatarUrl || '',
     emailVerified: true,
+    customAdminProfileId: employee.customAdminProfileId || null,
+    customAdminTitle: employee.customAdminTitle || null,
+    customAdminPermissions: employee.customAdminPermissions || null,
   };
 }
 
@@ -392,6 +426,32 @@ export async function isHrAuthorizedEmployee(
   if (!scope.authorized) return false;
   if (scope.isGlobal || !targetSubsidiaryId) return true;
   return scope.subsidiaryIds.includes(targetSubsidiaryId);
+}
+
+/**
+ * Checks whether an authenticated employee's role and optional CustomAdminProfile
+ * permit access to a module, left-bar category, and/or specific in-page action.
+ */
+export function hasEmployeePermission(
+  employee: AuthenticatedEmployee | null | undefined,
+  moduleKey: AdminModuleKey,
+  categoryKey?: string,
+  actionKey?: string
+): boolean {
+  if (!employee) return false;
+  if (actionKey && categoryKey) {
+    return hasActionPermission(
+      employee.role,
+      employee.customAdminPermissions,
+      moduleKey,
+      categoryKey,
+      actionKey
+    );
+  }
+  if (categoryKey) {
+    return hasCategoryAccess(employee.role, employee.customAdminPermissions, moduleKey, categoryKey);
+  }
+  return hasModuleAccess(employee.role, employee.customAdminPermissions, moduleKey);
 }
 
 

@@ -176,9 +176,8 @@ export function ConnectAppShell({ children, initialRole, initialSubId }: { child
       label: 'EXECUTIVE',
       items: [
         ['Finance Overview', '/finance', '⌂'],
-        ['Subsidiary portfolio', '/finance?tab=Subsidiary+portfolio', '▦'],
         ['Executive briefing', '/briefing', '✦'],
-        ['Mobile apps preview', '/mobile', '📱'],
+        ['Control Center', '/control-center', '🛡️'],
       ]
     },
     {
@@ -195,12 +194,9 @@ export function ConnectAppShell({ children, initialRole, initialSubId }: { child
       ]
     },
     {
-      label: 'PEOPLE & REPORTS',
+      label: 'PEOPLE',
       items: [
         ['Staff profiles', '/finance?tab=Staff+profiles', '👥'],
-        ['Admin onboarding', '/finance?tab=Admin+onboarding', '🛡️'],
-        ['Audit logs', '/audit', '≡'],
-        ['Settings', '/finance?tab=Settings', '⚙'],
       ]
     },
   ];
@@ -210,9 +206,8 @@ export function ConnectAppShell({ children, initialRole, initialSubId }: { child
       label: 'EXECUTIVE',
       items: [
         ['Finance Overview', '/finance', '⌂'],
-        ['Subsidiary portfolio', '/finance?tab=Subsidiary+portfolio', '▦'],
         ['Executive briefing', '/briefing', '✦'],
-        ['Mobile apps preview', '/mobile', '📱'],
+        ['Control Center', '/control-center', '🛡️'],
       ]
     },
     {
@@ -229,12 +224,9 @@ export function ConnectAppShell({ children, initialRole, initialSubId }: { child
       ]
     },
     {
-      label: 'ADMINISTRATION & PEOPLE',
+      label: 'PEOPLE',
       items: [
         ['Staff profiles', '/finance?tab=Staff+profiles', '👥'],
-        ['Admin onboarding', '/finance?tab=Admin+onboarding', '🛡️'],
-        ['Audit logs', '/audit', '≡'],
-        ['Settings', '/finance?tab=Settings', '⚙'],
       ]
     },
   ];

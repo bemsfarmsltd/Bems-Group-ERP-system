@@ -68,14 +68,17 @@ export async function POST(request: Request) {
       );
     }
 
-    // 2. Prevent duplicate account creation
+    // 2. Check if an existing staff account is being elevated via their same email
     const existing = await prisma.employee.findUnique({
       where: { workEmail: invitation.workEmail },
-      select: { id: true },
+      select: { id: true, role: true },
     });
 
-    if (existing) {
-      return NextResponse.json({ error: `An account already exists for ${invitation.workEmail}.` }, { status: 409 });
+    if (existing && existing.role === 'GMD' && invitation.role !== 'GMD') {
+      return NextResponse.json(
+        { error: `An active GMD account already exists for ${invitation.workEmail}.` },
+        { status: 409 }
+      );
     }
 
     // 3. Single GMD enforcement
@@ -111,36 +114,61 @@ export async function POST(request: Request) {
         }
       }
 
-      const created = await tx.employee.create({
-        data: {
-          employeeNumber,
-          legalName,
-          workEmail: invitation.workEmail,
-          phone,
-          role: invitation.role,
-          status: 'ACTIVE',
-          approvalStatus: 'APPROVED',
-          passwordHash,
-          jobTitle: invitation.positionName || invitation.role,
-          bankName,
-          accountNumber,
-          accountName: accountName || legalName,
-          residentialAddress,
-          cityState,
-          gender,
-        },
-      });
+      const created = existing
+        ? await tx.employee.update({
+            where: { id: existing.id },
+            data: {
+              legalName: legalName || undefined,
+              phone: phone || undefined,
+              role: invitation.role,
+              status: 'ACTIVE',
+              approvalStatus: 'APPROVED',
+              passwordHash,
+              jobTitle: invitation.positionName || invitation.customAdminTitle || invitation.role,
+              customAdminProfileId: invitation.customAdminProfileId || null,
+              customAdminTitle: invitation.customAdminTitle || null,
+              ...(bankName ? { bankName } : {}),
+              ...(accountNumber ? { accountNumber } : {}),
+              ...(accountName ? { accountName } : {}),
+              ...(residentialAddress ? { residentialAddress } : {}),
+              ...(cityState ? { cityState } : {}),
+              ...(gender ? { gender } : {}),
+            },
+          })
+        : await tx.employee.create({
+            data: {
+              employeeNumber,
+              legalName,
+              workEmail: invitation.workEmail,
+              phone,
+              role: invitation.role,
+              status: 'ACTIVE',
+              approvalStatus: 'APPROVED',
+              passwordHash,
+              jobTitle: invitation.positionName || invitation.customAdminTitle || invitation.role,
+              customAdminProfileId: invitation.customAdminProfileId || null,
+              customAdminTitle: invitation.customAdminTitle || null,
+              bankName,
+              accountNumber,
+              accountName: accountName || legalName,
+              residentialAddress,
+              cityState,
+              gender,
+            },
+          });
 
-      await tx.employeeAssignment.create({
-        data: {
-          employeeId: created.id,
-          subsidiaryId: invitation.subsidiaryId,
-          departmentId: invitation.departmentId || null,
-          positionName: invitation.positionName || invitation.role,
-          isPrimary: true,
-          status: 'ACTIVE',
-        },
-      });
+      if (!existing) {
+        await tx.employeeAssignment.create({
+          data: {
+            employeeId: created.id,
+            subsidiaryId: invitation.subsidiaryId,
+            departmentId: invitation.departmentId || null,
+            positionName: invitation.positionName || invitation.role,
+            isPrimary: true,
+            status: 'ACTIVE',
+          },
+        });
+      }
 
       await tx.auditEvent.create({
         data: {

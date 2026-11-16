@@ -53,8 +53,8 @@ interface Props {
   onConfirmAction?: (messageId: string, actionType: string, payload: any) => void;
   onCancelAction?: (messageId: string, stagedActionId: string) => void;
   onNewChat?: () => void;
-  agentMode?: 'financial' | 'hr' | 'both' | 'auto';
-  onSetAgentMode?: (mode: 'financial' | 'hr' | 'both' | 'auto') => void;
+  agentMode?: 'financial' | 'hr' | 'projects' | 'operations' | 'media' | 'innovation' | 'master' | 'both' | 'auto';
+  onSetAgentMode?: (mode: 'financial' | 'hr' | 'projects' | 'operations' | 'media' | 'innovation' | 'master' | 'both' | 'auto') => void;
 }
 
 export function AiFinancialManagerDrawer({

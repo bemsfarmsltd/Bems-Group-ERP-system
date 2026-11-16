@@ -36,8 +36,8 @@ interface Props {
   onOpenHistory?: () => void;
   onOpenFullCockpit: (initialPrompt?: string) => void;
   onNavigate?: (tab: string) => void;
-  agentMode?: 'financial' | 'hr' | 'both' | 'auto';
-  onSetAgentMode?: (mode: 'financial' | 'hr' | 'both' | 'auto') => void;
+  agentMode?: AgentOption['id'];
+  onSetAgentMode?: (mode: AgentOption['id']) => void;
 }
 
 export function AmbientBottomAiBar({
@@ -211,8 +211,12 @@ export function AmbientBottomAiBar({
     }
   }, [messages, isTyping, isDeckOpen]);
 
-  // Mention menu detection for @agent or /agent
-  const mentionMatch = !isMenuDismissed ? inputText.match(/(?:^|\s)([@/])([a-zA-Z]*)$/) : null;
+  // Mention menu detection for @agent or /agent (Control Center Root AI only)
+  const allowAgentMention = String(currentPage || '').startsWith('Control Center');
+  const mentionMatch =
+    allowAgentMention && !isMenuDismissed
+      ? inputText.match(/(?:^|\s)([@/])([a-zA-Z]*)$/)
+      : null;
   const isMentionActive = Boolean(mentionMatch);
   const mentionPrefix = (mentionMatch?.[1] || '@') as '@' | '/';
   const mentionFilter = mentionMatch?.[2] || '';
@@ -878,9 +882,9 @@ export function AmbientBottomAiBar({
           padding: isOrbitActive ? '2.5px' : '1px',
           overflow: 'hidden',
           boxShadow: isOrbitActive
-            ? '0 12px 36px rgba(15, 23, 42, 0.14), 0 0 28px var(--brand-shadow-color, rgba(13, 138, 112, 0.38)), 0 0 10px var(--brand-primary, #0d8a70)'
-            : '0 8px 24px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04)',
-          border: isOrbitActive ? 'none' : '1px solid rgba(226, 232, 240, 0.85)',
+            ? '0 12px 36px rgba(15, 23, 42, 0.14), 0 0 28px var(--brand-shadow-color, rgba(234, 88, 12, 0.42)), 0 0 10px var(--brand-primary, #ea580c)'
+            : '0 10px 28px rgba(15, 23, 42, 0.10), 0 0 20px var(--brand-shadow-color, rgba(234, 88, 12, 0.30)), 0 0 6px var(--brand-primary, #ea580c)',
+          border: isOrbitActive ? 'none' : '1.5px solid var(--brand-primary, #ea580c)',
           animation: isOrbitActive ? 'bemiAttentionPulse 3.5s ease-in-out infinite' : 'none',
           transition: 'all 0.8s ease',
           pointerEvents: 'auto',

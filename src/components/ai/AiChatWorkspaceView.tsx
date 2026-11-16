@@ -248,7 +248,7 @@ export function AiChatWorkspaceView({
     if ((!inputText.trim() && pendingAttachments.length === 0) || isTyping || !isChatEnabled) return;
     
     let textToSend = inputText.trim();
-    let explicitOverride: 'financial' | 'hr' | 'both' | 'auto' | undefined = undefined;
+    let explicitOverride: AgentOption['id'] | undefined = undefined;
     const tagMatch = textToSend.match(/^[@/](finance|financial|hr|people|both|all|auto)\b\s*/i);
     if (tagMatch) {
       const token = tagMatch[1].toLowerCase();

@@ -189,6 +189,18 @@ export async function authenticateAiToolRequest(
       };
     }
 
+    if (scopeKey) {
+      const scopeToVerify: AiAccessScopeKey =
+        mode === 'write' && !options?.scope && MULTI_WRITE_SCOPE_PATHS.has(cleanPath)
+          ? 'master'
+          : scopeKey;
+      const accountBlocked = await checkAiScopeOrResponse(scopeToVerify, mode, undefined, {
+        id: employee.id,
+        role: employee.role,
+      });
+      if (accountBlocked) return { actor: null, errorResponse: accountBlocked };
+    }
+
     return {
       actor: {
         id: employee.id,
@@ -230,7 +242,17 @@ export async function authenticateAiToolRequest(
     };
   }
 
-  if(!hasGmdFeatureAccess(standardUser.role))return {actor:null,errorResponse:NextResponse.json({error_code:'GMD_AI_ONLY',message:'AI access requires GMD or an authorized Super Admin.'},{status:403})};
+  if (scopeKey) {
+    const scopeToVerify: AiAccessScopeKey =
+      mode === 'write' && !options?.scope && MULTI_WRITE_SCOPE_PATHS.has(cleanPath)
+        ? 'master'
+        : scopeKey;
+    const accountBlocked = await checkAiScopeOrResponse(scopeToVerify, mode, undefined, {
+      id: standardUser.id,
+      role: standardUser.role,
+    });
+    if (accountBlocked) return { actor: null, errorResponse: accountBlocked };
+  }
   const canonicalRole = normalizeCanonicalRole(standardUser.role) || 'STAFF';
   const isExecutive = hasAnyRole(standardUser, ['GMD', 'SYSTEM_ADMIN', 'SUPER_ADMIN']);
 

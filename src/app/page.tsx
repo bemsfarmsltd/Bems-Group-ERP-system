@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { UnifiedAuthScreen } from '@/components/auth/UnifiedAuthScreen';
 import { EnterpriseModulesScreen, type EnterpriseUserSummary } from '@/components/dashboard/EnterpriseModulesScreen';
 import { AiMotionEntryScreen } from '@/components/ai/AiMotionEntryScreen';
+import { KineticOptikkaTorus } from '@/components/ai/KineticOptikkaTorus';
 
 export default function RootPage() {
   const [authStatus, setAuthStatus] = useState<'checking' | 'authenticated' | 'unauthenticated'>('checking');
@@ -24,6 +25,9 @@ export default function RootPage() {
             workEmail: data.user.workEmail || data.user.email || '',
             employeeNumber: data.user.employeeNumber,
             subsidiaryName: data.user.subsidiary?.legalName || data.user.subsidiaryName || 'BEMS Group',
+            customAdminProfileId: data.user.customAdminProfileId || null,
+            customAdminTitle: data.user.customAdminTitle || null,
+            customAdminPermissions: data.user.customAdminPermissions || null,
           });
           setAuthStatus('authenticated');
           try {
@@ -52,36 +56,13 @@ export default function RootPage() {
         style={{
           minHeight: '100vh',
           display: 'flex',
-          flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
-          background: '#f8fafc',
-          gap: '14px',
-          fontFamily: "'Outfit', 'Plus Jakarta Sans', system-ui, sans-serif",
+          background: '#f5f2eb',
+          overflow: 'hidden',
         }}
       >
-        <div
-          style={{
-            width: '44px',
-            height: '44px',
-            borderRadius: '12px',
-            background: '#ffffff',
-            border: '1px solid #fed7aa',
-            display: 'grid',
-            placeItems: 'center',
-            padding: '4px',
-            boxShadow: '0 2px 8px rgba(234, 88, 12, 0.08)',
-          }}
-        >
-          <img
-            src="/bems-group-logo.png?v=20261024"
-            alt="BEMS logo"
-            style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-          />
-        </div>
-        <div style={{ fontSize: '13px', fontWeight: 700, color: '#64748b' }}>
-          Loading BEMS Enterprise Suite...
-        </div>
+        <KineticOptikkaTorus size={460} brandColor="#ea580c" />
       </div>
     );
   }

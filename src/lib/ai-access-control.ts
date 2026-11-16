@@ -208,15 +208,123 @@ export async function assertAiScopeAllowed(
   }
 }
 
+export interface AccountAiPolicy {
+  aiEnabled: boolean;
+  masterRead: boolean;
+  masterWrite: boolean;
+  scopes: Record<string, boolean>;
+}
+
+const AI_POLICY_CACHE_TTL_MS = 15_000;
+const globalForAiPolicyCache = globalThis as unknown as {
+  bemsAiPolicyCache?: { data: Record<string, Partial<AccountAiPolicy>>; exp: number };
+};
+
+export function invalidateAiPolicyCache() {
+  globalForAiPolicyCache.bemsAiPolicyCache = undefined;
+}
+
+/**
+ * Loads the 2-layer per-account AI policy from `WorkspaceSetting` (`ai_access_control_v2`).
+ * Layer 1: `aiEnabled` (GMD defaults to true, non-GMD defaults to false unless explicitly activated).
+ * Layer 2: `masterRead`, `masterWrite`, and per-scope `<scope>.read` / `<scope>.write`.
+ */
+export async function getAccountAiPolicy(
+  employeeId: string,
+  role: string
+): Promise<AccountAiPolicy> {
+  const isGmd = String(role || '').toUpperCase() === 'GMD';
+  const defaultScopes: Record<string, boolean> = {};
+  for (const s of AI_ACCESS_SCOPES) {
+    defaultScopes[`${s.key}.read`] = isGmd;
+    defaultScopes[`${s.key}.write`] = isGmd;
+  }
+  const fallback: AccountAiPolicy = {
+    aiEnabled: isGmd,
+    masterRead: isGmd,
+    masterWrite: isGmd,
+    scopes: defaultScopes,
+  };
+  try {
+    let parsed: Record<string, Partial<AccountAiPolicy>> | null = null;
+    const cached = globalForAiPolicyCache.bemsAiPolicyCache;
+    if (cached && cached.exp > Date.now()) {
+      parsed = cached.data;
+    } else {
+      const rootOrg = await prisma.organization.findFirst({
+        orderBy: { createdAt: 'asc' },
+        select: { id: true },
+      });
+      if (!rootOrg) return fallback;
+      const setting = await prisma.workspaceSetting.findUnique({
+        where: { organizationId_key: { organizationId: rootOrg.id, key: 'ai_access_control_v2' } },
+      });
+      if (!setting?.value) return fallback;
+      parsed = JSON.parse(setting.value) as Record<string, Partial<AccountAiPolicy>>;
+      globalForAiPolicyCache.bemsAiPolicyCache = {
+        data: parsed,
+        exp: Date.now() + AI_POLICY_CACHE_TTL_MS,
+      };
+    }
+    const stored = parsed?.[employeeId];
+    if (!stored) return fallback;
+    const mergedScopes = { ...defaultScopes, ...(stored.scopes || {}) };
+    const anyScopeTrue = Object.values(mergedScopes).some(Boolean);
+    const aiEnabled = Boolean(stored.aiEnabled);
+    // If Layer 1 was activated without any read scope yet, permit basic chat context read
+    const masterRead =
+      aiEnabled && stored.masterRead === false && !anyScopeTrue ? true : stored.masterRead !== false;
+    if (aiEnabled && !anyScopeTrue) {
+      mergedScopes['context.read'] = true;
+    }
+    return {
+      aiEnabled,
+      masterRead,
+      masterWrite: stored.masterWrite !== false,
+      scopes: mergedScopes,
+    };
+  } catch {
+    return fallback;
+  }
+}
+
 /**
  * Checks whether an AI scope is enabled for `mode` ('read' | 'write').
- * Returns a 403 `NextResponse` if disabled by Admin in Settings, or `null` if allowed.
+ * Returns a 403 `NextResponse` if disabled by Admin in Settings or per-account 2-Layer AI Control, or `null` if allowed.
  */
 export async function checkAiScopeOrResponse(
   scopeKey: AiAccessScopeKey,
   mode: 'read' | 'write',
-  organizationId?: string
+  organizationId?: string,
+  actor?: { id: string; role: string } | null
 ): Promise<NextResponse | null> {
+  if (actor?.id) {
+    const policy = await getAccountAiPolicy(actor.id, actor.role);
+    if (!policy.aiEnabled) {
+      const message = 'AI access is disabled for your account under Control Center → AI Access Control.';
+      return NextResponse.json(
+        { ok: false, error_code: 'AI_ACCOUNT_DISABLED', scope: scopeKey, mode, error: message, message },
+        { status: 403 }
+      );
+    }
+    const def = AI_ACCESS_SCOPES.find((s) => s.key === scopeKey);
+    const label = def?.label || scopeKey;
+    if ((mode === 'read' && !policy.masterRead) || (mode === 'write' && !policy.masterWrite)) {
+      const message = `AI ${mode.toUpperCase()} access is turned OFF for your account under Control Center → AI Access Control.`;
+      return NextResponse.json(
+        { ok: false, error_code: 'AI_ACCESS_DISABLED', scope: scopeKey, mode, error: message, message },
+        { status: 403 }
+      );
+    }
+    if (scopeKey !== ('master' as AiAccessScopeKey) && policy.scopes[`${scopeKey}.${mode}`] === false) {
+      const message = `AI ${mode.toUpperCase()} access for "${label}" is disabled for your account under Control Center → AI Access Control.`;
+      return NextResponse.json(
+        { ok: false, error_code: 'AI_ACCESS_DISABLED', scope: scopeKey, mode, error: message, message },
+        { status: 403 }
+      );
+    }
+  }
+
   const matrix = await getAiAccessMatrix(organizationId);
   if (!isAiAccessAllowed(matrix, scopeKey, mode)) {
     const def = AI_ACCESS_SCOPES.find((s) => s.key === scopeKey);

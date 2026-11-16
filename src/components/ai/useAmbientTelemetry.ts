@@ -218,12 +218,32 @@ const DEFAULT_ITEM: TelemetryItem = {
 
 const DEFAULT_HR_ITEM: TelemetryItem = {
   id: 'def-hr-1',
-  badge: 'BEMi HR MANAGER',
+  badge: 'AI HR MANAGER',
   topic: 'WORKFORCE MONITOR',
   fullText: 'Autonomous HR & Workforce intelligence active for {businessName}. Monitoring staff directory, attendance, leave, and lifecycle governance.',
   severity: 'info',
   actionLabel: 'HR Briefing ➔',
   actionPrompt: 'Give me an executive HR & workforce briefing for {businessName}.',
+};
+
+const DEFAULT_PROJECTS_ITEM: TelemetryItem = {
+  id: 'def-proj-1',
+  badge: 'AI PROJECTS MANAGER',
+  topic: 'DELIVERY MONITOR',
+  fullText: 'Project delivery intelligence active for {businessName}. Monitoring portfolios, OKRs, sprints, milestones, and schedule risks.',
+  severity: 'info',
+  actionLabel: 'Projects Briefing ➔',
+  actionPrompt: 'Summarize active projects, milestones, and schedule risks for {businessName}.',
+};
+
+const DEFAULT_CONTROL_ITEM: TelemetryItem = {
+  id: 'def-ctrl-1',
+  badge: 'BEMS ROOT AI',
+  topic: 'ENTERPRISE GOVERNANCE',
+  fullText: 'Control Center Root AI active. Route across Finance, HR, Projects, Operations, and group governance.',
+  severity: 'highlight',
+  actionLabel: 'Open Root Copilot ➔',
+  actionPrompt: 'Give me a cross-module status overview across BEMS Group.',
 };
 
 export function useAmbientTelemetry({
@@ -238,7 +258,13 @@ export function useAmbientTelemetry({
   const [isTyping, setIsTyping] = useState(false);
   const [overrideItem, setOverrideItem] = useState<TelemetryItem | null>(null);
 
-  const fallbackItem = currentPage.startsWith('HR') ? DEFAULT_HR_ITEM : DEFAULT_ITEM;
+  const fallbackItem = currentPage.startsWith('HR')
+    ? DEFAULT_HR_ITEM
+    : currentPage.startsWith('Projects')
+    ? DEFAULT_PROJECTS_ITEM
+    : currentPage.startsWith('Control Center')
+    ? DEFAULT_CONTROL_ITEM
+    : DEFAULT_ITEM;
   const items = PAGE_TELEMETRY[currentPage] || [fallbackItem];
   const activeItem = overrideItem || items[activeItemIndex % items.length] || fallbackItem;
 

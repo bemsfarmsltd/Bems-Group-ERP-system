@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getAuthenticatedEmployee, getHrAuthorizationScope } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { getServerCache, setServerCache } from '@/lib/server-cache';
 
 export async function GET(req: Request) {
   try {
@@ -16,6 +17,11 @@ export async function GET(req: Request) {
 
     const { searchParams } = new URL(req.url);
     const requestedSubId = searchParams.get('subsidiaryId') || '';
+    const cacheKey = `hr-overview:${actor.id}:${requestedSubId}`;
+    const cached = getServerCache<any>(cacheKey);
+    if (cached) {
+      return NextResponse.json(cached);
+    }
 
     // Today in Africa/Lagos
     const now = new Date();
@@ -320,13 +326,14 @@ export async function GET(req: Request) {
       .map((g) => ({ type: g.leaveType, count: g._count._all }))
       .sort((a, b) => b.count - a.count);
 
-    return NextResponse.json({
+    const payload = {
       success: true,
       todayStr,
       actor: {
         id: actor.id,
         legalName: actor.legalName,
         role: actor.role,
+        customAdminPermissions: actor.customAdminPermissions || null,
       },
       metrics: {
         totalStaff,
@@ -383,7 +390,9 @@ export async function GET(req: Request) {
         brandColor: sub.brandColor,
         staffCount: sub._count.employeeAssignments,
       })),
-    });
+    };
+    setServerCache(cacheKey, payload, 12_000);
+    return NextResponse.json(payload);
   } catch (error) {
     console.error('HR Overview API Error:', error);
     return NextResponse.json({ error: 'Failed to load HR overview data' }, { status: 500 });

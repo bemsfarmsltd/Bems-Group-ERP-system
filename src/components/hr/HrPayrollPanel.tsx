@@ -132,7 +132,7 @@ export default function HrPayrollPanel({
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', borderBottom: '1px solid #e2e8f0', paddingBottom: '0px' }}>
         <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
           {[
-            { id: 'ENGINE', label: 'Hybrid Payroll Engine & Sign-off' },
+            { id: 'ENGINE', label: 'Payroll Preparation & Run' },
             { id: 'DEDUCTIONS', label: `Deductions & Adjustments (${deductions.length})` },
             { id: 'LOANS', label: `Loans & Advances (${loans.length})` },
           ].map((t) => {
@@ -276,6 +276,7 @@ export default function HrPayrollPanel({
         <div style={{ width: '100%' }}>
           <TreasuryFinanceHubView
             initialTab="payroll"
+            payrollMode="hr"
             businessName={businessName}
             userName={userName}
             businessId={selectedSubsidiaryId || undefined}

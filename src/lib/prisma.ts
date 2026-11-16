@@ -10,9 +10,16 @@ let connectionUrl = process.env.DATABASE_URL || "";
 if (connectionUrl && connectionUrl.includes("supabase.co:5432")) {
   connectionUrl = connectionUrl.replace(":5432", ":6543");
 }
-if (connectionUrl && connectionUrl.includes("supabase.co:6543") && !connectionUrl.includes("pgbouncer=true")) {
+if (
+  connectionUrl &&
+  (connectionUrl.includes(":6543") || connectionUrl.includes("pooler.supabase.com")) &&
+  !connectionUrl.includes("pgbouncer=true")
+) {
   const separator = connectionUrl.includes("?") ? "&" : "?";
-  connectionUrl += `${separator}pgbouncer=true&connection_limit=15&pool_timeout=30`;
+  connectionUrl += `${separator}pgbouncer=true&connection_limit=20&pool_timeout=30`;
+} else if (connectionUrl && !connectionUrl.includes("connection_limit=")) {
+  const separator = connectionUrl.includes("?") ? "&" : "?";
+  connectionUrl += `${separator}connection_limit=20&pool_timeout=30`;
 }
 
 export const prisma =

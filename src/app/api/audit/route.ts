@@ -131,14 +131,47 @@ export async function GET(request: Request) {
 
     const whereClause = scopeIds ? { subsidiaryId: { in: scopeIds } } : {};
 
-    const auditLogs = await prisma.auditEvent.findMany({
-      where: whereClause,
-      take: limit,
-      orderBy: { createdAt: 'desc' },
-    });
+    const [auditLogs, projectLogs] = await Promise.all([
+      prisma.auditEvent.findMany({
+        where: whereClause,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+      }),
+      !scopeIds
+        ? prisma.projectActivityLog.findMany({
+            take: Math.min(100, limit),
+            orderBy: { createdAt: 'desc' },
+            include: {
+              actor: { select: { legalName: true, role: true } },
+            },
+          })
+        : Promise.resolve([]),
+    ]);
+
+    const normalizedProjectLogs = projectLogs.map((p) => ({
+      id: `proj_${p.id}`,
+      actorId: p.actorId,
+      actorName: p.actor?.legalName || 'System',
+      actorRole: p.actor?.role || 'STAFF',
+      targetType: p.workItemId ? 'WORK_ITEM' : 'PROJECT',
+      targetId: p.workItemId || p.projectId || p.id,
+      action: `PROJECT_${p.action}`,
+      metadata: JSON.stringify({
+        projectId: p.projectId,
+        workItemId: p.workItemId,
+        field: p.field,
+        oldValue: p.oldValue,
+        newValue: p.newValue,
+      }),
+      createdAt: p.createdAt,
+    }));
+
+    const combinedLogs = [...auditLogs, ...normalizedProjectLogs]
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .slice(0, limit);
 
     const safeLogs = JSON.parse(
-      JSON.stringify(auditLogs, (_, v) => (typeof v === 'bigint' ? Number(v) : v))
+      JSON.stringify(combinedLogs, (_, v) => (typeof v === 'bigint' ? Number(v) : v))
     );
 
     return NextResponse.json(

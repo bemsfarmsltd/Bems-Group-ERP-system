@@ -4616,7 +4616,7 @@ const initialGates: Record<string, MobileGateItem> = {
   },
 };
 
-export function WorkspaceSettingsModule({ businessName, setNotice, initialSection = 'Organization' }: { businessName: string; setNotice: (message: string) => void; initialSection?: string }) {
+export function WorkspaceSettingsModule({ businessName, setNotice, initialSection = 'Organization', standalone = false }: { businessName: string; setNotice: (message: string) => void; initialSection?: string; standalone?: boolean }) {
   const [organizations,setOrganizations]=useState<OrgRecord[]>([]);const [organizationId,setOrganizationId]=useState('');const [settings,setSettings]=useState<Record<string,SettingRecord>>(defaultSettings);const [profile,setProfile]=useState({name:'',currency:'NGN',timezone:'Africa/Lagos'});
   const [section,setSection]=useState(initialSection || 'Organization');
   const [loading,setLoading]=useState(true);const [error,setError]=useState('');const [saving,setSaving]=useState(false);
@@ -4812,33 +4812,33 @@ export function WorkspaceSettingsModule({ businessName, setNotice, initialSectio
   const titles=['Organization','AI & Copilot Access','Approval controls','Notifications','Data & retention','Mobile App Settings'];
   const isMobileSection = section === 'Mobile App Settings' || section === 'Mobile App Version Control';
 
-  return <><PageHeading eyebrow="GROUP ADMINISTRATION" title="Settings" description="Manage saved company profiles, approval controls, AI copilot access, notifications, and mobile app version gates."/><section style={{...card,display:'grid',gridTemplateColumns:'220px 1fr',gap:22,minHeight:450}}><nav style={{display:'grid',alignContent:'start',gap:6}}>{titles.map(t=><button key={t} style={(section===t || (t==='Mobile App Settings' && isMobileSection))?{...primary,textAlign:'left'}:{...secondary,textAlign:'left'}} onClick={()=>setSection(t)}>{t}</button>)}</nav><div>{loading?<p>Loading settings…</p>:error?<StateMessage value={error} retry={()=>void load()}/>:<><div style={{display:'flex',justifyContent:'space-between',gap:16,alignItems:'center',flexWrap:'wrap',marginBottom:16}}><div><small style={{color:'#7788a0',fontWeight:800}}>{section.toUpperCase()}</small><h2 style={{margin:'5px 0 0',fontSize:22,color:'#0f172a'}}>{isMobileSection ? 'Mobile App Settings & Version Control' : `${section} settings`}</h2></div>{!isMobileSection&&<select style={{...input,width:'auto',minWidth:260}} value={organizationId} onChange={e=>void switchOrg(e.target.value)}>{organizations.map(o=><option value={o.id} key={o.id}>{o.name}</option>)}</select>}</div>{section==='Organization'?<div style={{display:'grid',gap:12,maxWidth:650}}><label>Legal name<input style={{...input,display:'block',marginTop:4}} value={profile.name} onChange={e=>setProfile(p=>({...p,name:e.target.value}))}/></label><label>Default currency<select style={{...input,display:'block',marginTop:4}} value={profile.currency} onChange={e=>setProfile(p=>({...p,currency:e.target.value}))}><option value="NGN">NGN — Nigerian naira</option><option value="USD">USD — US dollar</option><option value="GBP">GBP — British pound</option></select></label><label>Timezone<select style={{...input,display:'block',marginTop:4}} value={profile.timezone} onChange={e=>setProfile(p=>({...p,timezone:e.target.value}))}>{['Africa/Lagos','UTC','Europe/London','America/New_York'].map(x=><option key={x}>{x}</option>)}</select></label></div>:section==='Approval controls'?<div style={{display:'grid',gap:12}}><label style={{display:'flex',gap:10,alignItems:'center',padding:13,background:'#f7f9fc',borderRadius:9}}><input type="checkbox" checked={Boolean(current.requireDecisionReason)} onChange={()=>toggle('requireDecisionReason')}/>Require a reason for declines and clarification</label><label style={{display:'flex',gap:10,alignItems:'center',padding:13,background:'#f7f9fc',borderRadius:9}}><input type="checkbox" checked={Boolean(current.requireAssignedDisbursementOwner)} onChange={()=>toggle('requireAssignedDisbursementOwner')}/>Require the GMD to assign a payment recorder at final approval</label><p style={{color:'#70819b'}}>Duplicate receipt detection and staff salary-change notices stay enforced for financial control.</p></div>:section==='AI & Copilot Access'?<div style={{display:'grid',gap:18,maxWidth:960}}>
-      {/* Global Master Kill-Switch & Bulk Controls */}
-      <div style={{background:'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',borderRadius:12,padding:18,color:'#ffffff',display:'grid',gap:14,borderLeft:'5px solid #ea580c'}}>
+  return <>{!standalone && <PageHeading eyebrow="GROUP ADMINISTRATION" title="Settings" description="Manage saved company profiles, approval controls, AI copilot access, notifications, and mobile app version gates."/>}<section style={{...card,display:'grid',gridTemplateColumns:standalone?'1fr':'220px 1fr',gap:22,minHeight:450}}>{!standalone && <nav style={{display:'grid',alignContent:'start',gap:6}}>{titles.map(t=><button key={t} style={(section===t || (t==='Mobile App Settings' && isMobileSection))?{...primary,textAlign:'left'}:{...secondary,textAlign:'left'}} onClick={()=>setSection(t)}>{t}</button>)}</nav>}<div>{loading?<p>Loading settings…</p>:error?<StateMessage value={error} retry={()=>void load()}/>:<><div style={{display:'flex',justifyContent:'space-between',gap:16,alignItems:'center',flexWrap:'wrap',marginBottom:16}}><div><small style={{color:'#7788a0',fontWeight:800}}>{section.toUpperCase()}</small><h2 style={{margin:'5px 0 0',fontSize:22,color:'#0f172a'}}>{isMobileSection ? 'Mobile App Settings & Version Control' : `${section} settings`}</h2></div>{!isMobileSection&&<select style={{...input,width:'auto',minWidth:260}} value={organizationId} onChange={e=>void switchOrg(e.target.value)}>{organizations.map(o=><option value={o.id} key={o.id}>{o.name}</option>)}</select>}</div>{section==='Organization'?<div style={{display:'grid',gap:12,maxWidth:650}}><label>Legal name<input style={{...input,display:'block',marginTop:4}} value={profile.name} onChange={e=>setProfile(p=>({...p,name:e.target.value}))}/></label><label>Default currency<select style={{...input,display:'block',marginTop:4}} value={profile.currency} onChange={e=>setProfile(p=>({...p,currency:e.target.value}))}><option value="NGN">NGN — Nigerian naira</option><option value="USD">USD — US dollar</option><option value="GBP">GBP — British pound</option></select></label><label>Timezone<select style={{...input,display:'block',marginTop:4}} value={profile.timezone} onChange={e=>setProfile(p=>({...p,timezone:e.target.value}))}>{['Africa/Lagos','UTC','Europe/London','America/New_York'].map(x=><option key={x}>{x}</option>)}</select></label></div>:section==='Approval controls'?<div style={{display:'grid',gap:12}}><label style={{display:'flex',gap:10,alignItems:'center',padding:13,background:'#f7f9fc',borderRadius:9}}><input type="checkbox" checked={Boolean(current.requireDecisionReason)} onChange={()=>toggle('requireDecisionReason')}/>Require a reason for declines and clarification</label><label style={{display:'flex',gap:10,alignItems:'center',padding:13,background:'#f7f9fc',borderRadius:9}}><input type="checkbox" checked={Boolean(current.requireAssignedDisbursementOwner)} onChange={()=>toggle('requireAssignedDisbursementOwner')}/>Require the GMD to assign a payment recorder at final approval</label><p style={{color:'#70819b'}}>Duplicate receipt detection and staff salary-change notices stay enforced for financial control.</p></div>:section==='AI & Copilot Access'?<div style={{display:'grid',gap:18,maxWidth:960}}>
+      {/* Global Master Kill-Switch & Bulk Controls (Light Theme) */}
+      <div style={{background:'#ffffff',border:'1px solid #e2e8f0',borderRadius:12,padding:18,color:'#0f172a',display:'grid',gap:14,borderLeft:'5px solid #ea580c'}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',flexWrap:'wrap',gap:12}}>
           <div>
-            <span style={{display:'inline-block',background:'#ea580c',color:'#fff',fontSize:10.5,fontWeight:800,padding:'2px 9px',borderRadius:99,letterSpacing:'0.06em',textTransform:'uppercase',marginBottom:6}}>
+            <span style={{display:'inline-block',background:'#fff7ed',border:'1px solid #fed7aa',color:'#c2410c',fontSize:10.5,fontWeight:800,padding:'2px 9px',borderRadius:99,letterSpacing:'0.06em',textTransform:'uppercase',marginBottom:6}}>
               Granular AI Governance Matrix · 24 Scopes
             </span>
-            <h3 style={{margin:0,fontSize:16.5,color:'#ffffff'}}>BEMi Copilot &amp; n8n Automation Read / Write Access Controls</h3>
-            <p style={{margin:'4px 0 0',fontSize:12.5,color:'#cbd5e1',lineHeight:1.45}}>
+            <h3 style={{margin:0,fontSize:16.5,color:'#0f172a'}}>BEMi Copilot &amp; n8n Automation Read / Write Access Controls</h3>
+            <p style={{margin:'4px 0 0',fontSize:12.5,color:'#64748b',lineHeight:1.45}}>
               Control every single ERP capability the AI can <strong>Read (GET / Query)</strong> or <strong>Write (POST / Stage Action)</strong> individually. Even when Write is enabled, all AI writes strictly stage proposals requiring a human confirmation button click.
             </p>
           </div>
           <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
             <button type="button" onClick={()=>setBulkAiAccess('read',true)} style={{padding:'6px 11px',borderRadius:7,fontSize:11.5,fontWeight:700,background:'#059669',color:'#fff',border:'none',cursor:'pointer'}}>Enable All Read</button>
-            <button type="button" onClick={()=>setBulkAiAccess('read',false)} style={{padding:'6px 11px',borderRadius:7,fontSize:11.5,fontWeight:700,background:'#334155',color:'#e2e8f0',border:'1px solid #475569',cursor:'pointer'}}>Disable All Read</button>
+            <button type="button" onClick={()=>setBulkAiAccess('read',false)} style={{padding:'6px 11px',borderRadius:7,fontSize:11.5,fontWeight:700,background:'#f8fafc',color:'#475569',border:'1px solid #cbd5e1',cursor:'pointer'}}>Disable All Read</button>
             <button type="button" onClick={()=>setBulkAiAccess('write',true)} style={{padding:'6px 11px',borderRadius:7,fontSize:11.5,fontWeight:700,background:'#ea580c',color:'#fff',border:'none',cursor:'pointer'}}>Enable All Write</button>
-            <button type="button" onClick={()=>setBulkAiAccess('write',false)} style={{padding:'6px 11px',borderRadius:7,fontSize:11.5,fontWeight:700,background:'#334155',color:'#e2e8f0',border:'1px solid #475569',cursor:'pointer'}}>Disable All Write</button>
+            <button type="button" onClick={()=>setBulkAiAccess('write',false)} style={{padding:'6px 11px',borderRadius:7,fontSize:11.5,fontWeight:700,background:'#f8fafc',color:'#475569',border:'1px solid #cbd5e1',cursor:'pointer'}}>Disable All Write</button>
           </div>
         </div>
 
         {/* Master Switch Row */}
-        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(260px, 1fr))',gap:12,background:'rgba(255,255,255,0.06)',padding:12,borderRadius:10,border:'1px solid rgba(255,255,255,0.12)'}}>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(260px, 1fr))',gap:12,background:'#f8fafc',padding:12,borderRadius:10,border:'1px solid #e2e8f0'}}>
           <label style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:12,cursor:'pointer',padding:'6px 8px'}}>
             <div>
-              <b style={{fontSize:13,color:'#ffffff',display:'block'}}>Master AI Read Access (Global GET)</b>
-              <span style={{fontSize:11.5,color:'#94a3b8'}}>When OFF, pauses all AI read queries &amp; context across all tools</span>
+              <b style={{fontSize:13,color:'#0f172a',display:'block'}}>Master AI Read Access (Global GET)</b>
+              <span style={{fontSize:11.5,color:'#64748b'}}>When OFF, pauses all AI read queries &amp; context across all tools</span>
             </div>
             <input
               type="checkbox"
@@ -4849,8 +4849,8 @@ export function WorkspaceSettingsModule({ businessName, setNotice, initialSectio
           </label>
           <label style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:12,cursor:'pointer',padding:'6px 8px'}}>
             <div>
-              <b style={{fontSize:13,color:'#ffffff',display:'block'}}>Master AI Write Access (Global Stage POST)</b>
-              <span style={{fontSize:11.5,color:'#94a3b8'}}>When OFF, blocks the AI from staging any action across the ERP</span>
+              <b style={{fontSize:13,color:'#0f172a',display:'block'}}>Master AI Write Access (Global Stage POST)</b>
+              <span style={{fontSize:11.5,color:'#64748b'}}>When OFF, blocks the AI from staging any action across the ERP</span>
             </div>
             <input
               type="checkbox"

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getAuthenticatedEmployee } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { getServerCache, invalidateServerCache, setServerCache } from '@/lib/server-cache';
 import { getStaffNotificationPreferences, updateStaffNotificationPreferences } from '@/lib/notifications/service';
 
 export const dynamic = 'force-dynamic';
@@ -10,6 +11,13 @@ export async function GET(request: Request) {
   if (!actor) return NextResponse.json({ error: 'Sign in to view notifications.' }, { status: 401 });
 
   const { searchParams } = new URL(request.url);
+  const cacheKey = `notifications:${actor.id}:${searchParams.toString()}`;
+  const cached = getServerCache<any>(cacheKey);
+  if (cached) {
+    return NextResponse.json(cached, {
+      headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0' },
+    });
+  }
   const subsidiary = searchParams.get('subsidiary') || searchParams.get('orgId');
   const category = searchParams.get('category') || undefined;
   const priority = searchParams.get('priority') || undefined;
@@ -79,23 +87,26 @@ export async function GET(request: Request) {
 
   const totalPages = Math.ceil(totalCount / limit);
 
-  return NextResponse.json(
-    {
-      notifications,
-      unreadCount,
-      totalCount,
-      page,
-      limit,
-      totalPages,
-      preferences,
-    },
-    { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0' } }
-  );
+  const payload = {
+    notifications,
+    unreadCount,
+    totalCount,
+    page,
+    limit,
+    totalPages,
+    preferences,
+  };
+  setServerCache(cacheKey, payload, 12_000);
+
+  return NextResponse.json(payload, {
+    headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0' },
+  });
 }
 
 export async function PATCH(request: Request) {
   const actor = await getAuthenticatedEmployee(request);
   if (!actor) return NextResponse.json({ error: 'Sign in to update notifications.' }, { status: 401 });
+  invalidateServerCache(`notifications:${actor.id}:`);
   try {
     const body = await request.json();
     const notificationId = typeof body.notificationId === 'string' ? body.notificationId : '';

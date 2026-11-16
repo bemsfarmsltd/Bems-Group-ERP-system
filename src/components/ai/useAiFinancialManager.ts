@@ -11,9 +11,10 @@ interface UseAiOptions {
   businessName: string;
   businessId: string;
   currentPage: string;
+  moduleDomain?: 'financial' | 'hr' | 'projects' | 'operations' | 'media' | 'innovation' | 'master';
 }
 
-export function useAiFinancialManager({ userRole, userName, businessName, businessId, currentPage }: UseAiOptions) {
+export function useAiFinancialManager({ userRole, userName, businessName, businessId, currentPage, moduleDomain }: UseAiOptions) {
   const canUseAi=useGmdAccess(userRole);
   const isGroupScope = !businessId || businessId === 'BEMS-GROUP' || businessId === 'ALL' || businessName === 'BEMS Group';
   const scopeKey = isGroupScope ? 'group_hq' : (businessId || 'group_hq');
@@ -24,9 +25,17 @@ export function useAiFinancialManager({ userRole, userName, businessName, busine
   const storageKey = `bems_executive_chat_history_v4_${accountId}_${scopeKey}`;
   const sessionsKey = `bems_executive_chat_sessions_v4_${accountId}_${scopeKey}`;
 
-  const defaultWelcomeText = isGroupScope
-    ? `Good afternoon, ${userName ? userName.split(' ')[0] : 'Executive'}. I am your BEMS AI Group Financial Manager. I monitor real-time expenditure, approvals, cash runway, and compliance across BEMS Group.\n\nHow can I assist your financial oversight today?`
-    : `Good afternoon, ${userName ? userName.split(' ')[0] : 'Executive'}. I am your dedicated AI Financial Manager for ${businessName}. I am strictly scoped to ${businessName}'s budgets, bank accounts, staff, and requisitions.\n\nHow can I assist your financial oversight for ${businessName} today?`;
+  const firstName = userName ? userName.split(' ')[0] : 'Executive';
+  const defaultWelcomeText =
+    moduleDomain === 'master'
+      ? `Good afternoon, ${firstName}. I am the **BEMS Root AI** inside the Enterprise Control Center. I route and govern across Finance, HR, Projects, Operations, and system-wide controls.\n\nHow can I assist your enterprise governance today?`
+      : moduleDomain === 'hr'
+      ? `Good afternoon, ${firstName}. I am your **AI HR Manager** for ${businessName}. I am scoped to staff directory, attendance, leave, recruitment, performance, and HR operations.\n\nHow can I assist your HR team today?`
+      : moduleDomain === 'projects'
+      ? `Good afternoon, ${firstName}. I am your **AI Projects Manager** for ${businessName}. I am scoped to portfolios, OKRs, sprints, work items, milestones, and project risks.\n\nHow can I assist your project delivery today?`
+      : isGroupScope
+      ? `Good afternoon, ${firstName}. I am your BEMS AI Group Financial Manager. I monitor real-time expenditure, approvals, cash runway, and compliance across BEMS Group.\n\nHow can I assist your financial oversight today?`
+      : `Good afternoon, ${firstName}. I am your dedicated AI Financial Manager for ${businessName}. I am strictly scoped to ${businessName}'s budgets, bank accounts, staff, and requisitions.\n\nHow can I assist your financial oversight for ${businessName} today?`;
 
   const [messages, setMessages] = useState<AiMessage[]>(() => [
     {
@@ -42,7 +51,7 @@ export function useAiFinancialManager({ userRole, userName, businessName, busine
   const [sessions, setSessions] = useState<any[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string>('active');
   const [hydratedStorageKey, setHydratedStorageKey] = useState('');
-  const [agentMode, setAgentMode] = useState<'financial' | 'hr' | 'both' | 'auto'>('auto');
+  const [agentMode, setAgentMode] = useState<'financial' | 'hr' | 'projects' | 'operations' | 'media' | 'innovation' | 'master' | 'both' | 'auto'>('auto');
   const [threadDomain, setThreadDomain] = useState<'financial' | 'hr' | 'both' | null>(null);
 
   // Load archived sessions
@@ -320,6 +329,7 @@ export function useAiFinancialManager({ userRole, userName, businessName, busine
             })),
             context: {
               agent_mode: effectiveMode,
+              module_domain: moduleDomain || null,
               is_tag_locked: isTagLocked,
               thread_domain: effectiveMode !== 'auto' ? effectiveMode : threadDomain,
               active_business_id: businessId,
@@ -464,6 +474,22 @@ export function useAiFinancialManager({ userRole, userName, businessName, busine
           setMessages((prev) => [...prev, aiReply]);
           setIsTyping(false);
           return;
+        } else {
+          const errData = await res.json().catch(() => ({}));
+          const serverMsg = errData?.message || errData?.error;
+          if (serverMsg) {
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: `error-${Date.now()}`,
+                sender: 'assistant',
+                timestamp: new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }),
+                content: serverMsg,
+              },
+            ]);
+            setIsTyping(false);
+            return;
+          }
         }
       } catch (err) {
         console.warn('Live AI chat request failed:', err);
@@ -476,7 +502,7 @@ export function useAiFinancialManager({ userRole, userName, businessName, busine
       }]);
       setIsTyping(false);
     },
-    [businessName, businessId, isGroupScope, activeSessionId, accountId, userRole, canUseAi, agentMode, threadDomain, messages]
+    [businessName, businessId, isGroupScope, activeSessionId, accountId, userRole, canUseAi, agentMode, moduleDomain, threadDomain, messages]
   );
 
   // Execute confirmation for an action card (strictly bound to backend confirmation endpoint)

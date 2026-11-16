@@ -14,7 +14,7 @@ import { enforceMobileVersionGate } from '@/lib/mobile-gate';
 import { checkAiScopeOrResponse } from '@/lib/ai-access-control';
 import { createScopedAutomationToken, normalizeCanonicalRole } from '@/lib/platform/actor-scope';
 import { redactUntrustedAndSensitiveFields } from '@/lib/platform/read-catalog';
-import { resolveAiAgentRouteSmart } from '@/lib/ai-intent-router';
+import { type AiAgentDomain, resolveAiAgentRouteSmart } from '@/lib/ai-intent-router';
 
 function formatNaira(amount: number): string {
   return new Intl.NumberFormat('en-NG', {
@@ -43,12 +43,11 @@ export async function POST(req: NextRequest) {
     if (gateBlock) return gateBlock;
 
     const actor = await getAuthenticatedEmployee(req);
-    if (actor && !hasGmdFeatureAccess(actor.role)) return NextResponse.json({ok:false,error_code:'GMD_AI_ONLY',message:'AI access requires GMD or an authorized Super Admin.'},{status:403});
     if (!actor) {
       return NextResponse.json({ error: 'Unauthorized: Valid BEMS session required to use AI Assistant.' }, { status: 401 });
     }
 
-    const contextScopeBlocked = await checkAiScopeOrResponse('context', 'read');
+    const contextScopeBlocked = await checkAiScopeOrResponse('context', 'read', undefined, actor);
     if (contextScopeBlocked) return contextScopeBlocked;
 
     const body = await req.json().catch(() => ({}));
@@ -124,9 +123,11 @@ export async function POST(req: NextRequest) {
     const explicitTagLocked =
       body.context?.is_tag_locked === true ||
       body.is_tag_locked === true;
+    const moduleDomain = (body.context?.module_domain || body.moduleDomain || null) as AiAgentDomain | null;
     const routeDecision = await resolveAiAgentRouteSmart({
       message,
       explicitMode: explicitAgentMode,
+      moduleDomain,
       isTagLocked: explicitTagLocked,
       threadDomain: body.context?.thread_domain || body.thread_domain,
       history: body.history || [],
@@ -134,7 +135,7 @@ export async function POST(req: NextRequest) {
       currentPage: body.context?.target_element?.page || '',
     });
 
-    const activeAgentMode: 'financial' | 'hr' | 'both' = routeDecision.domain;
+    const activeAgentMode: AiAgentDomain = routeDecision.domain;
     const cleanUserMessage = routeDecision.cleanMessage || message;
     let n8nWebhookUrl = activeAgentMode === 'hr' ? n8nHrWebhookUrl : n8nFinancialWebhookUrl;
     if (!n8nWebhookUrl) n8nWebhookUrl = n8nFinancialWebhookUrl || n8nHrWebhookUrl;
@@ -2236,6 +2237,58 @@ title: "<Chart Title>"
             `• *"Who has open cash advance accountability cases?"*\n` +
             `• *"Summarize our subsidiary structure and budget allocations."*\n\n` +
             `How would you like to direct financial oversight right now?`;
+      }
+    }
+
+    // Layer Gemini API across all modules & Control Center when n8n did not produce a specific response
+    const geminiKey = (process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY || '').trim();
+    if (geminiKey && (!reply || reply.includes('I noted your instruction:') || reply.includes('How would you like to direct financial oversight'))) {
+      try {
+        const domainGuide: Record<string, string> = {
+          master: 'You are the BEMS Group Root AI in the Enterprise Control Center. You coordinate across Finance, HR, Projects, Operations, Media, Innovation, and governance.',
+          financial: 'You are the BEMS AI Financial Manager, scoped to treasury, budgets, fund requests, approvals, Monnify wallets, payroll, and 3-way matching.',
+          hr: 'You are the BEMS AI HR Manager, scoped to staff directory, attendance, leave, recruitment, performance, and payroll preparation.',
+          projects: 'You are the BEMS AI Projects Manager, scoped to portfolios, OKRs, sprints, work items, milestones, and risks.',
+          operations: 'You are the BEMS AI Operations Manager, scoped to field coordination, fleet, and logistics.',
+          media: 'You are the BEMS AI Media Manager, scoped to studio production and media assets.',
+          innovation: 'You are the BEMS AI Innovation Manager, scoped to software platforms and R&D.',
+          both: 'You are the BEMS Dual-Agent Copilot synthesizing Finance and HR intelligence.',
+        };
+        const recentHistory = (Array.isArray(body.history) ? body.history : [])
+          .slice(-6)
+          .map((h: any) => `${h.role === 'assistant' || h.sender === 'assistant' ? 'Assistant' : 'User'}: ${String(h.content || '').slice(0, 400)}`)
+          .join('\n');
+        const geminiPrompt = [
+          domainGuide[activeAgentMode] || domainGuide.master,
+          `Active Workspace: ${scopedOrgId ? `Subsidiary ID ${scopedOrgId}` : 'BEMS Group (Consolidated)'}.`,
+          `User: ${actor.legalName} (${actor.role}).`,
+          'Be concise, executive-ready, and grounded. Never invent financial balances or records not provided in context.',
+          recentHistory ? `Recent Conversation:\n${recentHistory}` : '',
+          `User Question: ${cleanUserMessage}`,
+        ]
+          .filter(Boolean)
+          .join('\n\n');
+
+        const gRes = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(geminiKey)}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ role: 'user', parts: [{ text: geminiPrompt }] }],
+              generationConfig: { temperature: 0.3, maxOutputTokens: 900 },
+            }),
+          }
+        );
+        if (gRes.ok) {
+          const gJson = await gRes.json();
+          const gText = gJson?.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (typeof gText === 'string' && gText.trim()) {
+            reply = normalizeMarkdownStructure(gText.trim());
+          }
+        }
+      } catch (gemErr) {
+        console.warn('Gemini AI layer fallback failed:', gemErr);
       }
     }
 
