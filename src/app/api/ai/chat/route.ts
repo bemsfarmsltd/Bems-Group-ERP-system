@@ -4,7 +4,6 @@ import { walletProposal } from '@/lib/wallet/proposals';
 import { resolveAuthorizedOrganizationScope } from '@/lib/organizations';
 import { getAiReadClient } from '@/lib/platform/scoped-database';
 import { NextRequest, NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
 import { prisma } from '@/lib/prisma';
 import { getAuthenticatedEmployee, hasAnyRole } from '@/lib/auth';
 import crypto from 'node:crypto';

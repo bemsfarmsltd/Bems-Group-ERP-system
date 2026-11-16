@@ -69,19 +69,29 @@ export async function verifyPassword(password: string, encoded: string | null) {
   return actual.length === expected.length && timingSafeEqual(actual, expected);
 }
 
+export function getSessionCookieOptions(expiresAt?: Date, maxAge = SESSION_MAX_AGE) {
+  const domain = process.env.COOKIE_DOMAIN?.trim() || undefined;
+  return {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax' as const,
+    path: '/',
+    maxAge,
+    ...(expiresAt ? { expires: expiresAt } : {}),
+    ...(domain ? { domain } : {}),
+  };
+}
+
 export async function createEmployeeSession(employeeId: string) {
   const token = randomBytes(32).toString('base64url');
   const expiresAt = new Date(Date.now() + SESSION_MAX_AGE * 1000);
   await prisma.authSession.create({ data: { employeeId, tokenHash: hashToken(token), expiresAt } });
-  const cookieStore = await cookies();
-  cookieStore.set(COOKIE_NAME, token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    path: '/',
-    maxAge: SESSION_MAX_AGE,
-    expires: expiresAt,
-  });
+  try {
+    const cookieStore = await cookies();
+    cookieStore.set(COOKIE_NAME, token, getSessionCookieOptions(expiresAt));
+  } catch {
+    // Async storage not available (e.g., standalone Fastify backend); caller sets Set-Cookie on response.
+  }
   return { token, expiresAt };
 }
 
@@ -218,23 +228,28 @@ export async function getAuthenticatedEmployee(
   return null;
 }
 
-export async function destroyEmployeeSession() {
+export async function destroyEmployeeSession(req?: Request) {
   try {
-    const cookieStore = await cookies();
-    const token = cookieStore.get(COOKIE_NAME)?.value;
+    let token: string | undefined;
+    if (req) {
+      const cookieHeader = req.headers.get('cookie') || '';
+      const match = cookieHeader.match(/(?:^|;\s*)bems_session=([^;]+)/);
+      if (match) token = decodeURIComponent(match[1]);
+    }
+    try {
+      const cookieStore = await cookies();
+      if (!token) {
+        token = cookieStore.get(COOKIE_NAME)?.value;
+      }
+      cookieStore.delete(COOKIE_NAME);
+      cookieStore.set(COOKIE_NAME, '', getSessionCookieOptions(new Date(0), 0));
+    } catch {
+      // Async storage not available (e.g., standalone Fastify backend); response clears cookie.
+    }
     if (token) {
       invalidateSessionCache(token);
       await prisma.authSession.deleteMany({ where: { tokenHash: hashToken(token) } }).catch(() => {});
     }
-    cookieStore.delete(COOKIE_NAME);
-    cookieStore.set(COOKIE_NAME, '', {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 0,
-      expires: new Date(0),
-    });
   } catch (err) {
     console.error('Error destroying session:', err);
   }

@@ -1,6 +1,6 @@
 import { canAccessEmployeePortal } from '@/lib/portal-access';
 import { NextResponse } from 'next/server';
-import { createEmployeeSession, publicEmployee, verifyPassword } from '@/lib/auth';
+import { createEmployeeSession, getSessionCookieOptions, publicEmployee, verifyPassword } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { checkRateLimit, resetRateLimit } from '@/lib/rate-limiter';
 import { resolveOrganizationBranding } from '@/lib/subsidiary-branding';
@@ -104,14 +104,7 @@ export async function POST(request: Request) {
       user: fullUser,
       token: session.token,
     });
-    res.cookies.set('bems_session', session.token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 7 * 24 * 60 * 60,
-      expires: session.expiresAt,
-    });
+    res.cookies.set('bems_session', session.token, getSessionCookieOptions(session.expiresAt));
     return res;
   } catch (error) {
     console.error('Login error:', error);
