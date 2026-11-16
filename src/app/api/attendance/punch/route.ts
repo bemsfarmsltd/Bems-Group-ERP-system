@@ -181,6 +181,26 @@ export async function POST(request: Request) {
     const isCheckIn = type.toUpperCase() === 'CHECK_IN';
 
     if (isCheckIn) {
+      // Idempotency guard: never let a duplicate/late CHECK_IN scan overwrite an earlier check-in's status or deduction
+      if (existing && existing.checkInTime) {
+        const existingTimeStr = getLagosTime(existing.checkInTime).currentTimeStr;
+        return NextResponse.json({
+          success: true,
+          alreadyCheckedIn: true,
+          type: 'CHECK_IN',
+          employeeName: employee.legalName,
+          employeeNumber: employee.employeeNumber,
+          workDate,
+          time: existingTimeStr,
+          status: existing.status,
+          distanceMeters,
+          stationName: station.name,
+          deductionPercent: existing.deductionPercent,
+          message: `You are already checked in for today (${workDate}) at ${existingTimeStr}.`,
+          record: serializeAttendanceRecord(existing),
+        });
+      }
+
       // Gate 2: Morning Arrival Window Check (No check-in before 07:00 AM)
       const windowCheck = validateCheckInTimeWindow(currentTimeStr, earliestCheckInTime);
       if (!windowCheck.allowed) {
@@ -218,8 +238,8 @@ export async function POST(request: Request) {
           checkInLng: lngNum,
           checkInDistanceM: distanceMeters,
           clientIp,
-          status: existing?.isManualOverride ? existing.status : status,
-          deductionPercent: existing?.isManualOverride ? existing.deductionPercent : deductionPercent,
+          status: existing?.checkInTime || existing?.isManualOverride ? existing.status : status,
+          deductionPercent: existing?.checkInTime || existing?.isManualOverride ? existing.deductionPercent : deductionPercent,
         },
         create: {
           employeeId: employee.id,
