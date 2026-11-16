@@ -1,3 +1,5 @@
+import { getRedisClient } from '@/lib/redis';
+
 type CacheEntry<T> = {
   value: T;
   expiresAt: number;
@@ -12,7 +14,7 @@ const CACHE =
   (globalForServerCache.bemsServerCache = new Map<string, CacheEntry<unknown>>());
 
 /**
- * Reads a cached value if it has not expired.
+ * Reads a cached value synchronously from local memory if it has not expired.
  */
 export function getServerCache<T>(key: string): T | null {
   const entry = CACHE.get(key);
@@ -38,7 +40,7 @@ export function setServerCache<T>(key: string, value: T, ttlMs = 12_000): void {
 }
 
 /**
- * Invalidates all cache entries whose key starts with `prefix`.
+ * Invalidates all local cache entries whose key starts with `prefix`.
  */
 export function invalidateServerCache(prefix?: string): void {
   if (!prefix) {
@@ -52,3 +54,49 @@ export function invalidateServerCache(prefix?: string): void {
   }
 }
 
+/**
+ * Distributed cache read (uses Redis when REDIS_URL is configured, else local memory).
+ */
+export async function getDistributedCache<T>(key: string): Promise<T | null> {
+  const redis = getRedisClient();
+  if (redis) {
+    try {
+      const raw = await redis.get(`bems:cache:${key}`);
+      if (!raw) return null;
+      return JSON.parse(raw) as T;
+    } catch {
+      return getServerCache<T>(key);
+    }
+  }
+  return getServerCache<T>(key);
+}
+
+/**
+ * Distributed cache write (uses Redis when REDIS_URL is configured, else local memory).
+ */
+export async function setDistributedCache<T>(key: string, value: T, ttlMs = 12_000): Promise<void> {
+  setServerCache(key, value, ttlMs);
+  const redis = getRedisClient();
+  if (redis) {
+    try {
+      await redis.set(`bems:cache:${key}`, JSON.stringify(value), 'PX', Math.max(1000, ttlMs));
+    } catch {}
+  }
+}
+
+/**
+ * Distributed cache invalidation by prefix.
+ */
+export async function invalidateDistributedCache(prefix?: string): Promise<void> {
+  invalidateServerCache(prefix);
+  const redis = getRedisClient();
+  if (redis) {
+    try {
+      const pattern = prefix ? `bems:cache:${prefix}*` : 'bems:cache:*';
+      const keys = await redis.keys(pattern);
+      if (keys.length > 0) {
+        await redis.del(...keys);
+      }
+    } catch {}
+  }
+}

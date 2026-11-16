@@ -1,0 +1,38 @@
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: bems-erp-redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+
+  backend:
+    build: .
+    container_name: bems-erp-backend
+    command: npm run backend:start
+    ports:
+      - "4000:4000"
+    env_file:
+      - .env
+    environment:
+      BACKEND_PORT: 4000
+      REDIS_URL: redis://redis:6379
+      CORS_ALLOWED_ORIGINS: http://localhost:3000
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  frontend:
+    build: .
+    container_name: bems-erp-frontend
+    command: npm run start
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      PORT: 3000
+      NEXT_PUBLIC_API_URL: http://localhost:4000
+    depends_on:
+      - backend
+    restart: unless-stopped

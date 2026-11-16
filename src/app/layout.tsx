@@ -3,6 +3,7 @@ import { Plus_Jakarta_Sans, Space_Grotesk, Cormorant_Garamond, JetBrains_Mono } 
 import "./globals.css";
 import "./connect.css";
 import { AppProvider } from "@/context/AppContext";
+import { QueryProvider } from "@/context/QueryProvider";
 
 const plusJakarta = Plus_Jakarta_Sans({
   subsets: ["latin"],
@@ -53,9 +54,11 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${plusJakarta.variable} ${spaceGrotesk.variable} ${cormorant.variable} ${jetbrainsMono.variable}`}>
       <body className="antialiased min-h-screen">
-        <AppProvider>
-          {children}
-        </AppProvider>
+        <QueryProvider>
+          <AppProvider>
+            {children}
+          </AppProvider>
+        </QueryProvider>
       </body>
     </html>
   );
