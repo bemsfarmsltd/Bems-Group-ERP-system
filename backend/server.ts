@@ -13,7 +13,7 @@ initTelemetry('bems-erp-fastify-backend');
 const RAW_PORT = process.env.PORT || process.env.BACKEND_PORT || '4000';
 const IS_NUMERIC_PORT = /^\d+$/.test(RAW_PORT);
 const PORT = IS_NUMERIC_PORT ? Number(RAW_PORT) : 4000;
-const HOST = process.env.BACKEND_HOST || '0.0.0.0';
+const HOST = process.env.BACKEND_HOST || '127.0.0.1';
 
 function parseAllowedOrigins(): string[] {
   const raw = process.env.CORS_ALLOWED_ORIGINS || 'http://localhost:3000,http://127.0.0.1:3000';
@@ -210,7 +210,7 @@ if (!process.env.VITEST) {
   buildBackendServer()
     .then(async (app) => {
       const address = IS_NUMERIC_PORT
-        ? await app.listen(process.env.BACKEND_HOST ? { port: PORT, host: HOST } : { port: PORT })
+        ? await app.listen({ port: PORT, host: HOST })
         : await app.listen({ path: RAW_PORT });
       logger.info({ rawPort: RAW_PORT, address }, `BEMS ERP standalone Fastify backend listening on ${address} (rawPort=${RAW_PORT})`);
 
