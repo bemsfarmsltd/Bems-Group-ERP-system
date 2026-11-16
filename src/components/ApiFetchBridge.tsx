@@ -9,7 +9,13 @@ function getApiBaseUrl(): string {
 }
 
 function shouldRewriteApiPath(rawUrl: string): boolean {
-  return rawUrl === '/api' || rawUrl.startsWith('/api/');
+  return (
+    rawUrl === '/api' ||
+    rawUrl.startsWith('/api/') ||
+    rawUrl.startsWith('/uploads/') ||
+    rawUrl.startsWith('/secure-uploads/') ||
+    (rawUrl.startsWith('/download/') && rawUrl.toLowerCase().endsWith('.apk'))
+  );
 }
 
 export function installApiFetchBridge(): void {

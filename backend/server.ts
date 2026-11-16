@@ -9,6 +9,7 @@ import { clampIdCardLevel, ID_CARD_LEVELS, resolveDefaultCardLevel } from '../sr
 import { subscribeRealtimeChannel } from '../src/lib/realtime';
 import { registerNextApiPlugin } from './next-route-adapter';
 import { registerAllNextApiRoutes } from './routes/register-api-routes';
+import { registerSsrAndFileRoutes } from './routes/ssr-bootstrap';
 
 initTelemetry('bems-erp-fastify-backend');
 logger.info('Step 1: BEMS ERP backend module loaded');
@@ -208,6 +209,7 @@ export async function buildBackendServer() {
 
   logger.info('Step 2: registering Next API routes onto Fastify');
   await registerNextApiPlugin(app, registerAllNextApiRoutes);
+  registerSsrAndFileRoutes(app);
   logger.info('Step 3: all Next API routes registered');
 
   return app;

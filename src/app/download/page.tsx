@@ -1,18 +1,14 @@
 import React from 'react';
 import Link from 'next/link';
-import { prisma } from '@/lib/prisma';
+import { getSsrPageData } from '@/lib/ssr-api';
 import { DownloadButton } from './DownloadButton';
 
 export const dynamic = 'force-dynamic';
 
 export default async function PublicDownloadPage() {
-  const [staffGate, gmdGate] = await Promise.all([
-    prisma.mobileAppGate.findUnique({ where: { appId: 'STAFF_APP' } }),
-    prisma.mobileAppGate.findUnique({ where: { appId: 'GMD_APP' } }),
-  ]);
-
-  const staffVersion = staffGate?.latestVersionAvailable || '1.3.5';
-  const gmdVersion = gmdGate?.latestVersionAvailable || '1.3.5';
+  const { data } = await getSsrPageData('download');
+  const staffVersion = data?.staffVersion || '1.3.5';
+  const gmdVersion = data?.gmdVersion || '1.3.5';
 
   return (
     <div

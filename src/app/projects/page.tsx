@@ -1,12 +1,12 @@
 import { redirect } from 'next/navigation';
-import { getAuthenticatedEmployee } from '@/lib/auth';
+import { getSsrActor } from '@/lib/ssr-api';
 import ProjectWorkspaceClient from '@/components/projects/ProjectWorkspaceClient';
 
 export const dynamic = 'force-dynamic';
 export const metadata = { title: 'BEMS ERP | Project Management' };
 
 export default async function ProjectsPage() {
-  const actor = await getAuthenticatedEmployee();
+  const actor = await getSsrActor();
 
   if (!actor) {
     redirect('/?redirect=/projects');

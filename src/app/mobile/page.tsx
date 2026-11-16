@@ -1,13 +1,12 @@
 import React from 'react';
-import { redirect } from 'next/navigation';
-import { getAuthenticatedEmployee, hasAnyRole } from '@/lib/auth';
+import { getSsrActor } from '@/lib/ssr-api';
 import { ConnectAppShell } from '@/components/layout/ConnectAppShell';
 import { MobileAppsViewerClient } from './MobileAppsViewerClient';
 
 export const dynamic = 'force-dynamic';
 
 export default async function MobileAppsPage() {
-  const actor = await getAuthenticatedEmployee();
+  const actor = await getSsrActor();
 
   const userRole = actor?.role || 'GMD';
   const userName = actor?.legalName || 'Executive';

@@ -1,12 +1,12 @@
 import { redirect } from 'next/navigation';
-import { getAuthenticatedEmployee } from '@/lib/auth';
+import { getSsrActor } from '@/lib/ssr-api';
 import { ConnectAppShell } from '@/components/layout/ConnectAppShell';
 import WalletView from '@/components/wallet/WalletView';
 
 export const dynamic = 'force-dynamic';
 
 export default async function WalletPage() {
-  const actor = await getAuthenticatedEmployee();
+  const actor = await getSsrActor();
   if (!actor) redirect('/?redirect=/wallet');
   if (actor.role !== 'STAFF') redirect('/wallet/funding');
   return (

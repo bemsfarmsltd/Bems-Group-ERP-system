@@ -1,12 +1,12 @@
 import { redirect } from 'next/navigation';
-import { getAuthenticatedEmployee } from '@/lib/auth';
+import { getSsrActor } from '@/lib/ssr-api';
 import EnterpriseControlCenterClient from '@/components/control-center/EnterpriseControlCenterClient';
 
 export const dynamic = 'force-dynamic';
 export const metadata = { title: 'BEMS ERP | Control Center' };
 
 export default async function ControlCenterPage() {
-  const actor = await getAuthenticatedEmployee();
+  const actor = await getSsrActor();
 
   if (!actor) {
     redirect('/?redirect=/control-center');
