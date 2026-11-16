@@ -7,8 +7,11 @@ import { ApiValidationError, IdCardVerifyBodySchema, parseWithSchema } from '../
 import { verifyIdCardToken } from '../src/lib/id-card-crypto';
 import { clampIdCardLevel, ID_CARD_LEVELS, resolveDefaultCardLevel } from '../src/lib/id-card-levels';
 import { subscribeRealtimeChannel } from '../src/lib/realtime';
-import { registerNextApiPlugin } from './next-route-adapter';
-import { registerAllNextApiRoutes } from './routes/register-api-routes';
+import { registerNextApiPlugin, mountNextRoute, type NextRouteModule } from './next-route-adapter';
+import * as authLoginRoute from '../src/app/api/auth/login/route';
+import * as authLogoutRoute from '../src/app/api/auth/logout/route';
+import * as authSessionRoute from '../src/app/api/auth/session/route';
+import * as walletMeRoute from '../src/app/api/wallet/me/route';
 
 initTelemetry('bems-erp-fastify-backend');
 logger.info('Step 1: BEMS ERP backend module loaded');
@@ -207,7 +210,12 @@ export async function buildBackendServer() {
   });
 
   logger.info('Step 2: registering Next API routes onto Fastify');
-  await registerNextApiPlugin(app, registerAllNextApiRoutes);
+  await registerNextApiPlugin(app, (scoped) => {
+    mountNextRoute(scoped, '/api/auth/login', authLoginRoute as unknown as NextRouteModule);
+    mountNextRoute(scoped, '/api/auth/logout', authLogoutRoute as unknown as NextRouteModule);
+    mountNextRoute(scoped, '/api/auth/session', authSessionRoute as unknown as NextRouteModule);
+    mountNextRoute(scoped, '/api/wallet/me', walletMeRoute as unknown as NextRouteModule);
+  });
   logger.info('Step 3: all Next API routes registered');
 
   return app;
