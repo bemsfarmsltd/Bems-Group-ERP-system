@@ -7,7 +7,7 @@
     "backend:dev": "node scripts/run-typescript.cjs backend/server.ts",
     "backend:build": "prisma generate && npx esbuild backend/server.ts --bundle --platform=node --target=node22 --packages=external --outfile=dist/backend/server.js",
     "backend:start": "NODE_ENV=production node dist/backend/server.js",
-    "build": "prisma generate && next build",
+    "build": "next build",
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",

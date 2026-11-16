@@ -1,9 +1,9 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { loadSsrPageData } from '../../src/lib/services/ssr-page-data';
 import { mountNextRoute, type NextRouteModule } from '../next-route-adapter';
-import * as downloadFileRoute from '../../src/app/download/[filename]/route';
-import * as uploadsRoute from '../../src/app/uploads/[...path]/route';
-import * as secureUploadsRoute from '../../src/app/secure-uploads/[...path]/route';
+import * as downloadFileRoute from '../file-routes/download/[filename]/route';
+import * as uploadsRoute from '../file-routes/uploads/[...path]/route';
+import * as secureUploadsRoute from '../file-routes/secure-uploads/[...path]/route';
 
 function buildCookieOnlyRequest(req: FastifyRequest): Request {
   const headers = new Headers();

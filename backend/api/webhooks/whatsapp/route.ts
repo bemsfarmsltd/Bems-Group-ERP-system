@@ -3,7 +3,7 @@ import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { hashPassword, verifyPassword, hashToken } from "@/lib/auth";
 import { executeDashboardCommand, executeStagedAction } from "@/lib/staged-actions";
-import { POST as handleAiChatPost } from "@/app/api/ai/chat/route";
+import { POST as handleAiChatPost } from "../../ai/chat/route";
 
 export const dynamic = "force-dynamic";
 

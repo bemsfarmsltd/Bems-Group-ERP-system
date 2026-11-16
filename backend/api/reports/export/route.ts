@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 import { randomUUID, createHash } from 'node:crypto';
 import { getAuthenticatedEmployee, hasAnyRole } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import { GET as exportAudit } from '@/app/api/audit/route';
+import { GET as exportAudit } from '../../audit/route';
 
 export async function POST(request: Request) {
   const actor = await getAuthenticatedEmployee(request, { disallowServiceToken: true });
