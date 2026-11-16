@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "backend:dev": "node scripts/run-typescript.cjs backend/server.ts",
-    "backend:start": "NODE_ENV=production node scripts/run-typescript.cjs backend/server.ts",
+    "backend:build": "prisma generate && npx esbuild backend/server.ts --bundle --platform=node --target=node22 --packages=external --outfile=dist/backend/server.js",
+    "backend:start": "NODE_ENV=production node dist/backend/server.js",
     "build": "prisma generate && next build",
     "start": "next start",
     "lint": "next lint",
@@ -65,6 +66,7 @@
     "braces": "^3.0.3"
   },
   "devDependencies": {
+    "esbuild": "^0.28.2",
     "vitest": "^5.1.0"
   }
 }
