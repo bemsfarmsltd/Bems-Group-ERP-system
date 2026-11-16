@@ -210,9 +210,9 @@ if (!process.env.VITEST) {
   buildBackendServer()
     .then(async (app) => {
       const address = IS_NUMERIC_PORT
-        ? await app.listen({ port: PORT, host: HOST })
+        ? await app.listen(process.env.BACKEND_HOST ? { port: PORT, host: HOST } : { port: PORT })
         : await app.listen({ path: RAW_PORT });
-      logger.info({ rawPort: RAW_PORT, address }, 'BEMS ERP standalone Fastify backend listening');
+      logger.info({ rawPort: RAW_PORT, address }, `BEMS ERP standalone Fastify backend listening on ${address} (rawPort=${RAW_PORT})`);
 
       const shutdown = async (signal: string) => {
         logger.info({ signal }, 'Shutting down backend server...');
