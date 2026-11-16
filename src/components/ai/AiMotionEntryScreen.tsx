@@ -429,7 +429,7 @@ export function AiMotionEntryScreen({
               e.currentTarget.style.boxShadow = '0 8px 24px rgba(28, 25, 23, 0.25)';
             }}
           >
-            <span>Continue to Dashboard</span>
+            <span>Continue to Modules</span>
             <ArrowRight size={15} />
           </button>
         </div>

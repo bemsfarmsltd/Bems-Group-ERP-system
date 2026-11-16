@@ -4253,13 +4253,13 @@ export default function Home() {
   const [status,setStatus]=useState<'loading'|'ready'|'error'>('ready');
   const [showAiEntry, setShowAiEntry] = useState(() => {
     if (typeof window !== 'undefined') {
-      return sessionStorage.getItem('bems_show_welcome') === '1' || sessionStorage.getItem('bems_welcome_shown_session') !== '1';
+      return sessionStorage.getItem('bems_show_welcome') === '1';
     }
     return false;
   });
   const canEnterAi=useGmdAccess(user?.role||'');
   const [entryMode, setEntryMode] = useState<'login' | 'reload'>(() => {
-    if (typeof window !== 'undefined' && (sessionStorage.getItem('bems_entry_mode') === 'login' || sessionStorage.getItem('bems_welcome_shown_session') !== '1')) {
+    if (typeof window !== 'undefined' && sessionStorage.getItem('bems_show_welcome') === '1') {
       return 'login';
     }
     return 'reload';
@@ -4278,7 +4278,7 @@ export default function Home() {
         const nextUser = data?.user as AuthUser | null;
         setUser(nextUser);
         setAuthStatus(nextUser ? 'signed-in' : 'signed-out');
-        if (typeof window !== 'undefined' && (sessionStorage.getItem('bems_show_welcome') === '1' || sessionStorage.getItem('bems_welcome_shown_session') !== '1')) {
+        if (typeof window !== 'undefined' && sessionStorage.getItem('bems_show_welcome') === '1') {
           setEntryMode('login');
           setShowAiEntry(true);
         } else {

@@ -76,6 +76,11 @@ export default function RootPage() {
             legalName: authedUser.fullName || authedUser.name || 'User',
             role: authedUser.role || 'STAFF',
             workEmail: authedUser.email || '',
+            employeeNumber: authedUser.employeeNumber,
+            subsidiaryName: authedUser.subsidiary || 'BEMS Group',
+            customAdminProfileId: authedUser.customAdminProfileId || null,
+            customAdminTitle: authedUser.customAdminTitle || null,
+            customAdminPermissions: (authedUser.customAdminPermissions as EnterpriseUserSummary['customAdminPermissions']) || null,
           });
           setShowWelcome(true);
           setAuthStatus('authenticated');
@@ -84,8 +89,13 @@ export default function RootPage() {
     );
   }
 
-  const isExecutive = user.role === 'GMD' || user.role === 'SUPER_ADMIN' || user.role === 'SYSTEM_ADMIN';
-  if (showWelcome && isExecutive) {
+  const upperRole = String(user.role || '').toUpperCase();
+  const isAdminEntry =
+    upperRole === 'GMD' ||
+    upperRole === 'SUPER_ADMIN' ||
+    upperRole === 'SYSTEM_ADMIN' ||
+    Boolean(user.customAdminProfileId || user.customAdminTitle || user.customAdminPermissions);
+  if (showWelcome && isAdminEntry) {
     return (
       <AiMotionEntryScreen
         onComplete={() => {

@@ -24,7 +24,21 @@ async function authRequest<T>(path: string, body?: unknown): Promise<{ ok: boole
   }
 }
 
-export type AuthUser = { id: string; email: string; fullName: string; phone: string; emailVerified: boolean; role: string; name?: string; avatarUrl?: string };
+export type AuthUser = {
+  id: string;
+  email: string;
+  fullName: string;
+  phone: string;
+  emailVerified: boolean;
+  role: string;
+  name?: string;
+  avatarUrl?: string;
+  employeeNumber?: string;
+  subsidiary?: string;
+  customAdminProfileId?: string | null;
+  customAdminTitle?: string | null;
+  customAdminPermissions?: Record<string, any> | null;
+};
 
 function AuthGate({ onAuthed }: { onAuthed: (user: AuthUser) => void }) {
   const [view, setView] = useState<'login' | 'signup' | 'pending' | 'setup'>('login');
@@ -1260,6 +1274,13 @@ function AuthGate({ onAuthed }: { onAuthed: (user: AuthUser) => void }) {
 
 export function UnifiedAuthScreen({ redirectUrl, onAuthed }: { redirectUrl?: string; onAuthed?: (user: AuthUser) => void }) {
   const handleAuthed = (user: AuthUser) => {
+    const upperRole = String(user.role || '').toUpperCase();
+    const isAdminEntry =
+      upperRole === 'GMD' ||
+      upperRole === 'SUPER_ADMIN' ||
+      upperRole === 'SYSTEM_ADMIN' ||
+      Boolean(user.customAdminProfileId || user.customAdminTitle || user.customAdminPermissions);
+
     try {
       sessionStorage.setItem('bems_show_welcome', '1');
       sessionStorage.setItem('bems_entry_mode', 'login');
@@ -1270,8 +1291,13 @@ export function UnifiedAuthScreen({ redirectUrl, onAuthed }: { redirectUrl?: str
       return;
     }
     if (typeof window !== 'undefined') {
+      if (isAdminEntry) {
+        // Admins always enter through Welcome Page -> Continue -> Module Grid (/)
+        window.location.href = '/';
+        return;
+      }
       const sp = new URLSearchParams(window.location.search);
-      const target = redirectUrl || sp.get('redirect') || '/';
+      const target = redirectUrl || sp.get('redirect') || '/staff';
       window.location.href = target;
     }
   };
