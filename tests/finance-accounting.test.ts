@@ -42,6 +42,8 @@ describe('Finance accounting controls', () => {
     try {
       const res = await app.inject({ method: 'GET', url: '/api/finance/accounting' });
       expect(res.statusCode).toBe(401);
+      const reportRes = await app.inject({ method: 'GET', url: '/api/finance/report-studio' });
+      expect(reportRes.statusCode).toBe(401);
       const mutation = await app.inject({
         method: 'POST', url: '/api/finance/accounting', headers: { 'content-type': 'application/json' },
         payload: { action: 'CLOSE_PERIOD', entity: 'entity', month: '2026-10' },

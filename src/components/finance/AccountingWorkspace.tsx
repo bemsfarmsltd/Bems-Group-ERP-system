@@ -56,37 +56,111 @@ function Badge({ label, tone = 'slate' }: { label: string; tone?: 'green' | 'amb
   );
 }
 
-function Table({ headers, rows, rightCols = [], empty = 'No records to show.' }: { headers: string[]; rows: { id: string; cells: ReactNode[] }[]; rightCols?: number[]; empty?: string }) {
-  if (!rows.length) return <p className="text-sm text-slate-600">{empty}</p>;
-  return <div className="overflow-x-auto">
-    <table className="w-full border-collapse text-sm"><thead><tr>
-      {headers.map((header, idx) => (
-        <th key={header} scope="col" className={`whitespace-nowrap border-b border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 ${rightCols.includes(idx) ? 'text-right' : 'text-left'}`}>
-          {header}
-        </th>
-      ))}
-    </tr></thead><tbody>
-      {rows.map(row => (
-        <tr key={row.id} className="border-b border-slate-100 hover:bg-slate-50/70">
-          {row.cells.map((cell, index) => (
-            <td key={index} className={`px-3 py-2.5 align-top ${rightCols.includes(index) ? 'text-right font-medium tabular-nums' : ''}`}>
-              {cell}
-            </td>
-          ))}
-        </tr>
-      ))}
-    </tbody></table>
-  </div>;
+function Table({
+  headers,
+  rows,
+  rightCols = [],
+  empty = 'No records to show.',
+  emptyAction,
+}: {
+  headers: string[];
+  rows: { id: string; cells: ReactNode[] }[];
+  rightCols?: number[];
+  empty?: string;
+  emptyAction?: ReactNode;
+}) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full border-collapse text-xs">
+        <thead>
+          <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+            {headers.map((header, idx) => (
+              <th
+                key={header}
+                scope="col"
+                style={{
+                  padding: '9px 14px',
+                  fontSize: 10,
+                  fontWeight: 800,
+                  letterSpacing: '0.06em',
+                  color: '#64748b',
+                  textTransform: 'uppercase',
+                  whiteSpace: 'nowrap',
+                  textAlign: rightCols.includes(idx) ? 'right' : 'left',
+                }}
+              >
+                {header}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {!rows.length ? (
+            <tr>
+              <td colSpan={headers.length} style={{ padding: '22px 14px', textAlign: 'center', color: '#64748b' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+                  <span>{empty}</span>
+                  {emptyAction}
+                </div>
+              </td>
+            </tr>
+          ) : (
+            rows.map((row) => (
+              <tr key={row.id} style={{ borderBottom: '1px solid #f1f5f9' }} className="hover:bg-orange-50/30">
+                {row.cells.map((cell, index) => (
+                  <td
+                    key={index}
+                    style={{
+                      padding: '10px 14px',
+                      verticalAlign: 'top',
+                      textAlign: rightCols.includes(index) ? 'right' : 'left',
+                      fontVariantNumeric: rightCols.includes(index) ? 'tabular-nums' : undefined,
+                      fontWeight: rightCols.includes(index) ? 600 : undefined,
+                      color: '#0f172a',
+                    }}
+                  >
+                    {cell}
+                  </td>
+                ))}
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
-function Panel({ title, description, action, children }: { title: string; description?: string; action?: ReactNode; children: ReactNode }) {
-  return <section style={card} className="space-y-4">
-    <div className="flex flex-wrap items-start justify-between gap-3">
-      <div><h2 className="text-base font-bold text-slate-900">{title}</h2>{description && <p className="mt-1 text-sm text-slate-600">{description}</p>}</div>
-      {action}
-    </div>
-    {children}
-  </section>;
+function Panel({ title, description, badge, action, children }: { title: string; description?: string; badge?: string; action?: ReactNode; children: ReactNode }) {
+  return (
+    <section style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 12, overflow: 'hidden' }}>
+      <div
+        style={{
+          padding: '13px 16px',
+          borderBottom: '1px solid #e2e8f0',
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 12,
+        }}
+      >
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <h2 style={{ margin: 0, fontSize: 14, fontWeight: 800, color: '#0f172a' }}>{title}</h2>
+            {badge && (
+              <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: '#f1f5f9', color: '#475569', border: '1px solid #e2e8f0' }}>
+                {badge}
+              </span>
+            )}
+          </div>
+          {description && <p style={{ margin: '2px 0 0', fontSize: 12, color: '#64748b' }}>{description}</p>}
+        </div>
+        {action}
+      </div>
+      {children}
+    </section>
+  );
 }
 
 function exportReport(rows: Report[], month: string) {
@@ -240,43 +314,121 @@ export function AccountingWorkspace({ scope }: { scope: string }) {
     return { ...acc, netKobo: acc.netKobo + Math.round(val * 100) };
   }, { netKobo: 0, invalid: false });
 
+  async function seedStarterAccounts() {
+    if (!result || busy) return;
+    setBusy(true);
+    setSaveError('');
+    setNotice('');
+    try {
+      const res = await fetch(resolveApiUrl(endpoint), {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'SEED_STARTER_ACCOUNTS', entity: result.entity, scope }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Could not initialize starter Chart of Accounts.');
+      setNotice(`Initialized ${data.result ?? 13} standard BEMS ledger accounts for ${selectedEntity?.legalName || 'this entity'}.`);
+      await load();
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : 'Could not initialize starter Chart of Accounts.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return <div className="space-y-4">
-    <PageHeading eyebrow="FINANCE" title="Accounting" description="Company books, bank reconciliation and month-end reporting." />
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
-      <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, padding: '12px 14px' }}>
-        <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.7px', color: '#64748b', textTransform: 'uppercase' }}>Posted Cash Balance</div>
-        <div style={{ fontSize: 18, fontWeight: 700, color: '#059669', marginTop: 4 }}>{money(result.cashBalanceMinor)}</div>
-        <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>{selectedEntity?.legalName || 'Selected entity'}</div>
+    {/* HEADER + INTEGRATED CONTROLS */}
+    <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'flex-end', gap: 12 }}>
+      <div>
+        <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.14em', color: '#ea580c', textTransform: 'uppercase' }}>
+          FINANCE · GENERAL LEDGER & RECONCILIATION
+        </div>
+        <h1 style={{ margin: '4px 0 2px', fontSize: 24, fontWeight: 800, color: '#0f172a', letterSpacing: '-0.02em' }}>
+          Accounting
+        </h1>
+        <p style={{ margin: 0, fontSize: 12.5, color: '#64748b' }}>
+          Double-entry company books, bank reconciliation, payables/receivables, and month-end close.
+        </p>
       </div>
-      <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, padding: '12px 14px' }}>
-        <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.7px', color: '#64748b', textTransform: 'uppercase' }}>Awaiting Posting</div>
-        <div style={{ fontSize: 18, fontWeight: 700, color: result.sources.length ? '#ea580c' : '#0f172a', marginTop: 4 }}>{result.sources.length}</div>
+
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+        <select
+          aria-label="Accounting entity"
+          value={result.entity}
+          disabled={busy}
+          onChange={event => { setOperation(undefined); setEntity(event.target.value); setConsolidated(false); }}
+          style={{ padding: '7px 10px', borderRadius: 8, border: '1px solid #cbd5e1', background: '#ffffff', color: '#0f172a', fontSize: 12, fontWeight: 600, maxWidth: 230 }}
+        >
+          {result.organizations.map(org => <option key={org.id} value={org.id}>{org.legalName}</option>)}
+        </select>
+
+        <input
+          aria-label="Reporting month"
+          type="month"
+          value={month}
+          disabled={busy}
+          onChange={event => { if (event.target.value) setMonth(event.target.value); }}
+          style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #cbd5e1', background: '#ffffff', color: '#0f172a', fontSize: 12, fontWeight: 600 }}
+        />
+
+        {tab === 'Statements' && result.canConsolidate && (
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, color: '#334155', padding: '6px 10px', background: '#fff', border: '1px solid #cbd5e1', borderRadius: 8 }}>
+            <input type="checkbox" checked={consolidated} onChange={event => setConsolidated(event.target.checked)} />
+            Consolidate group
+          </label>
+        )}
+
+        <button style={secondary} type="button" disabled={loading || busy} onClick={() => void load()}>Refresh</button>
+
+        {result.canManage && accounts.length === 0 && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void seedStarterAccounts()}
+            style={{
+              padding: '8px 13px',
+              borderRadius: 8,
+              border: '1px solid #ea580c',
+              background: 'linear-gradient(135deg, #ea580c, #f97316)',
+              color: '#ffffff',
+              fontSize: 12,
+              fontWeight: 700,
+              cursor: 'pointer',
+            }}
+          >
+            {busy ? 'Initializing…' : '+ Initialize BEMS Chart of Accounts'}
+          </button>
+        )}
+      </div>
+    </div>
+
+    {/* KPI STRIP */}
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
+      <div style={{ background: 'linear-gradient(135deg, #ea580c 0%, #f97316 100%)', borderRadius: 12, padding: '14px 16px', color: '#ffffff', boxShadow: '0 4px 14px rgba(234, 88, 12, 0.22)' }}>
+        <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.08em', opacity: 0.9, textTransform: 'uppercase' }}>Posted Cash Balance</div>
+        <div style={{ fontSize: 22, fontWeight: 800, marginTop: 6, fontVariantNumeric: 'tabular-nums' }}>{money(result.cashBalanceMinor)}</div>
+        <div style={{ fontSize: 11, opacity: 0.9, marginTop: 2 }}>{selectedEntity?.legalName || 'Selected entity'}</div>
+      </div>
+      <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: '14px 16px' }}>
+        <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.08em', color: '#64748b', textTransform: 'uppercase' }}>Awaiting Ledger Posting</div>
+        <div style={{ fontSize: 22, fontWeight: 800, color: result.sources.length ? '#ea580c' : '#0f172a', marginTop: 6, fontVariantNumeric: 'tabular-nums' }}>{result.sources.length}</div>
         <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>Unposted wallet / note sources</div>
       </div>
-      <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, padding: '12px 14px' }}>
-        <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.7px', color: '#64748b', textTransform: 'uppercase' }}>Open Payables & Receivables</div>
-        <div style={{ fontSize: 18, fontWeight: 700, color: '#0f172a', marginTop: 4 }}>{money(openItemsTotalMinor)}</div>
+      <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: '14px 16px' }}>
+        <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.08em', color: '#64748b', textTransform: 'uppercase' }}>Open Payables & Receivables</div>
+        <div style={{ fontSize: 22, fontWeight: 800, color: '#0f172a', marginTop: 6, fontVariantNumeric: 'tabular-nums' }}>{money(openItemsTotalMinor)}</div>
         <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>{result.openItems.filter(i => BigInt(i.remainingMinor) > BigInt(0)).length} open item(s)</div>
       </div>
-      <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, padding: '12px 14px' }}>
-        <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.7px', color: '#64748b', textTransform: 'uppercase' }}>Reconciliation & Period</div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+      <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: '14px 16px' }}>
+        <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.08em', color: '#64748b', textTransform: 'uppercase' }}>Reconciliation & Period</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
           <Badge label={unmatchedCount ? `${unmatchedCount} Unmatched` : 'All Matched'} tone={unmatchedCount ? 'amber' : 'green'} />
           <Badge label={isMonthClosed ? `${month} Closed` : `${month} Open`} tone={isMonthClosed ? 'slate' : 'green'} />
         </div>
       </div>
     </div>
-    <div style={card} className="flex flex-wrap items-end gap-4">
-      <label className="text-xs font-semibold">Accounting entity<select style={{ ...input, marginTop: 4 }} value={result.entity} disabled={busy}
-        onChange={event => { setOperation(undefined); setEntity(event.target.value); setConsolidated(false); }}>
-        {result.organizations.map(org => <option key={org.id} value={org.id}>{org.legalName}</option>)}
-      </select></label>
-      <label className="text-xs font-semibold">Reporting month<input style={{ ...input, marginTop: 4 }} type="month" value={month} disabled={busy}
-        onChange={event => { if (event.target.value) setMonth(event.target.value); }} /></label>
-      {tab === 'Statements' && result.canConsolidate && <label className="flex items-center gap-2 text-xs font-semibold"><input type="checkbox" checked={consolidated}
-        onChange={event => setConsolidated(event.target.checked)} /> Consolidate group</label>}
-      <button style={secondary} type="button" disabled={loading || busy} onClick={() => void load()}>Refresh</button>
-    </div>
+
     <nav className="flex flex-wrap gap-2" aria-label="Accounting sections">
       {tabs.map(name => <button key={name} type="button" aria-current={name === tab ? 'page' : undefined} style={name === tab ? primary : secondary}
         onClick={() => setTab(name)}>{name}</button>)}
@@ -286,13 +438,27 @@ export function AccountingWorkspace({ scope }: { scope: string }) {
     {loadError && <StateMessage value={loadError} retry={() => void load()} />}
     {!loading && !loadError && <>
       {tab === 'General ledger' && <>
-        <Panel title="Chart of accounts" description="Set up the entity’s account codes before posting entries. Use consistent account codes across group entities."
+        <Panel title="Chart of accounts" badge={`${accounts.length} Accounts`} description="Set up the entity’s account codes before posting entries. Use consistent account codes across group entities."
           action={button('Add account', { action: 'ADD_ACCOUNT', title: 'Add a ledger account', fields: [
             { name: 'code', label: 'Account code' }, { name: 'name', label: 'Account name' },
             { name: 'kind', label: 'Account type', options: ['ASSET','LIABILITY','EQUITY','REVENUE','EXPENSE'].map(kind => [kind, kind]) },
             { name: 'cash', label: 'Bank, Monnify or cash account', type: 'checkbox' },
           ] })}>
-          <Table headers={['Code', 'Account', 'Type', 'Cash account']} rows={accounts} />
+          <Table
+            headers={['Code', 'Account', 'Type', 'Cash account']}
+            rows={accounts}
+            empty="No ledger accounts configured for this entity yet."
+            emptyAction={result.canManage ? (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void seedStarterAccounts()}
+                style={{ padding: '7px 12px', borderRadius: 7, border: '1px solid #ea580c', background: '#fff7ed', color: '#c2410c', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}
+              >
+                + Initialize 13 Standard BEMS Accounts
+              </button>
+            ) : undefined}
+          />
         </Panel>
         <Panel title="Transactions awaiting ledger posting" description="Review posted wallet credits, confirmed payments and intercompany debit notes. Select the accounts before posting.">
           <Table headers={['Date','Reference','Source','Description','Amount','Action']} rightCols={[4]} rows={result.sources.map(source => ({

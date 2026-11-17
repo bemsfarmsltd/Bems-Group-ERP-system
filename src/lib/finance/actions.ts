@@ -296,6 +296,33 @@ export async function executeFinanceAction(context: Context, action: string): Pr
       if (!count) invalid('This account code is already in use.', 409);
       return id;
     }
+    case 'SEED_STARTER_ACCOUNTS': {
+      const starter: Array<[string, string, 'ASSET' | 'LIABILITY' | 'EQUITY' | 'REVENUE' | 'EXPENSE', boolean]> = [
+        ['1010', 'Monnify Treasury Wallet', 'ASSET', true],
+        ['1020', 'Operating Bank Account', 'ASSET', true],
+        ['1200', 'Accounts Receivable', 'ASSET', false],
+        ['1500', 'Fixed Assets', 'ASSET', false],
+        ['1510', 'Accumulated Depreciation', 'ASSET', false],
+        ['2010', 'Accounts Payable', 'LIABILITY', false],
+        ['2020', 'Staff Wallet Liability', 'LIABILITY', false],
+        ['2030', 'Intercompany Clearing', 'LIABILITY', false],
+        ['3000', 'Retained Earnings', 'EQUITY', false],
+        ['4000', 'Operating Revenue', 'REVENUE', false],
+        ['5000', 'Payroll & Salaries', 'EXPENSE', false],
+        ['5100', 'Operating Expenses', 'EXPENSE', false],
+        ['5200', 'Bank & Monnify Charges', 'EXPENSE', false],
+      ];
+      let inserted = 0;
+      for (const [code, name, kind, cash] of starter) {
+        const count = await tx.$executeRaw`
+          INSERT INTO "FinanceAccount" ("id","organizationId","code","name","kind","cash")
+          VALUES (${randomUUID()},${organizationId},${code},${name},${kind},${cash})
+          ON CONFLICT ("organizationId","code") DO NOTHING
+        `;
+        inserted += Number(count);
+      }
+      return inserted;
+    }
     case 'POST_JOURNAL': {
       const groupOnly = body.groupOnly === true;
       const opening = body.opening === true;

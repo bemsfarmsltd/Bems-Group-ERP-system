@@ -4,6 +4,7 @@ import Link from 'next/link';
 import {useGmdAccess} from '@/components/ai/useGmdAccess';
 import FundingView from '@/components/wallet/FundingView';
 import { AccountingWorkspace } from '@/components/finance/AccountingWorkspace';
+import { ReportStudioView } from '@/components/finance/ReportStudioView';
 import WalletView from '@/components/wallet/WalletView';
 import WalletDashboardSummary from '@/components/wallet/WalletDashboardSummary';
 import { GOVERNANCE_TEMPLATES } from '@/lib/governance-templates';
@@ -238,7 +239,10 @@ const gmdNavGroups = [
   },
   {
     label: 'ACCOUNTING',
-    items: [['Accounting', '▤']],
+    items: [
+      ['Accounting', '▤'],
+      ['Report studio', '☷'],
+    ],
   },
 ];
 
@@ -3310,6 +3314,9 @@ function AppWorkspace({user,onSignOut,onAddBusiness,onEditBusiness,businesses:ra
     const target = navAliases[active] || active;
     if (target === 'Accounting' && hasCategoryAccess(safeUser.role, safeUser.customAdminPermissions, 'finance', 'Accounting')) {
       return <AccountingWorkspace key={activeScope} scope={activeScope} />;
+    }
+    if (target === 'Report studio' && (hasCategoryAccess(safeUser.role, safeUser.customAdminPermissions, 'finance', 'Overview') || ['GMD', 'SUPER_ADMIN', 'SYSTEM_ADMIN'].includes(safeUser.role))) {
+      return <ReportStudioView key={activeScope} scope={activeScope} onSelectBusiness={selectBusiness} />;
     }
     if (target === 'Wallets & funded budgets' && ['GMD', 'SUPER_ADMIN', 'SYSTEM_ADMIN'].includes(safeUser.role)) {
       return (
