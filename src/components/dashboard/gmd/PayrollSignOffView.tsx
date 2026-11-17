@@ -1,6 +1,7 @@
 'use client';
 
 import WalletFlowNotice from '@/components/wallet/WalletFlowNotice';
+import { resolveApiUrl } from '@/lib/api-client';
 import React, { useState, useEffect } from 'react';
 import {
   Users,
@@ -1484,7 +1485,7 @@ export function PayrollSignOffView({
                     title="Download PDF payslip"
                     onClick={(event) => {
                       event.stopPropagation();
-                      window.open(`/api/payroll/items/${encodeURIComponent(item.id)}/payslip`, '_blank', 'noopener,noreferrer');
+                      window.open(resolveApiUrl(`/api/payroll/items/${encodeURIComponent(item.id)}/payslip`), '_blank', 'noopener,noreferrer');
                     }}
                     style={{
                       padding: '5px 8px',

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { financeWorkspaceStyles, PageHeading, StateMessage } from '@/components/dashboard/gmd/BusinessModules';
+import { resolveApiUrl } from '@/lib/api-client';
 import { walletMoney } from '@/components/wallet/WalletView';
 
 const { primary, secondary, input, card } = financeWorkspaceStyles;
@@ -133,7 +134,7 @@ export function AccountingWorkspace({ scope }: { scope: string }) {
     const params = new URLSearchParams({ scope, month, consolidated: String(consolidated) });
     if (entity) params.set('entity', entity);
     try {
-      const res = await fetch(endpoint + '?' + params, { cache: 'no-store', signal });
+      const res = await fetch(resolveApiUrl(endpoint + '?' + params), { credentials: 'include', cache: 'no-store', signal });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Could not load accounting records.');
       if (!signal?.aborted) setResult(data);
@@ -171,8 +172,8 @@ export function AccountingWorkspace({ scope }: { scope: string }) {
         payload.rows = statementRows(String(values.statement));
         delete payload.statement;
       }
-      const res = await fetch(endpoint, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+      const res = await fetch(resolveApiUrl(endpoint), {
+        method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'The accounting entry could not be saved.');

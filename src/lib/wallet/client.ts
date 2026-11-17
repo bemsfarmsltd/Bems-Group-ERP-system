@@ -1,3 +1,5 @@
+import { resolveApiUrl } from '@/lib/api-client';
+
 export class WalletApiError extends Error {
   constructor(message: string, readonly code?: string) {
     super(message);
@@ -10,8 +12,8 @@ export async function walletApi(path: string, body?: unknown, method = body === 
   if (idempotencyKey) headers['idempotency-key'] = idempotencyKey;
   let response: Response;
   try {
-    response = await fetch(`/api/wallet/${path}`, {
-      method, headers, credentials: 'same-origin', cache: 'no-store',
+    response = await fetch(resolveApiUrl(`/api/wallet/${path}`), {
+      method, headers, credentials: 'include', cache: 'no-store',
       ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
     });
   } catch { throw new Error('Unable to reach the wallet service. Check your connection and try again.'); }
