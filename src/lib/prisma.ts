@@ -4,22 +4,19 @@ const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
 };
 
-// Ensure database URL uses Supabase transaction pooler (port 6543) with PgBouncer
-// to eliminate PostgreSQL connection pool exhaustion (port 5432 limit) under parallel queries.
+// Use PgBouncer flags only when connected to a Supavisor pooler host (*.pooler.supabase.com or explicit :6543).
+// Never rewrite direct db.<ref>.supabase.co:5432 hosts to :6543, as direct hosts only listen on port 5432.
 let connectionUrl = process.env.DATABASE_URL || "";
-if (connectionUrl && connectionUrl.includes("supabase.co:5432")) {
-  connectionUrl = connectionUrl.replace(":5432", ":6543");
-}
 if (
   connectionUrl &&
   (connectionUrl.includes(":6543") || connectionUrl.includes("pooler.supabase.com")) &&
   !connectionUrl.includes("pgbouncer=true")
 ) {
   const separator = connectionUrl.includes("?") ? "&" : "?";
-  connectionUrl += `${separator}pgbouncer=true&connection_limit=20&pool_timeout=30`;
+  connectionUrl += `${separator}pgbouncer=true&connection_limit=15&pool_timeout=15`;
 } else if (connectionUrl && !connectionUrl.includes("connection_limit=")) {
   const separator = connectionUrl.includes("?") ? "&" : "?";
-  connectionUrl += `${separator}connection_limit=20&pool_timeout=30`;
+  connectionUrl += `${separator}connection_limit=15&pool_timeout=15`;
 }
 
 export const prisma =

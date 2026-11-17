@@ -55,6 +55,7 @@ export async function getSsrActor(): Promise<SsrActor | null> {
       method: 'GET',
       headers: { cookie },
       cache: 'no-store',
+      signal: AbortSignal.timeout(8000),
     });
     if (!res.ok) return null;
     const json = await res.json();
@@ -77,6 +78,7 @@ export async function getSsrPageData<T = any>(
       method: 'GET',
       headers: cookie ? { cookie } : undefined,
       cache: 'no-store',
+      signal: AbortSignal.timeout(8000),
     });
     if (!res.ok) {
       return { status: res.status, data: null };
