@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
+import { resolveApiUrl } from '@/lib/api-client';
 import { walletMoney } from './WalletView';
 
 type FundingSummary = {
@@ -12,7 +13,7 @@ export default function WalletDashboardSummary({ onOpen }: { onOpen: () => void 
   const [error, setError] = useState(false);
   useEffect(() => {
     const controller = new AbortController();
-    fetch('/api/wallet/funding', { cache: 'no-store', signal: controller.signal })
+    fetch(resolveApiUrl('/api/wallet/funding'), { credentials: 'include', cache: 'no-store', signal: controller.signal })
       .then(async response => { if (!response.ok) throw new Error('Funding unavailable'); return response.json(); })
       .then(value => { if (!controller.signal.aborted) setData(value); })
       .catch(() => { if (!controller.signal.aborted) setError(true); });

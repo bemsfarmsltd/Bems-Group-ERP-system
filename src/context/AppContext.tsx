@@ -1,6 +1,29 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect } from "react";
+import { resolveApiUrl } from "@/lib/api-client";
+
+const FETCH_BRIDGE_KEY = Symbol.for("bems.apiFetchBridgeInstalled");
+
+function installApiFetchBridge() {
+  if (typeof window === "undefined") return;
+  const win = window as unknown as Record<symbol, boolean>;
+  if (win[FETCH_BRIDGE_KEY]) return;
+  win[FETCH_BRIDGE_KEY] = true;
+
+  const nativeFetch = window.fetch.bind(window);
+  window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+    if (typeof input === "string" && input.startsWith("/api/")) {
+      const target = resolveApiUrl(input);
+      const nextInit: RequestInit = {
+        ...init,
+        credentials: !init?.credentials || init.credentials === "same-origin" ? "include" : init.credentials,
+      };
+      return nativeFetch(target, nextInit);
+    }
+    return nativeFetch(input, init);
+  };
+}
 
 export interface CurrentUser {
   id: string;
@@ -65,9 +88,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [selectedOrgCode, setSelectedOrgCode] = useState<string>("ALL");
 
   useEffect(() => {
+    installApiFetchBridge();
     let active = true;
     const loadSession = () => {
-      fetch('/api/auth/session?_t=' + Date.now(), { credentials: 'include', cache: 'no-store' })
+      fetch(resolveApiUrl('/api/auth/session?_t=' + Date.now()), { credentials: 'include', cache: 'no-store' })
         .then((response) => response.json())
         .then((data) => {
           if (!active || !data?.user) return;

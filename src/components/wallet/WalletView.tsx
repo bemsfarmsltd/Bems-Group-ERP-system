@@ -1,5 +1,6 @@
 'use client';
 import { walletApi } from '@/lib/wallet/client';
+import { resolveApiUrl } from '@/lib/api-client';
 
 import React, { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
@@ -122,7 +123,7 @@ export default function WalletView({ brandColor = '#ea580c' }: { brandColor?: st
   useEffect(() => {
     async function loadBanks() {
       try {
-        const res = await fetch('/api/wallet/banks', { cache: 'no-store' });
+        const res = await fetch(resolveApiUrl('/api/wallet/banks'), { credentials: 'include', cache: 'no-store' });
         if (res.ok) {
           const json = await res.json();
           setBanks(json.banks || []);
