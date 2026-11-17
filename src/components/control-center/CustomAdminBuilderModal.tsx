@@ -5,6 +5,7 @@ import {
   ADMIN_PERMISSION_CATALOG,
   type AdminModuleKey,
   type CustomAdminPermissionsMap,
+  isReadOnlyActionKey,
   type ModulePermissionGrant,
 } from '@/lib/admin-permissions';
 import { Building2, CheckSquare, Layers, ShieldCheck, Square, X } from 'lucide-react';
@@ -74,6 +75,27 @@ export function CustomAdminBuilderModal({
     } else {
       updateModuleGrant(modKey, { ...cur, enabled: !cur.enabled });
     }
+  };
+
+  const grantReadOnlyModule = (modKey: AdminModuleKey) => {
+    const modDef = ADMIN_PERMISSION_CATALOG.find((m) => m.key === modKey);
+    if (!modDef) return;
+    const cats: ModulePermissionGrant['categories'] = {};
+    for (const c of modDef.categories) {
+      const roActions = c.actions.filter((a) => isReadOnlyActionKey(a.key)).map((a) => a.key);
+      if (roActions.length > 0) {
+        cats[c.key] = {
+          enabled: true,
+          actions: roActions,
+        };
+      }
+    }
+    updateModuleGrant(modKey, {
+      enabled: true,
+      subsidiaryScope: 'ALL',
+      subsidiaryIds: [],
+      categories: cats,
+    });
   };
 
   const grantFullModule = (modKey: AdminModuleKey) => {
@@ -161,6 +183,11 @@ export function CustomAdminBuilderModal({
     e.preventDefault();
     if (!name.trim()) {
       setError('Please give this custom admin profile a name.');
+      return;
+    }
+    const hasAnyEnabled = Object.values(permissions).some((g) => Boolean(g?.enabled));
+    if (!hasAnyEnabled) {
+      setError('Please enable at least one module (e.g. click "Enable Read-Only" or "Enable Full Module") before saving.');
       return;
     }
     setSaving(true);
@@ -308,6 +335,13 @@ export function CustomAdminBuilderModal({
                 <p className="text-xs text-slate-500">{currentModDef.description}</p>
               </div>
               <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => grantReadOnlyModule(currentModDef.key)}
+                  className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[11px] font-bold text-emerald-700 hover:bg-emerald-100"
+                >
+                  Enable Read-Only
+                </button>
                 <button
                   type="button"
                   onClick={() => grantFullModule(currentModDef.key)}

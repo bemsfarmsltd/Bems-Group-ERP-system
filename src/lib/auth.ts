@@ -2,6 +2,7 @@ import { canAccessEmployeePortal } from '@/lib/portal-access';
 import {
   type AdminModuleKey,
   type CustomAdminPermissionsMap,
+  createMonnifyComplianceReadOnlyPermissions,
   hasActionPermission,
   hasCategoryAccess,
   hasModuleAccess,
@@ -31,12 +32,31 @@ export type AuthenticatedEmployee = {
   customAdminPermissions?: CustomAdminPermissionsMap | null;
 };
 
+function resolveEmployeeCustomPermissions(employee: any): CustomAdminPermissionsMap | null {
+  const role = String(employee?.role || '').toUpperCase();
+  if (role === 'GMD') return null;
+
+  const rawPerms: CustomAdminPermissionsMap | null =
+    employee?.customAdminPermissions ||
+    (employee?.customAdminProfile?.permissionsJson
+      ? parsePermissionsJson(employee.customAdminProfile.permissionsJson)
+      : null);
+
+  const hasEnabledModule =
+    rawPerms && Object.values(rawPerms).some((grant) => Boolean(grant?.enabled));
+  if (hasEnabledModule) return rawPerms;
+
+  // If an account is a CUSTOM_ADMIN (or assigned a custom profile) whose profile was saved
+  // without toggling any module on, safely default to the strict Read-Only compliance preset.
+  if (role === 'CUSTOM_ADMIN' || employee?.customAdminProfileId || employee?.customAdminTitle) {
+    return createMonnifyComplianceReadOnlyPermissions();
+  }
+  return rawPerms;
+}
+
 function buildAuthenticatedEmployee(employee: any): AuthenticatedEmployee {
   const isGmd = String(employee.role || '').toUpperCase() === 'GMD';
-  const permissions =
-    !isGmd && employee.customAdminProfile?.permissionsJson
-      ? parsePermissionsJson(employee.customAdminProfile.permissionsJson)
-      : null;
+  const permissions = resolveEmployeeCustomPermissions(employee);
   return {
     id: employee.id,
     employeeNumber: employee.employeeNumber,
@@ -256,7 +276,8 @@ export async function destroyEmployeeSession(req?: Request) {
   }
 }
 
-export function publicEmployee(employee: AuthenticatedEmployee) {
+export function publicEmployee(employee: AuthenticatedEmployee | any) {
+  const isGmd = String(employee?.role || '').toUpperCase() === 'GMD';
   return {
     id: employee.id,
     name: employee.legalName,
@@ -266,9 +287,9 @@ export function publicEmployee(employee: AuthenticatedEmployee) {
     role: employee.role,
     avatarUrl: employee.avatarUrl || '',
     emailVerified: true,
-    customAdminProfileId: employee.customAdminProfileId || null,
-    customAdminTitle: employee.customAdminTitle || null,
-    customAdminPermissions: employee.customAdminPermissions || null,
+    customAdminProfileId: isGmd ? null : employee.customAdminProfileId || null,
+    customAdminTitle: isGmd ? null : employee.customAdminTitle || employee.customAdminProfile?.name || null,
+    customAdminPermissions: resolveEmployeeCustomPermissions(employee),
   };
 }
 
