@@ -1,4 +1,5 @@
 import { normalizeSystemRole } from '@/lib/auth';
+import { type CustomAdminPermissionsMap, hasCategoryAccess, parsePermissionsJson } from '@/lib/admin-permissions';
 import { isStaffAccount } from '@/lib/portal-access';
 import {walletWorkerStatus} from './runtime-state';
 import { canActorApproveFunds, canApproveWalletRelease, financialApproverLabel } from '@/lib/gmd-access';
@@ -6,7 +7,12 @@ import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 
-export type WalletActor = { id: string; role: string; legalName: string };
+export type WalletActor = {
+  id: string;
+  role: string;
+  legalName: string;
+  customAdminPermissions?: CustomAdminPermissionsMap | null;
+};
 export {WalletError} from './errors';
 import {WalletError} from './errors';
 export function walletEnabled() {
@@ -180,8 +186,22 @@ export async function readFundingDashboard(actor: WalletActor) {
   }
   // Current-account/role checks below also apply in read-only review mode.
   return prisma.$transaction(async tx => {
-    await liveWalletActor(tx, actor);
-    if (!['GMD','SUPER_ADMIN','SYSTEM_ADMIN'].includes(actor.role)) throw new WalletError('NOT_PERMITTED', 'Executive financial visibility is required.', 403);
+    const emp = await liveWalletActor(tx, actor);
+    let canViewFunding = ['GMD', 'SUPER_ADMIN', 'SYSTEM_ADMIN'].includes(actor.role);
+    if (!canViewFunding && normalizeSystemRole(emp.role, emp.customAdminProfileId) === 'CUSTOM_ADMIN') {
+      let perms = actor.customAdminPermissions || null;
+      if (!perms && emp.customAdminProfileId) {
+        const prof = await tx.customAdminProfile.findUnique({
+          where: { id: emp.customAdminProfileId },
+          select: { permissionsJson: true },
+        });
+        perms = parsePermissionsJson(prof?.permissionsJson);
+      }
+      canViewFunding =
+        hasCategoryAccess('CUSTOM_ADMIN', perms, 'finance', 'Wallets & funded budgets') ||
+        hasCategoryAccess('CUSTOM_ADMIN', perms, 'finance', 'Overview');
+    }
+    if (!canViewFunding) throw new WalletError('NOT_PERMITTED', 'Executive financial visibility is required.', 403);
     const envelopes = await tx.$queryRaw<any[]>`SELECT e.*, o."legalName" AS "organizationName" FROM "WalletBudgetEnvelope" e JOIN "Organization" o ON o."id" = e."organizationId" ORDER BY e."createdAt" DESC LIMIT 100`;
     let funding;
     try { funding = await fundingState(tx); } catch (error) { if (error instanceof WalletError && error.code === 'FUNDING_NOT_CONFIGURED') funding = null; else throw error; }
