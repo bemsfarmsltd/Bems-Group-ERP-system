@@ -139,6 +139,7 @@ export async function sendEmail({ to, subject, html, text, eventType = 'GENERAL_
 
       return { success: true, messageId: info.messageId };
     } catch (err) {
+      lastFailureError = err instanceof Error ? err.message : String(err);
       console.error('SMTP email dispatch error, falling back to simulated log:', err);
     }
   }
@@ -146,7 +147,7 @@ export async function sendEmail({ to, subject, html, text, eventType = 'GENERAL_
   // Provider failure is never reported as delivered.
   await prisma.outboundNotification.create({ data: {
     channel: 'EMAIL', recipient: recipients, eventType,
-    payload: JSON.stringify({ subject, providerConfigured: Boolean(resend || transporter) }),
+    payload: JSON.stringify({ subject, providerConfigured: Boolean(resend || transporter), error: lastFailureError }),
     status: 'FAILED',
   } }).catch(() => {});
   return { success: false, error: lastFailureError || 'Email delivery is not configured.' };

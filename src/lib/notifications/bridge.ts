@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto";
 import { prisma } from "@/lib/prisma";
-import { sendEmail, getExecutiveRecipients, sendGmdRequisitionAlert } from "@/lib/email";
+import { sendEmail, sendGmdRequisitionAlert } from "@/lib/email";
+import { resolveModuleEmailRecipients } from "@/lib/email-routing";
 
 export interface NotificationPayload {
   channel: "SLACK" | "WHATSAPP" | "EMAIL" | "BOTH" | "ALL";
@@ -510,18 +511,18 @@ export async function notifyApprovalRequired(params: {
     },
   });
 
-  // Always send real-time executive notification emails to GMD & System Admin
+  // Always send real-time executive notification emails to GMD & Finance-authorized Admins (excluding HR-only admins)
   const emailPromise = (async () => {
     try {
-      const execs = await getExecutiveRecipients();
+      const execs = await resolveModuleEmailRecipients(prisma, 'finance');
       for (let i = 0; i < execs.length; i++) {
         const exec = execs[i];
         if (i > 0) {
           await new Promise((r) => setTimeout(r, 600));
         }
         await sendGmdRequisitionAlert({
-          gmdEmail: exec.email,
-          gmdName: exec.name,
+          gmdEmail: exec.workEmail,
+          gmdName: exec.legalName,
           requestNumber: params.requestNumber,
           requesterName: params.requesterName,
           subsidiaryName: params.subsidiaryName || "BEMS Group",
@@ -529,7 +530,7 @@ export async function notifyApprovalRequired(params: {
           amountMinor: params.amountMinor,
           justification: params.justification || "Official expenditure request awaiting review.",
           approverRole: params.approverRole,
-        }).catch((err) => console.error(`Failed to dispatch alert to ${exec.email}:`, err));
+        }).catch((err) => console.error(`Failed to dispatch alert to ${exec.workEmail}:`, err));
       }
     } catch (err) {
       console.error("Failed to dispatch GMD requisition email:", err);
