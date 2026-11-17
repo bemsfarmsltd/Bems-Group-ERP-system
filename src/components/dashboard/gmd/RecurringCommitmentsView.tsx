@@ -20,6 +20,7 @@ import {
   Filter,
 } from 'lucide-react';
 import { ExecutiveRecurringModal } from '../ExecutiveRecurringModal';
+import { resolveApiUrl } from '@/lib/api-client';
 
 type RecurringRequest = {
   id: string;
@@ -585,7 +586,7 @@ export function RecurringCommitmentsView({ businessName }: { businessName: strin
         <ShieldAlert size={16} color="#2563eb" />
         <span>
           <strong>Treasury Dual-Custody Enforced:</strong> Recurring requests without Auto-Pay require GMD review, verified bank payment slips,
-          and trigger 7-day pre-due email alerts to GMD &amp; Finance admins only. Enabling Auto-Pay requires the GMD’s 8-digit Approval PIN.
+          and trigger 7-day pre-due email alerts to GMD &amp; Finance admins only. Enabling Auto-Pay requires the GMD’s 8-digit Approval PIN (also manageable in <strong>Control Center → Wallet Approvals</strong>).
         </span>
       </div>
 
@@ -603,7 +604,7 @@ export function RecurringCommitmentsView({ businessName }: { businessName: strin
               setAutoPayBusy(true);
               setAutoPayError('');
               try {
-                const res = await fetch(`/api/requests/${encodeURIComponent(autoPayTarget.requestNumber)}/recurring-autopay`, {
+                const res = await fetch(resolveApiUrl(`/api/requests/${encodeURIComponent(autoPayTarget.requestNumber)}/recurring-autopay`), {
                   method: 'POST',
                   credentials: 'include',
                   headers: { 'Content-Type': 'application/json' },

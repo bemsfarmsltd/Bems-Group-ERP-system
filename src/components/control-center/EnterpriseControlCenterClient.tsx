@@ -24,6 +24,7 @@ import { PeopleAccessWorkspaceModule } from '@/components/dashboard/gmd/PeopleAc
 import { AiAccessControlPanel } from '@/components/control-center/AiAccessControlPanel';
 import { WalletApprovalSecurityCard } from '@/components/control-center/WalletApprovalSecurityCard';
 import { FundApprovalPolicyCard } from '@/components/control-center/FundApprovalPolicyCard';
+import { RecurringAutoPayPolicyCard } from '@/components/control-center/RecurringAutoPayPolicyCard';
 import { SubsidiaryPortfolioView } from '@/components/dashboard/gmd/SubsidiaryPortfolioView';
 import { hasCategoryAccess } from '@/lib/admin-permissions';
 import {
@@ -577,6 +578,7 @@ export default function EnterpriseControlCenterClient({ openWalletApprovals = fa
               </div>
               <FundApprovalPolicyCard setNotice={(msg) => setNotice(msg)} />
               <WalletApprovalSecurityCard setNotice={(msg) => setNotice(msg)} />
+              <RecurringAutoPayPolicyCard setNotice={(msg) => setNotice(msg)} />
             </div>
           )}
 
