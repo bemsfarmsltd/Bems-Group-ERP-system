@@ -107,6 +107,17 @@ export async function assertSingleActiveGmd(excludeEmployeeId?: string, client: 
   }
 }
 
+export async function assertSingleActiveSystemAdmin(excludeEmployeeId?: string, client: Prisma.TransactionClient = prisma) {
+  const existing = await client.employee.findFirst({
+    where: {
+      role: { in: ['SYSTEM_ADMIN', 'SUPER_ADMIN'] }, status: 'ACTIVE', approvalStatus: 'APPROVED',
+      ...(excludeEmployeeId ? { id: { not: excludeEmployeeId } } : {}),
+    },
+    select: { id: true },
+  });
+  if (existing) throw new LifecycleAuthorizationError('The system already has an active System Admin. System Admin and Super Admin share one seat.', 409);
+}
+
 export async function verifyTargetEmployeeAccess(
   actor: AuthenticatedEmployee,
   targetEmployeeId: string,
@@ -199,7 +210,7 @@ export async function approveEmployeeOnboarding(params: {
   const requestedRole = (params.assignedRole || target.role || 'STAFF').toUpperCase();
   const allowedRoles = ['STAFF', 'GMD', 'SYSTEM_ADMIN', 'SUPER_ADMIN'];
   if (!allowedRoles.includes(requestedRole)) throw new LifecycleAuthorizationError('Unsupported onboarding role.', 400);
-  const finalRole = requestedRole;
+  const finalRole = requestedRole === 'SUPER_ADMIN' ? 'SYSTEM_ADMIN' : requestedRole;
 
   if (params.requireStaffRoleOnly && finalRole !== 'STAFF') {
     throw new LifecycleAuthorizationError(
@@ -250,6 +261,7 @@ export async function approveEmployeeOnboarding(params: {
   const updated = await inLifecycleTransaction(client, async (tx) => {
     const current = await tx.employee.findUnique({ where: { id: target.id } });
     if (!current || current.status !== target.status || current.approvalStatus !== target.approvalStatus || current.role !== target.role) throw new LifecycleAuthorizationError('The employee changed. Refresh before retrying.', 409);
+    if (finalRole === 'SYSTEM_ADMIN') await assertSingleActiveSystemAdmin(target.id, tx);
     const emp = await tx.employee.update({
       where: { id: target.id },
       data: {
@@ -438,6 +450,7 @@ export async function transitionEmployeeStatus(params: {
   const updated = await inLifecycleTransaction(client, async (tx) => {
     const current = await tx.employee.findUnique({ where: { id: target.id } });
     if (!current || current.status !== target.status || current.approvalStatus !== target.approvalStatus || current.role !== target.role) throw new LifecycleAuthorizationError('The employee changed. Refresh before retrying.', 409);
+    if (params.nextStatus === 'ACTIVE' && isTargetSuperAdmin) await assertSingleActiveSystemAdmin(target.id, tx);
     const emp = await tx.employee.update({
       where: { id: target.id },
       data: { status: params.nextStatus },

@@ -192,7 +192,7 @@ export function EnterpriseModulesScreen({ user }: { user: EnterpriseUserSummary 
             <Bell className="h-3.5 w-3.5 text-slate-500" />
             <span className="hidden sm:inline">Notifications</span>
           </Link>
-          {isStaff && (
+          {(isStaff || user?.role === 'CUSTOM_ADMIN') && (
             <Link
               href="/staff"
               className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-3 py-1.5 text-xs font-bold text-white hover:bg-slate-800 transition"

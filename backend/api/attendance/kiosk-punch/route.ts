@@ -40,7 +40,7 @@ export async function POST(request: Request) {
       where: {
         status: 'ACTIVE',
         approvalStatus: 'APPROVED',
-        role: 'STAFF',
+        role: { in: ['STAFF','CUSTOM_ADMIN'] },
         assignments: { some: { subsidiaryId: station.organizationId, status: 'ACTIVE' } },
         kioskPin,
       },

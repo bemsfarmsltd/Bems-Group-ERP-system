@@ -1,3 +1,4 @@
+import { isStaffAccount } from '@/lib/portal-access';
 import { canActorApproveFunds, financialApproverLabel } from '@/lib/gmd-access';
 import { checkRecurringDisbursementEligibility } from '@/lib/recurring-reminders';
 import {requiredFeeReserve} from './fees';
@@ -28,7 +29,7 @@ async function sourceItems(tx:Prisma.TransactionClient,type:string,id:string):Pr
       if(v.bankFingerprint!==hash(bankSnapshot))throw new WalletError('VENDOR_BANK_CHANGED','Reverify the changed vendor destination.');
       return {sourceHash:hash({source,vendorBank:bankSnapshot}),items:[{sourceType:'REQUEST',sourceId:id,sourceKey:'REQUEST:'+id,employeeId:null,vendorId:source.vendorId,bankSnapshot,organizationId:source.subsidiaryId,amountMinor:source.amountMinor,category:'VENDOR',employeeName:v.name,employeeNumber:'Vendor',title:source.title}]};
     }
-    if (source.requester.role !== 'STAFF') throw new WalletError('NOT_A_STAFF_WALLET', 'Only staff members receive disbursements into internal wallets. Executives and administrators do not hold wallets.');
+    if (!isStaffAccount(source.requester.role)) throw new WalletError('NOT_A_STAFF_WALLET', 'Only staff members receive disbursements into internal wallets. Executives and administrators do not hold wallets.');
     const category=source.requestType==='REIMBURSEMENT'?'REIMBURSEMENT':/ALLOWANCE/.test(source.category)?'ALLOWANCE':source.requestType==='ADVANCE'?'PROJECT':'REQUEST';
     return {sourceHash:hash({...source,requester:{id:source.requester.id,role:source.requester.role,status:source.requester.status,approvalStatus:source.requester.approvalStatus,legalName:source.requester.legalName,workEmail:source.requester.workEmail,employeeNumber:source.requester.employeeNumber}}),items:[{sourceType:'REQUEST',sourceId:id,sourceKey:'REQUEST:'+id,employeeId:source.requestedById,organizationId:source.subsidiaryId,amountMinor:source.amountMinor,category,employeeName:source.requester.legalName,employeeNumber:source.requester.employeeNumber,title:source.title}]};
   }
@@ -104,7 +105,7 @@ export async function stageWalletRelease(actor:WalletActor,input:Input,context:C
       if(context.allowedOrganizationIds && !context.allowedOrganizationIds.includes(item.organizationId))throw new WalletError('WORKSPACE_FORBIDDEN','The payment is outside the signed workspace.',403);
       if(context.staffRequestOnly && (item.vendorId || item.employeeId===actor.id))throw new WalletError('SOURCE_NOT_ELIGIBLE','Choose an eligible staff requisition.',409);
       const employee=item.employeeId?await tx.employee.findUnique({where:{id:item.employeeId}}):null;
-      if(!item.vendorId&&(!employee || employee.role!=='STAFF'||employee.approvalStatus!=='APPROVED'||!['ACTIVE','ON_LEAVE'].includes(employee.status)))throw new WalletError('INVALID_BENEFICIARY','All recipients must be approved staff with portal access.');
+      if(!item.vendorId&&(!employee || !isStaffAccount(employee.role)||employee.approvalStatus!=='APPROVED'||!['ACTIVE','ON_LEAVE'].includes(employee.status)))throw new WalletError('INVALID_BENEFICIARY','All recipients must be approved staff with portal access.');
       const envelopeId=input.envelopesByOrganization?.[item.organizationId]||input.envelopeId;
       const [envelope]=context.staffRequestOnly
         ? await tx.$queryRaw<any[]>`SELECT * FROM "WalletBudgetEnvelope" WHERE "organizationId"=${item.organizationId} AND "status"='ACTIVE' ORDER BY "remainingMinor" DESC,"createdAt","id" LIMIT 1`

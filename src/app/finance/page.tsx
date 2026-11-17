@@ -30,7 +30,7 @@ import ExecutiveBriefingClient from "../briefing/ExecutiveBriefingClient";
 import { RequestDossierModal, type RequestDossier } from "@/components/requests/RequestDossierModal";
 import { RequestChatModal } from "@/components/requests/RequestChatModal";
 import { StaffAdminChatModal } from "@/components/chat/StaffAdminChatModal";
-import { getAllowedSubsidiariesForModule, hasCategoryAccess, type CustomAdminPermissionsMap } from "@/lib/admin-permissions";
+import { getAllowedSubsidiariesForModule, hasCategoryAccess, hasModuleAccess, type CustomAdminPermissionsMap } from "@/lib/admin-permissions";
 import {
   AccountabilityModule as LiveAccountabilityModule,
   AnalyticsBIPage as LiveAnalyticsBIPage,
@@ -3317,6 +3317,9 @@ function AppWorkspace({user,onSignOut,onAddBusiness,onEditBusiness,businesses:ra
       'chat': 'AI Copilot & Chat',
     };
     const target = navAliases[active] || active;
+    if (safeUser.role === 'CUSTOM_ADMIN' && !navigation.some(group => group.items.some(([name]) => name === target))) {
+      return <section className="card"><p>This Finance section has not been assigned to your account.</p><Link href="/">Open assigned modules</Link></section>;
+    }
     if (target === 'Accounting' && hasCategoryAccess(safeUser.role, safeUser.customAdminPermissions, 'finance', 'Accounting')) {
       return <AccountingWorkspace key={activeScope} scope={activeScope} />;
     }
@@ -4497,6 +4500,9 @@ export default function Home() {
   }
 
   if (status === 'error') return <main className="app-loading error"><p>The workspace could not be loaded. Please retry.</p><button onClick={retryLoad}>Retry →</button></main>;
+  if (user?.role === 'CUSTOM_ADMIN' && !hasModuleAccess(user.role, user.customAdminPermissions, 'finance')) {
+    return <main className="app-loading"><p>Finance access has not been assigned to your account.</p><Link href="/staff">Open staff workspace</Link><Link href="/">Open assigned modules</Link></main>;
+  }
   if (businesses.length === 0 && authStatus === 'signed-in' && user?.role === 'STAFF') return <main className="app-loading"><p>No business workspace is available for your account. Contact an administrator.</p><Link href="/staff">Open staff portal</Link></main>;
   if (businesses.length === 0 && authStatus === 'signed-in') return <CorporateSubsidiaryModal onComplete={handleSubsidiaryCreated} />;
   return (

@@ -15,7 +15,7 @@ export async function GET(req: Request) {
 
     const now = new Date();
     const [activeStaffCount, batches, orgs, activeCompAgreements] = await Promise.all([
-      prisma.employee.count({ where: { status: 'ACTIVE', role: 'STAFF' } }),
+      prisma.employee.count({ where: { status: 'ACTIVE', role: { in: ['STAFF','CUSTOM_ADMIN'] } } }),
       prisma.payrollBatch.findMany({
         take: 3,
         orderBy: { createdAt: 'desc' },
@@ -25,7 +25,7 @@ export async function GET(req: Request) {
         where: {
           employmentAgreement: {
             status: 'ACTIVE',
-            employee: { status: 'ACTIVE', role: 'STAFF' },
+            employee: { status: 'ACTIVE', role: { in: ['STAFF','CUSTOM_ADMIN'] } },
           },
           effectiveFrom: { lte: now },
           OR: [{ effectiveTo: null }, { effectiveTo: { gte: now } }],

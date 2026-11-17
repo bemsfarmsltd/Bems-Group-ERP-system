@@ -131,7 +131,7 @@ export async function POST(request: Request) {
       role: body.role, subsidiaryId: body.subsidiaryId, departmentId: body.departmentId, positionName: body.positionName,
     });
     return NextResponse.json({ success: true, invitation, invitationId: invitation.id, emailSent: false, deliveryStatus: 'QUEUED', message: 'Executive invitation created; email delivery is queued.' });
-  } catch (error: any) { return NextResponse.json({ error: error.message }, { status: 400 }); }
+  } catch (error: any) { return NextResponse.json({ error: error.message }, { status: error instanceof LifecycleAuthorizationError ? error.statusCode : 400 }); }
 }
 
 export async function DELETE(request: Request) {

@@ -1,5 +1,6 @@
 'use client';
 
+import { isStaffAccount } from '@/lib/portal-access';
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import jsQR from 'jsqr';
@@ -487,7 +488,7 @@ export function StaffDashboardClient({
   // Auto-prompt attendance modal if staff is not clocked in today (Strictly Staff only, never Executive)
   useEffect(() => {
     const role = String(user?.role || '').toUpperCase();
-    if (role === 'STAFF' && !todayAttendance && !loading) {
+    if (isStaffAccount(role) && !todayAttendance && !loading) {
       const timer = setTimeout(() => {
         setIsAttendanceScanModalOpen(true);
       }, 1500);
@@ -1573,7 +1574,7 @@ export function StaffDashboardClient({
           {/* Right: Actions */}
           <div className="flex items-center gap-2">
             {/* Shift Attendance Top-Bar Pill (Staff Only, Executives Exempt) */}
-            {String(user?.role || '').toUpperCase() === 'STAFF' && (
+            {isStaffAccount(String(user?.role || '').toUpperCase()) && (
               todayAttendance ? (
                 <button
                   onClick={() => {
@@ -3626,7 +3627,7 @@ export function StaffDashboardClient({
               </div>
 
               {/* SHIFT ATTENDANCE CARD (Image 2 Replica - Placed Under Profile) */}
-              {String(user?.role || '').toUpperCase() === 'STAFF' && (
+              {isStaffAccount(String(user?.role || '').toUpperCase()) && (
                 todayAttendance ? (
                   <div className="p-4 sm:p-5 bg-[#F0FDF4] rounded-[22px] border border-[#BBF7D0] flex items-center justify-between gap-4">
                     <div className="flex items-center gap-3.5">

@@ -1,3 +1,4 @@
+import { isStaffAccount } from '@/lib/portal-access';
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getAuthenticatedEmployee, hasAnyRole } from '@/lib/auth';
@@ -60,7 +61,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ empl
     }
   });
 
-  if (!employee || employee.role !== 'STAFF') {
+  if (!employee || !isStaffAccount(employee.role)) {
     return NextResponse.json({ error: 'Staff member not found.' }, { status: 404 });
   }
 

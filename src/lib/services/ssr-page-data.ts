@@ -1,3 +1,4 @@
+import { isStaffAccount } from '@/lib/portal-access';
 import { prisma } from '@/lib/prisma';
 import { getAuthenticatedEmployee, hasAnyRole, hasEmployeePermission } from '@/lib/auth';
 import { loadAuthorizedExecutiveBriefing } from '@/lib/services/briefing-read';
@@ -83,7 +84,7 @@ export async function loadSsrPageData(
   }
 
   if (page === 'accountability') {
-    const isStaff = actor.role === 'STAFF';
+    const isStaff = isStaffAccount(actor.role);
     const accountabilityCases = await prisma.accountabilityCase.findMany({
       where: isStaff ? { OR: [{ ownerUserId: actor.id }, { request: { requestedById: actor.id } }] } : undefined,
       include: {
@@ -120,7 +121,7 @@ export async function loadSsrPageData(
   }
 
   if (page === 'requests') {
-    const isStaff = actor.role === 'STAFF';
+    const isStaff = isStaffAccount(actor.role);
     const [requests, subsidiaries, vendors, currentStaff] = await Promise.all([
       prisma.expenditureRequest.findMany({
         where: isStaff ? { requestedById: actor.id } : undefined,
@@ -269,7 +270,7 @@ export async function loadSsrPageData(
   }
 
   if (page === 'staff') {
-    if (actor.role !== 'STAFF' && actor.role !== 'SUPER_ADMIN' && actor.role !== 'GMD') {
+    if (!['STAFF', 'CUSTOM_ADMIN', 'SYSTEM_ADMIN', 'SUPER_ADMIN', 'GMD'].includes(actor.role)) {
       return { status: 403, body: { error: 'Forbidden' } };
     }
     let businessName = 'Staff Workspace';

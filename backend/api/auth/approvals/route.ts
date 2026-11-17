@@ -14,7 +14,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Executive or System Admin access required.' }, { status: 403 });
   }
 
-  const [employees, organizations, departments, activeGmd] = await Promise.all([
+  const [employees, organizations, departments, activeGmd, activeSystemAdmin] = await Promise.all([
     prisma.employee.findMany({
       where: { approvalStatus: 'PENDING_APPROVAL', role: 'STAFF' },
       select: {
@@ -59,9 +59,13 @@ export async function GET(request: Request) {
       where: { role: 'GMD', status: 'ACTIVE', approvalStatus: 'APPROVED' },
       select: { id: true, legalName: true, workEmail: true, employeeNumber: true },
     }),
+    prisma.employee.findFirst({
+      where: { role: { in: ['SYSTEM_ADMIN', 'SUPER_ADMIN'] }, status: 'ACTIVE', approvalStatus: 'APPROVED' },
+      select: { id: true, legalName: true },
+    }),
   ]);
 
-  return NextResponse.json({ employees, organizations, departments, activeGmd });
+  return NextResponse.json({ employees, organizations, departments, activeGmd, activeSystemAdmin });
 }
 
 export async function POST(request: Request) {

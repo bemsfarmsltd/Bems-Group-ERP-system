@@ -4,6 +4,8 @@ import { prisma } from '@/lib/prisma';
 import { getAuthenticatedEmployee, hasAnyRole, hasEmployeePermission } from '@/lib/auth';
 import { sendEmail } from '@/lib/email';
 
+import { assertSingleActiveGmd, assertSingleActiveSystemAdmin, LifecycleAuthorizationError } from '@/lib/employee-lifecycle';
+
 const EXEC_ROLES = ['GMD', 'SUPER_ADMIN', 'SYSTEM_ADMIN'];
 
 /**
@@ -146,7 +148,7 @@ export async function POST(request: NextRequest) {
 
     if (mode === 'PROMOTE_STAFF') {
       const existing = await prisma.employee.findFirst({
-        where: { workEmail: { equals: workEmail, mode: 'insensitive' }, role: 'STAFF' },
+        where: { workEmail: { equals: workEmail, mode: 'insensitive' }, role: 'STAFF', status: 'ACTIVE', approvalStatus: 'APPROVED' },
         include: {
           assignments: { where: { status: 'ACTIVE' }, take: 1 },
         },
@@ -157,7 +159,8 @@ export async function POST(request: NextRequest) {
           { status: 404 }
         );
       }
-      normalizedRole = profileId ? 'CUSTOM_ADMIN' : 'SYSTEM_ADMIN';
+      if (!profileId) return NextResponse.json({ error: 'Choose a permission profile for this staff member.' }, { status: 400 });
+      normalizedRole = 'CUSTOM_ADMIN';
       recipientName = existing.legalName;
       if (!subsidiaryId && existing.assignments?.[0]?.subsidiaryId) {
         subsidiaryId = existing.assignments[0].subsidiaryId;
@@ -186,6 +189,7 @@ export async function POST(request: NextRequest) {
       } else {
         normalizedRole = 'SYSTEM_ADMIN';
       }
+      if (normalizedRole === 'CUSTOM_ADMIN') return NextResponse.json({ error: 'Custom Admin access must be assigned to an existing staff member.' }, { status: 400 });
       const existingAdmin = await prisma.employee.findFirst({
         where: {
           workEmail: { equals: workEmail, mode: 'insensitive' },
@@ -215,6 +219,8 @@ export async function POST(request: NextRequest) {
     ).trim();
 
     const invitation = await prisma.$transaction(async (tx) => {
+      if (normalizedRole === 'GMD') await assertSingleActiveGmd(undefined, tx);
+      if (normalizedRole === 'SYSTEM_ADMIN') await assertSingleActiveSystemAdmin(undefined, tx);
       await tx.adminInvitation.updateMany({
         where: { workEmail, status: 'PENDING' },
         data: { status: 'REVOKED' },
@@ -306,6 +312,6 @@ export async function POST(request: NextRequest) {
       inviteLink: `/onboard?token=${token}`,
     });
   } catch (err: any) {
-    return NextResponse.json({ error: err?.message || 'Admin onboarding action failed.' }, { status: 500 });
+    return NextResponse.json({ error: err?.message || 'Admin onboarding action failed.' }, { status: err instanceof LifecycleAuthorizationError ? err.statusCode : 500 });
   }
 }

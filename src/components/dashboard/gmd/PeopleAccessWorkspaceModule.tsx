@@ -86,19 +86,18 @@ type Org = { id: string; legalName: string; code: string; type: string };
 type Dept = { id: string; name: string; code: string; organizationId: string };
 
 const EXECUTIVE_INVITE_ROLES = [
-  { value: 'SYSTEM_ADMIN', label: 'Super admin' },
-  { value: 'CUSTOM_ADMIN', label: 'Custom Admin (Scoped / Read-Only)' },
+  { value: 'SYSTEM_ADMIN', label: 'System Admin' },
   { value: 'GMD', label: 'The Group Managing Director' },
 ];
 
 const STAFF_APPROVAL_ROLES = [
   { value: 'STAFF', label: 'Staff' },
   { value: 'GMD', label: 'The Group Managing Director' },
-  { value: 'SYSTEM_ADMIN', label: 'Super admin' },
+  { value: 'SYSTEM_ADMIN', label: 'System Admin' },
 ];
 
 const getRoleDisplayName = (r: string) => {
-  if (r === 'SYSTEM_ADMIN' || r === 'SUPER_ADMIN') return 'Super admin';
+  if (r === 'SYSTEM_ADMIN' || r === 'SUPER_ADMIN') return 'System Admin';
   if (r === 'CUSTOM_ADMIN') return 'Custom Admin';
   if (r === 'GMD') return 'The Group Managing Director';
   if (r === 'HR' || r === 'HR_ADMIN') return 'Human Resources';
@@ -120,6 +119,7 @@ export function PeopleAccessWorkspaceModule({
   const [invitations, setInvitations] = useState<AdminInvitationItem[]>([]);
   const [organizations, setOrganizations] = useState<Org[]>([]);
   const [departments, setDepartments] = useState<Dept[]>([]);
+  const [activeSystemAdmin, setActiveSystemAdmin] = useState<{ id: string; legalName: string } | null>(null);
   const [activeGmd, setActiveGmd] = useState<{ id: string; legalName: string; workEmail: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState('');
@@ -190,7 +190,8 @@ export function PeopleAccessWorkspaceModule({
         if (Array.isArray(approvalData.departments) && approvalData.departments.length > 0) {
           deptList = approvalData.departments;
         }
-        if (approvalData.activeGmd) setActiveGmd(approvalData.activeGmd);
+        setActiveGmd(approvalData.activeGmd ?? null);
+        setActiveSystemAdmin(approvalData.activeSystemAdmin ?? null);
       }
 
       // Resilient fallback: If approval didn't supply organizations, read from /api/organizations
@@ -270,31 +271,32 @@ export function PeopleAccessWorkspaceModule({
     }
   };
 
+  function openAdminOnboarding() {
+    setInviteError('');
+    setPromoteError('');
+    setOnboardMode(activeSystemAdmin ? 'promote' : 'invite');
+    setInviteForm(previous => ({
+      ...previous, role: activeSystemAdmin ? 'GMD' : 'SYSTEM_ADMIN',
+      subsidiaryId: previous.subsidiaryId || (organizations[0]?.id ?? ''),
+    }));
+    setShowInviteModal(true);
+  }
+
   const handleInviteSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    if ((inviteForm.role === 'GMD' && activeGmd) || (inviteForm.role === 'SYSTEM_ADMIN' && activeSystemAdmin)) {
+      setInviteError('That seat is occupied. Use Promote Existing Staff to grant Custom Admin access.');
+      return;
+    }
     setInviteBusy(true);
     setInviteError('');
     try {
-      const useCustomAdminEndpoint =
-        (Boolean(selectedProfileId) && inviteForm.role !== 'GMD') || inviteForm.role === 'CUSTOM_ADMIN';
-      const response = await fetch(
-        useCustomAdminEndpoint ? '/api/control-center/admin-onboarding' : '/api/staff/invite',
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify(
-            useCustomAdminEndpoint
-              ? {
-                  mode: 'INVITE_NEW',
-                  ...inviteForm,
-                  role: 'CUSTOM_ADMIN',
-                  customAdminProfileId: selectedProfileId,
-                }
-              : inviteForm
-          ),
-        }
-      );
+      const response = await fetch('/api/staff/invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(inviteForm),
+      });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Failed to dispatch executive invitation.');
 
@@ -348,6 +350,10 @@ export function PeopleAccessWorkspaceModule({
     e.preventDefault();
     if (!promoteCandidate?.workEmail) {
       setPromoteError('Look up an existing staff account first.');
+      return;
+    }
+    if (!selectedProfileId) {
+      setPromoteError('Choose a Custom Admin profile.');
       return;
     }
     setPromoteBusy(true);
@@ -519,6 +525,8 @@ export function PeopleAccessWorkspaceModule({
     );
   }, [employees, searchQuery]);
 
+
+
   const filteredLeaders = useMemo(() => {
     if (!searchQuery.trim()) return leadershipAccounts;
     const q = searchQuery.toLowerCase();
@@ -587,14 +595,7 @@ export function PeopleAccessWorkspaceModule({
 
           <button
             type="button"
-            onClick={() => {
-              setInviteError('');
-              setInviteForm((prev) => ({
-                ...prev,
-                subsidiaryId: prev.subsidiaryId || (organizations[0]?.id ?? ''),
-              }));
-              setShowInviteModal(true);
-            }}
+            onClick={openAdminOnboarding}
             style={{
               display: 'inline-flex',
               alignItems: 'center',
@@ -1095,10 +1096,11 @@ export function PeopleAccessWorkspaceModule({
                         onChange={(e) => setApprovalRoles((prev) => ({ ...prev, [employee.id]: e.target.value }))}
                       >
                         {STAFF_APPROVAL_ROLES.map((r) => {
-                          const isGmdOccupied = r.value === 'GMD' && activeGmd;
+                          const occupied = r.value === 'GMD' ? activeGmd : r.value === 'SYSTEM_ADMIN' ? activeSystemAdmin : null;
+
                           return (
-                            <option key={r.value} value={r.value} disabled={Boolean(isGmdOccupied)}>
-                              {isGmdOccupied ? `GMD (Occupied by ${activeGmd.legalName})` : r.label}
+                            <option key={r.value} value={r.value} disabled={Boolean(occupied)}>
+                              {occupied ? `${r.label} (Occupied by ${occupied.legalName})` : r.label}
                             </option>
                           );
                         })}
@@ -1535,10 +1537,7 @@ export function PeopleAccessWorkspaceModule({
               </p>
               <button
                 type="button"
-                onClick={() => {
-                  setInviteError('');
-                  setShowInviteModal(true);
-                }}
+                onClick={openAdminOnboarding}
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
@@ -1802,7 +1801,7 @@ export function PeopleAccessWorkspaceModule({
             {onboardMode === 'promote' ? (
               <form onSubmit={handlePromoteStaffSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                 <div style={{ padding: '11px 14px', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 8, color: '#9a3412', fontSize: 12.5, lineHeight: 1.5 }}>
-                  Select an existing staff member, configure their admin profile, and send an onboarding email to their <strong>same work email</strong>. Once they enter their information via the link, their configured admin access activates.
+                  Select an existing staff member, configure their admin profile, and send an onboarding email to their <strong>same work email</strong>. They confirm the invitation using their current staff password and keep the same account.
                 </div>
 
                 {promoteError && (
@@ -1950,10 +1949,11 @@ export function PeopleAccessWorkspaceModule({
                     style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 13, background: '#fff', boxSizing: 'border-box', fontWeight: 600 }}
                   >
                     {EXECUTIVE_INVITE_ROLES.map((r) => {
-                      const isGmdOccupied = r.value === 'GMD' && activeGmd;
+                      const occupied = r.value === 'GMD' ? activeGmd : r.value === 'SYSTEM_ADMIN' ? activeSystemAdmin : null;
+
                       return (
-                        <option key={r.value} value={r.value} disabled={Boolean(isGmdOccupied)}>
-                          {isGmdOccupied ? `GMD (Occupied by ${activeGmd.legalName})` : r.label}
+                        <option key={r.value} value={r.value} disabled={Boolean(occupied)}>
+                          {occupied ? `${r.label} (Occupied by ${occupied.legalName})` : r.label}
                         </option>
                       );
                     })}
@@ -1999,40 +1999,7 @@ export function PeopleAccessWorkspaceModule({
                 </div>
               )}
 
-              {(inviteForm.role === 'SYSTEM_ADMIN' || inviteForm.role === 'CUSTOM_ADMIN') && (
-                <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                    <label style={{ fontSize: 12.5, fontWeight: 700, color: '#334155' }}>
-                      {inviteForm.role === 'CUSTOM_ADMIN' ? 'Custom Admin Profile (Required)' : 'Custom Admin Profile (Optional)'}
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditingProfile(null);
-                        setShowBuilderModal(true);
-                      }}
-                      style={{ border: 'none', background: 'transparent', color: '#ea580c', fontSize: 11.5, fontWeight: 800, cursor: 'pointer' }}
-                    >
-                      + Create Custom Profile
-                    </button>
-                  </div>
-                  <select
-                    required={inviteForm.role === 'CUSTOM_ADMIN'}
-                    value={selectedProfileId}
-                    onChange={(e) => setSelectedProfileId(e.target.value)}
-                    style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 13, background: '#fff', fontWeight: 600 }}
-                  >
-                    {inviteForm.role === 'CUSTOM_ADMIN' ? (
-                      <option value="">Select Custom Admin Profile...</option>
-                    ) : (
-                      <option value="">Full Super Admin (Unrestricted)</option>
-                    )}
-                    {customProfiles.map((p) => (
-                      <option key={p.id} value={p.id}>{p.name}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
+
 
               <div>
                 <label style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: '#334155', marginBottom: 6 }}>

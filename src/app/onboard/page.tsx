@@ -153,7 +153,7 @@ function OnboardingContent() {
     e.preventDefault();
     setSubmitError(null);
 
-    if (password.length < 10) {
+    if (invitation?.role !== 'CUSTOM_ADMIN' && password.length < 10) {
       setSubmitError('Password must be at least 10 characters long.');
       return;
     }
@@ -522,14 +522,14 @@ function OnboardingContent() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
               <div>
                 <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 5 }}>
-                  Create Password *
+                  {invitation?.role === 'CUSTOM_ADMIN' ? 'Current Staff Password' : 'Create Password'} *
                 </label>
                 <div style={{ position: 'relative' }}>
                   <input
                     required
                     type={showPassword ? 'text' : 'password'}
-                    minLength={10}
-                    placeholder="Min 10 characters"
+                    minLength={invitation?.role === 'CUSTOM_ADMIN' ? 1 : 10}
+                    placeholder={invitation?.role === 'CUSTOM_ADMIN' ? 'Enter your current staff password' : 'Min 10 characters'}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     style={{ width: '100%', padding: '10px 40px 10px 38px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 14, boxSizing: 'border-box' }}
@@ -553,7 +553,7 @@ function OnboardingContent() {
                   <input
                     required
                     type={showPassword ? 'text' : 'password'}
-                    minLength={10}
+                    minLength={invitation?.role === 'CUSTOM_ADMIN' ? 1 : 10}
                     placeholder="Re-type password"
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}

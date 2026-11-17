@@ -30,7 +30,7 @@ import {
   resolveScopeFromStagePayload,
 } from './ai-access-control';
 import { resolveAuthorizedOrganizationScope } from './organizations';
-import { assertSingleActiveGmd, verifyTargetEmployeeAccess, approveEmployeeOnboarding, rejectEmployeeOnboarding, transitionEmployeeStatus } from './employee-lifecycle';
+import { assertSingleActiveGmd, assertSingleActiveSystemAdmin, verifyTargetEmployeeAccess, approveEmployeeOnboarding, rejectEmployeeOnboarding, transitionEmployeeStatus } from './employee-lifecycle';
 import { invalidateSessionCache, getHrAuthorizationScope } from './auth';
 import {
   applyCanonicalCompensationChange,
@@ -1735,9 +1735,10 @@ export async function executeBusinessCommand(tx: Prisma.TransactionClient, input
       if ((normalizeCanonicalRole(new_role) === 'SUPER_ADMIN' || normalizeCanonicalRole(emp.role) === 'SUPER_ADMIN') && normalizeCanonicalRole(actor.role) !== 'SUPER_ADMIN') throw new StagedPermissionError('Only a Super Admin may change Super Admin privileges.');
       const canonicalRole = await assertValidRoleAndGmdUniqueness(tx, new_role, emp.id);
 
+      if (canonicalRole === 'SUPER_ADMIN') await assertSingleActiveSystemAdmin(emp.id, tx);
       const updated = await tx.employee.update({
         where: { id: employee_id },
-        data: { role: canonicalRole },
+        data: { role: canonicalRole === 'SUPER_ADMIN' ? 'SYSTEM_ADMIN' : canonicalRole, customAdminProfileId: null, customAdminTitle: null },
       });
 
       await tx.authSession.deleteMany({ where: { employeeId: emp.id } });
@@ -3160,19 +3161,12 @@ export async function executeBusinessCommand(tx: Prisma.TransactionClient, input
         const { workEmail, role, subsidiaryId, departmentId, positionName, legalName } = materialPayload;
         const canonicalRole = normalizeCanonicalRole(role);
         if (!canonicalRole || canonicalRole === 'STAFF') throw new StagedPermissionError('Only executive invitations are permitted.');
-        if (canonicalRole === 'SUPER_ADMIN' && normalizeCanonicalRole(actor.role) !== 'SUPER_ADMIN') throw new StagedPermissionError('Only a Super Admin can invite another Super Admin.');
-
-        if (canonicalRole === 'GMD') {
-          const existingGmd = await tx.employee.findFirst({
-            where: { role: 'GMD', status: 'ACTIVE', approvalStatus: 'APPROVED' },
-          });
-          if (existingGmd) {
-            throw new Error(`An active GMD already exists: ${existingGmd.legalName} (${existingGmd.workEmail}).`);
-          }
-        }
+        if (canonicalRole === 'GMD') await assertSingleActiveGmd(undefined, tx);
+        if (canonicalRole === 'SUPER_ADMIN') await assertSingleActiveSystemAdmin(undefined, tx);
+        const invitationRole = canonicalRole === 'SUPER_ADMIN' ? 'SYSTEM_ADMIN' : canonicalRole;
 
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(workEmail || ''))) throw new Error('A valid work email is required.');
-        const existingEmp = await tx.employee.findFirst({ where: { workEmail, role } });
+        const existingEmp = await tx.employee.findFirst({ where: { workEmail: { equals: workEmail, mode: 'insensitive' }, role: { not: 'STAFF' } } });
         if (existingEmp) {
           throw new Error(`An active ${role} account already exists for ${workEmail} (${existingEmp.legalName}).`);
         }
@@ -3196,10 +3190,10 @@ export async function executeBusinessCommand(tx: Prisma.TransactionClient, input
         const invitation = await tx.adminInvitation.create({
           data: {
             workEmail,
-            role: canonicalRole,
+            role: invitationRole,
             subsidiaryId: subsidiary.id,
             departmentId: departmentId || null,
-            positionName: positionName || (canonicalRole === 'GMD' ? 'The Group Managing Director' : 'Super Admin'),
+            positionName: positionName || (canonicalRole === 'GMD' ? 'The Group Managing Director' : 'System Admin'),
             token,
             invitedById: actor.id,
             status: 'PENDING',
@@ -3210,7 +3204,7 @@ export async function executeBusinessCommand(tx: Prisma.TransactionClient, input
         try {
           await queueDelivery(tx, actionId, 'ADMIN_INVITATION', {
             to: workEmail,
-            role: canonicalRole,
+            role: invitationRole,
             subsidiaryName: subsidiary.legalName,
             positionName: invitation.positionName || canonicalRole,
             inviteToken: token,
@@ -3480,7 +3474,7 @@ export async function executeBusinessCommand(tx: Prisma.TransactionClient, input
         }
 
         const activeStaff = await tx.employee.findMany({
-          where: { status: 'ACTIVE', approvalStatus: 'APPROVED', role: 'STAFF', ...(payrollOrgId ? { assignments: { some: { subsidiaryId: payrollOrgId, status: 'ACTIVE' } } } : {}) },
+          where: { status: 'ACTIVE', approvalStatus: 'APPROVED', role: { in: ['STAFF','CUSTOM_ADMIN'] }, ...(payrollOrgId ? { assignments: { some: { subsidiaryId: payrollOrgId, status: 'ACTIVE' } } } : {}) },
           include: {
             assignments: { where: { status: 'ACTIVE' }, orderBy: { isPrimary: 'desc' } },
             employmentAgreements: {

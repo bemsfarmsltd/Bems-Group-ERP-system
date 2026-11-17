@@ -2,7 +2,6 @@ import { canAccessEmployeePortal } from '@/lib/portal-access';
 import {
   type AdminModuleKey,
   type CustomAdminPermissionsMap,
-  createMonnifyComplianceReadOnlyPermissions,
   hasActionPermission,
   hasCategoryAccess,
   hasModuleAccess,
@@ -32,8 +31,21 @@ export type AuthenticatedEmployee = {
   customAdminPermissions?: CustomAdminPermissionsMap | null;
 };
 
+export function normalizeSystemRole(
+  role: string | null | undefined,
+  customAdminProfileId?: string | null
+): 'GMD' | 'SYSTEM_ADMIN' | 'CUSTOM_ADMIN' | 'STAFF' {
+  const upper = String(role || 'STAFF').trim().toUpperCase();
+  if (upper === 'GMD') return 'GMD';
+  if (upper === 'CUSTOM_ADMIN') return 'CUSTOM_ADMIN';
+  if (upper === 'SYSTEM_ADMIN' || upper === 'SUPER_ADMIN') {
+    return customAdminProfileId ? 'CUSTOM_ADMIN' : 'SYSTEM_ADMIN';
+  }
+  return 'STAFF';
+}
+
 function resolveEmployeeCustomPermissions(employee: any): CustomAdminPermissionsMap | null {
-  const role = String(employee?.role || '').toUpperCase();
+  const role = normalizeSystemRole(employee?.role, employee?.customAdminProfileId);
   if (role === 'GMD') return null;
 
   const rawPerms: CustomAdminPermissionsMap | null =
@@ -42,20 +54,12 @@ function resolveEmployeeCustomPermissions(employee: any): CustomAdminPermissions
       ? parsePermissionsJson(employee.customAdminProfile.permissionsJson)
       : null);
 
-  const hasEnabledModule =
-    rawPerms && Object.values(rawPerms).some((grant) => Boolean(grant?.enabled));
-  if (hasEnabledModule) return rawPerms;
-
-  // If an account is a CUSTOM_ADMIN (or assigned a custom profile) whose profile was saved
-  // without toggling any module on, safely default to the strict Read-Only compliance preset.
-  if (role === 'CUSTOM_ADMIN' || employee?.customAdminProfileId || employee?.customAdminTitle) {
-    return createMonnifyComplianceReadOnlyPermissions();
-  }
   return rawPerms;
 }
 
 function buildAuthenticatedEmployee(employee: any): AuthenticatedEmployee {
-  const isGmd = String(employee.role || '').toUpperCase() === 'GMD';
+  const normalizedRole = normalizeSystemRole(employee.role, employee.customAdminProfileId);
+  const isGmd = normalizedRole === 'GMD';
   const permissions = resolveEmployeeCustomPermissions(employee);
   return {
     id: employee.id,
@@ -63,7 +67,7 @@ function buildAuthenticatedEmployee(employee: any): AuthenticatedEmployee {
     legalName: employee.legalName,
     workEmail: employee.workEmail,
     phone: employee.phone,
-    role: employee.role,
+    role: normalizedRole,
     avatarUrl: employee.avatarUrl,
     customAdminProfileId: isGmd ? null : employee.customAdminProfileId || null,
     customAdminTitle: isGmd ? null : employee.customAdminTitle || employee.customAdminProfile?.name || null,
@@ -237,7 +241,10 @@ export async function getAuthenticatedEmployee(
         const employee = session.employee;
         if (canAccessEmployeePortal(employee)) {
           const authEmp = buildAuthenticatedEmployee(employee);
-          SESSION_CACHE.set(tHash, { emp: authEmp, exp: Date.now() + SESSION_CACHE_TTL_MS });
+          // Administrative grants and executive seat changes must be read on each request.
+          if (authEmp.role === 'STAFF' && !authEmp.customAdminProfileId) {
+            SESSION_CACHE.set(tHash, { emp: authEmp, exp: Date.now() + SESSION_CACHE_TTL_MS });
+          }
           return authEmp;
         }
       }
@@ -277,14 +284,15 @@ export async function destroyEmployeeSession(req?: Request) {
 }
 
 export function publicEmployee(employee: AuthenticatedEmployee | any) {
-  const isGmd = String(employee?.role || '').toUpperCase() === 'GMD';
+  const normalizedRole = normalizeSystemRole(employee?.role, employee?.customAdminProfileId);
+  const isGmd = normalizedRole === 'GMD';
   return {
     id: employee.id,
     name: employee.legalName,
     fullName: employee.legalName,
     email: employee.workEmail,
     phone: employee.phone || '',
-    role: employee.role,
+    role: normalizedRole,
     avatarUrl: employee.avatarUrl || '',
     emailVerified: true,
     customAdminProfileId: isGmd ? null : employee.customAdminProfileId || null,
@@ -294,15 +302,15 @@ export function publicEmployee(employee: AuthenticatedEmployee | any) {
 }
 
 export const CANONICAL_ROLES = {
-  SUPER_ADMIN: 'SYSTEM_ADMIN',
-  CUSTOM_ADMIN: 'CUSTOM_ADMIN',
   GMD: 'GMD',
+  SYSTEM_ADMIN: 'SYSTEM_ADMIN',
+  CUSTOM_ADMIN: 'CUSTOM_ADMIN',
   STAFF: 'STAFF',
 } as const;
 
 export const ROLE_DISPLAY_NAMES: Record<string, string> = {
-  SYSTEM_ADMIN: 'Super admin',
-  SUPER_ADMIN: 'Super admin',
+  SYSTEM_ADMIN: 'System Admin',
+  SUPER_ADMIN: 'System Admin',
   CUSTOM_ADMIN: 'Custom Admin',
   GMD: 'The Group Managing Director',
   STAFF: 'Staff',
@@ -316,7 +324,7 @@ export function getRoleDisplayName(role: string): string {
       : role === 'CUSTOM_ADMIN'
       ? 'Custom Admin'
       : role === 'SYSTEM_ADMIN' || role === 'SUPER_ADMIN'
-      ? 'Super admin'
+      ? 'System Admin'
       : 'Staff')
   );
 }

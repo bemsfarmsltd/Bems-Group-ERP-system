@@ -1,3 +1,4 @@
+import { isStaffAccount } from '@/lib/portal-access';
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getLagosTime, serializeAttendanceRecord } from '@/lib/attendance/token';
@@ -24,12 +25,12 @@ export async function GET(request: Request) {
     const { workDate: todayStr } = getLagosTime(now);
     const targetDate = dateParam || todayStr;
 
-    const effectiveEmployeeId = (user?.role === 'STAFF') ? user.id : (employeeId || null);
+    const effectiveEmployeeId = (isStaffAccount(user?.role ?? '')) ? user?.id : (employeeId || null);
     const effectiveMonth = monthParam ? parseInt(monthParam, 10) : (now.getMonth() + 1);
     const effectiveYear = yearParam ? parseInt(yearParam, 10) : now.getFullYear();
 
     // Mode 1: Individual Employee Timesheet (Month-wise Calendar View)
-    if (effectiveEmployeeId && (monthParam || user?.role === 'STAFF')) {
+    if (effectiveEmployeeId && (monthParam || isStaffAccount(user?.role ?? ''))) {
       const monthNum = effectiveMonth;
       const yearNum = effectiveYear;
 

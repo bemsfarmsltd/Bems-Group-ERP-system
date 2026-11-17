@@ -49,7 +49,7 @@ export async function hasAuthorizedTransfer(tx: Prisma.TransactionClient, transf
         WHERE b."id" = ${transfer.bankAccountId} AND b."employeeId" = ${transfer.employeeId}
           AND b."active" AND b."bankCode" = ${transfer.bankCode}
           AND b."accountNumber" = ${transfer.accountNumber} AND b."accountName" = ${transfer.accountName}
-          AND e."role" = 'STAFF' AND e."approvalStatus" = 'APPROVED' AND e."status" IN ('ACTIVE','ON_LEAVE')
+          AND e."role" IN ('STAFF','CUSTOM_ADMIN') AND e."approvalStatus" = 'APPROVED' AND e."status" IN ('ACTIVE','ON_LEAVE')
       ) AS "bankVerified"
     FROM "WalletWithdrawalAllocation" a
     JOIN "WalletCreditLot" c ON c."id" = a."creditLotId"

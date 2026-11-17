@@ -1,3 +1,4 @@
+import { isStaffAccount } from '@/lib/portal-access';
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getAuthenticatedEmployee, hasAnyRole } from '@/lib/auth';
@@ -65,7 +66,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: employee?.status === 'ON_LEAVE' ? 'Attendance cannot be recorded while you are on approved leave. Contact HR if your leave dates changed.' : 'Account is inactive or has been suspended. Please contact HR.' }, { status: 403 });
     }
 
-    if (employee.role !== 'STAFF') {
+    if (!isStaffAccount(employee.role)) {
       return NextResponse.json({ error: 'Attendance timekeeping is exclusively for general staff personnel.' }, { status: 403 });
     }
 

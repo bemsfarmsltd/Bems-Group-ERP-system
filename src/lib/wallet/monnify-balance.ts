@@ -1,3 +1,4 @@
+import { isStaffAccount } from '@/lib/portal-access';
 import {requiredFeeReserve,backedFeeReserve} from './fees';
 import { randomUUID } from 'node:crypto';
 import { WalletActor, WalletError, fundingState, fundingCommitments, liveWalletActor, requireWallet, walletJson, walletTransaction } from './core';
@@ -28,7 +29,7 @@ export async function refreshMonnifyFunding(actor: WalletActor, forOwnWithdrawal
   // Authorization happens before any provider call, and again at commit.
   await walletTransaction(async tx => {
     await liveWalletActor(tx, actor);
-    if (!['GMD','SUPER_ADMIN','SYSTEM_ADMIN'].includes(actor.role) && !(forOwnWithdrawal && actor.role==='STAFF')) throw new WalletError('NOT_PERMITTED', 'Executive authority is required to refresh company funding.', 403);
+    if (!['GMD','SUPER_ADMIN','SYSTEM_ADMIN'].includes(actor.role) && !(forOwnWithdrawal && isStaffAccount(actor.role))) throw new WalletError('NOT_PERMITTED', 'Executive authority is required to refresh company funding.', 403);
   });
   const environment = process.env.MONNIFY_ENVIRONMENT || process.env.MONNIFY_ENV || 'live';
   const sourceAccount = process.env.MONNIFY_SOURCE_ACCOUNT || process.env.MONNIFY_WALLET_ACCOUNT_NUMBER || '';

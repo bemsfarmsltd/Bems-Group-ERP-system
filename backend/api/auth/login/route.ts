@@ -49,13 +49,15 @@ export async function POST(request: Request) {
         },
       },
     });
-    let employee: (typeof candidates)[number] | null = null;
+    const matches = [];
     for (const candidate of candidates) {
-      if (await verifyPassword(password, candidate.passwordHash)) {
-        employee = candidate;
-        break;
-      }
+      if (await verifyPassword(password, candidate.passwordHash)) matches.push(candidate);
     }
+    const activeMatches = matches.filter(canAccessEmployeePortal);
+    if (activeMatches.length > 1) {
+      return NextResponse.json({ error: 'More than one active account matches these credentials. Contact your System Admin to resolve the duplicate accounts.' }, { status: 409 });
+    }
+    const employee = activeMatches[0] ?? (matches.length === 1 ? matches[0] : null);
     if (!employee) {
       return NextResponse.json({ error: 'Email or password is incorrect.' }, { status: 401 });
     }

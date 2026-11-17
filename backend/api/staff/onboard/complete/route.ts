@@ -1,9 +1,11 @@
 import crypto from 'node:crypto';
+import { Prisma } from '@prisma/client';
 import { NextResponse } from 'next/server';
-import { createEmployeeSession, hashPassword, publicEmployee, verifyPassword } from '@/lib/auth';
+import { createEmployeeSession, hashPassword, invalidateSessionCache, publicEmployee, verifyPassword } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import {
   assertSingleActiveGmd,
+  assertSingleActiveSystemAdmin,
   LifecycleAuthorizationError,
 } from '@/lib/employee-lifecycle';
 
@@ -33,8 +35,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Please enter your full legal name.' }, { status: 400 });
     }
 
-    if (!password || password.length < 10) {
-      return NextResponse.json({ error: 'Password must be at least 10 characters long.' }, { status: 400 });
+    if (!password || password.length > 256) {
+      return NextResponse.json({ error: 'Enter your account password (up to 256 characters).' }, { status: 400 });
     }
 
     // 1. Verify invitation token
@@ -70,10 +72,22 @@ export async function POST(request: Request) {
 
     // 2. Check existing accounts on this email (never overwrite a STAFF row when creating an Admin account)
     const accountsForEmail = await prisma.employee.findMany({
-      where: { workEmail: invitation.workEmail },
-      select: { id: true, role: true, passwordHash: true },
+      where: { workEmail: { equals: invitation.workEmail, mode: 'insensitive' } },
+      select: { id: true, role: true, passwordHash: true, status: true, approvalStatus: true },
     });
 
+    const isCustomAdmin = invitation.role === 'CUSTOM_ADMIN';
+    const staffAccount = accountsForEmail.find(account => account.role === 'STAFF' && account.status === 'ACTIVE' && account.approvalStatus === 'APPROVED');
+    if (isCustomAdmin) {
+      if (!staffAccount || accountsForEmail.length !== 1 || !invitation.customAdminProfileId) {
+        throw new LifecycleAuthorizationError('Custom Admin access requires one active staff account and an assigned permission profile. Existing duplicate accounts must be reviewed first.', 409);
+      }
+      if (!await verifyPassword(password, staffAccount.passwordHash)) {
+        throw new LifecycleAuthorizationError('Enter your current staff password to activate delegated access.', 403);
+      }
+    } else if (password.length < 10) {
+      throw new LifecycleAuthorizationError('Password must be at least 10 characters long.', 400);
+    }
     const existingGmd = accountsForEmail.find((a) => a.role === 'GMD');
     if (existingGmd && invitation.role !== 'GMD') {
       return NextResponse.json(
@@ -83,7 +97,7 @@ export async function POST(request: Request) {
     }
 
     const existing =
-      invitation.role === 'STAFF'
+      isCustomAdmin ? staffAccount! : invitation.role === 'STAFF'
         ? accountsForEmail.find((a) => a.role === 'STAFF') || null
         : accountsForEmail.find((a) => a.role !== 'STAFF') || null;
 
@@ -100,16 +114,15 @@ export async function POST(request: Request) {
       }
     }
 
-    // 3. Single GMD enforcement
-    if (invitation.role === 'GMD') {
-      await assertSingleActiveGmd();
-    }
-
     // 4. Create Employee, Assignment, consume Invitation, and write AuditEvent in a transaction
     const rolePrefix = invitation.role.replace(/_/g, '').slice(0, 3).toUpperCase();
     const employeeNumber = `BEMS-${rolePrefix}-${Date.now().toString().slice(-4)}`;
     const passwordHash = await hashPassword(password);
 
+    const role = invitation.role === 'SUPER_ADMIN' ? 'SYSTEM_ADMIN' : invitation.role;
+    if (!isCustomAdmin && existing && existing.role !== role && !(role === 'SYSTEM_ADMIN' && existing.role === 'SUPER_ADMIN')) {
+      throw new LifecycleAuthorizationError('This email already has a different administrative role. Review the account before continuing.', 409);
+    }
     const employee = await prisma.$transaction(async (tx) => {
       // Re-check invitation status atomically inside transaction
       const consumeResult = await tx.adminInvitation.updateMany({
@@ -120,17 +133,23 @@ export async function POST(request: Request) {
         throw new LifecycleAuthorizationError('This invitation has already been consumed or revoked.', 409);
       }
 
-      if (invitation.role === 'GMD') {
-        const activeGmd = await tx.employee.findFirst({
-          where: { role: 'GMD', status: 'ACTIVE', approvalStatus: 'APPROVED' },
-          select: { id: true, legalName: true },
+      if (invitation.role === 'GMD') await assertSingleActiveGmd(existing?.id, tx);
+      if (invitation.role === 'SYSTEM_ADMIN' || invitation.role === 'SUPER_ADMIN') await assertSingleActiveSystemAdmin(existing?.id, tx);
+      if (isCustomAdmin) {
+        const changed = await tx.employee.updateMany({
+          where: { id: staffAccount!.id, role: 'STAFF', status: 'ACTIVE', approvalStatus: 'APPROVED', passwordHash: staffAccount!.passwordHash },
+          data: { role: 'CUSTOM_ADMIN', customAdminProfileId: invitation.customAdminProfileId, customAdminTitle: invitation.customAdminTitle },
         });
-        if (activeGmd) {
-          throw new LifecycleAuthorizationError(
-            `An active Group Managing Director (GMD) already exists (${activeGmd.legalName}).`,
-            409
-          );
-        }
+        if (changed.count !== 1) throw new LifecycleAuthorizationError('The staff account changed. Ask for a new invitation.', 409);
+        const promoted = await tx.employee.findUniqueOrThrow({ where: { id: staffAccount!.id }, include: { customAdminProfile: true } });
+        await tx.authSession.deleteMany({ where: { employeeId: promoted.id } });
+        await tx.auditEvent.create({ data: {
+          actorId: promoted.id, actorName: promoted.legalName, actorRole: promoted.role,
+          groupId: 'BEMS-GROUP', subsidiaryId: invitation.subsidiaryId, targetType: 'EMPLOYEE', targetId: promoted.id,
+          action: 'CUSTOM_ADMIN_ACCESS_ACTIVATED', correlationId: invitation.id,
+          metadata: JSON.stringify({ invitedById: invitation.invitedById, profileId: invitation.customAdminProfileId }),
+        } });
+        return promoted;
       }
 
       const created = existing
@@ -139,7 +158,7 @@ export async function POST(request: Request) {
             data: {
               legalName: legalName || undefined,
               phone: phone || undefined,
-              role: invitation.role,
+              role,
               status: 'ACTIVE',
               approvalStatus: 'APPROVED',
               passwordHash,
@@ -160,7 +179,7 @@ export async function POST(request: Request) {
               legalName,
               workEmail: invitation.workEmail,
               phone,
-              role: invitation.role,
+              role,
               status: 'ACTIVE',
               approvalStatus: 'APPROVED',
               passwordHash,
@@ -210,9 +229,10 @@ export async function POST(request: Request) {
       });
 
       return created;
-    });
+    }, { isolationLevel: 'Serializable' });
 
     // 5. Establish authenticated session and direct login
+    if (isCustomAdmin) invalidateSessionCache();
     const session = await createEmployeeSession(employee.id);
     const res = NextResponse.json({
       success: true,
@@ -233,6 +253,9 @@ export async function POST(request: Request) {
   } catch (error) {
     if (error instanceof LifecycleAuthorizationError) {
       return NextResponse.json({ error: error.message }, { status: error.statusCode });
+    }
+    if (error instanceof Prisma.PrismaClientKnownRequestError && ['P2002', 'P2034'].includes(error.code)) {
+      return NextResponse.json({ error: 'The account or executive seat changed while accepting this invitation. Review its availability and try again.' }, { status: 409 });
     }
     console.error('Error in POST /api/staff/onboard/complete:', error);
     return NextResponse.json({ error: 'Could not complete onboarding. Please try again.' }, { status: 500 });

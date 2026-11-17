@@ -1,3 +1,4 @@
+import { isStaffAccount } from '@/lib/portal-access';
 import { randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { WalletActor, WalletError, fundingState, hash, journal, liveWalletActor, minorUnits, requireWallet, requireCommitments, walletJson, walletTransaction } from './core';
@@ -9,7 +10,7 @@ export async function saveVerifiedWalletBank(actor:WalletActor,input:{accountNum
   const bank=await verifyMonnifyDestination(String(input.accountNumber),String(input.bankCode));
   return walletTransaction(async tx=>{
     const employee=await liveWalletActor(tx,actor);
-    if(employee.role!=='STAFF' || employee.status!=='ACTIVE')throw new WalletError('OWNER_REQUIRED','Only active staff owners can configure a withdrawal bank account.',403);
+    if(!isStaffAccount(employee.role) || employee.status!=='ACTIVE')throw new WalletError('OWNER_REQUIRED','Only active staff owners can configure a withdrawal bank account.',403);
     if(normalizedName(bank.accountName)!==normalizedName(employee.legalName))throw new WalletError('ACCOUNT_NAME_MISMATCH','The bank account name must match your verified staff identity. Ask support to resolve your identity details before withdrawing.',409);
     const fingerprint=hash(bank); const id=randomUUID();
     await tx.$executeRaw`UPDATE "WalletBankAccount" SET "active"=false WHERE "employeeId"=${actor.id} AND "active"`;
@@ -33,7 +34,7 @@ export async function requestWalletWithdrawal(actor:WalletActor,input:any,proof?
   if(amount<minimum||amount>maximum)throw new WalletError('WITHDRAWAL_LIMIT','The amount is outside the configured withdrawal limits.');
   return walletTransaction(async tx=>{
     const employee=await liveWalletActor(tx,actor);
-    if(employee.role!=='STAFF')throw new WalletError('OWNER_REQUIRED','Only staff can withdraw their own approved funds.',403);
+    if(!isStaffAccount(employee.role))throw new WalletError('OWNER_REQUIRED','Only staff can withdraw their own approved funds.',403);
     const [old]=await tx.$queryRaw<any[]>`SELECT "id","intentHash","status","reference" FROM "WalletWithdrawal" WHERE "employeeId"=${actor.id} AND "idempotencyKey"=${intent.idempotencyKey}`;
     if(old){if(old.intentHash!==hash(intent))throw new WalletError('IDEMPOTENCY_CONFLICT','This withdrawal key belongs to a different transaction.',409);return {id:old.id,status:old.status,reference:old.reference,alreadyExecuted:true};}
     await consumeWalletChallenge(tx,actor,'WITHDRAWAL',intent,proof);
@@ -79,7 +80,7 @@ export async function cancelQueuedWithdrawal(actor:WalletActor,id:string){
 export async function planWalletWithdrawal(actor:WalletActor,input:{amountMinor:string;bankAccountId:string;idempotencyKey:string}){
  const amount=minorUnits(input.amountMinor);
  return walletTransaction(async tx=>{
-  await liveWalletActor(tx,actor);if(actor.role!=='STAFF')throw new WalletError('OWNER_REQUIRED','Only staff can plan their own withdrawal.',403);
+  await liveWalletActor(tx,actor);if(!isStaffAccount(actor.role))throw new WalletError('OWNER_REQUIRED','Only staff can plan their own withdrawal.',403);
   const rows=await tx.$queryRaw<any[]>`SELECT c."id",c."availableMinor",c."category" FROM "WalletCreditLot" c JOIN "WalletReleaseProposal" p ON p."id"=c."proposalId" WHERE c."employeeId"=${actor.id} AND c."availableMinor">0 AND NOT c."frozen" AND p."status"='EXECUTED' ORDER BY c."createdAt",c."id" LIMIT 1000`;
   let remaining=amount;const creditAllocations=[];
   for(const c of rows){if(remaining===BigInt(0))break;const part=remaining<c.availableMinor?remaining:c.availableMinor;creditAllocations.push({creditLotId:c.id,amountMinor:part.toString()});remaining-=part;}

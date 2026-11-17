@@ -1,3 +1,4 @@
+import { hasModuleAccess, type CustomAdminPermissionsMap } from '@/lib/admin-permissions';
 import { redirect } from 'next/navigation';
 import { getSsrActor } from '@/lib/ssr-api';
 import ProjectWorkspaceClient from '@/components/projects/ProjectWorkspaceClient';
@@ -14,6 +15,10 @@ export default async function ProjectsPage() {
 
   // Separate Staff Execution Flow from Admin / Executive Command Center
   if (!['GMD', 'SUPER_ADMIN', 'SYSTEM_ADMIN', 'CUSTOM_ADMIN'].includes(String(actor.role).toUpperCase())) {
+    redirect('/staff/projects');
+  }
+
+  if (actor.role === 'CUSTOM_ADMIN' && !hasModuleAccess(actor.role, actor.customAdminPermissions as CustomAdminPermissionsMap | null, 'projects')) {
     redirect('/staff/projects');
   }
 
