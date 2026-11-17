@@ -1,7 +1,7 @@
 import React from 'react';
 import { redirect } from 'next/navigation';
 import { getSsrPageData } from '@/lib/ssr-api';
-import { StaffDashboardClient } from '@/components/dashboard/staff/StaffDashboardClient';
+import { StaffPortalContainer } from '@/components/dashboard/staff/StaffPortalContainer';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,7 +16,7 @@ export default async function StaffPage() {
   }
 
   return (
-    <StaffDashboardClient
+    <StaffPortalContainer
       user={data.staffUser}
       businessName={data.businessName || 'Staff Workspace'}
       subsidiaries={data.subsidiaries || []}

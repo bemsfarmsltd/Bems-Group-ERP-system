@@ -15,7 +15,7 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const subsidiary = searchParams.get('subsidiary') || searchParams.get('organization_id');
-  const scope = await resolveAuthorizedOrganizationScope(actor, subsidiary);
+  const scope = await resolveAuthorizedOrganizationScope(actor, subsidiary, 'finance');
 
   const basePrivilegeFilter = privileged
     ? {}

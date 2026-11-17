@@ -81,7 +81,7 @@ export async function GET(
       );
     }
 
-    const scopeCheck = await resolveAuthorizedOrganizationScope(actor, expenditure.subsidiaryId);
+    const scopeCheck = await resolveAuthorizedOrganizationScope(actor, expenditure.subsidiaryId, isOwner ? 'staff' : 'finance');
     if (scopeCheck.organizationIds.length === 0 && !isOwner) {
       return NextResponse.json(
         { error: "Access denied. This request belongs to an organization outside your authorized scope." },

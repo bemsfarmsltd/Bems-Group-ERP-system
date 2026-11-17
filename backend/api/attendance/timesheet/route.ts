@@ -214,7 +214,7 @@ export async function GET(request: Request) {
       prisma.employee.findMany({
         where: {
           status: 'ACTIVE',
-          role: 'STAFF',
+          role: { in: ['STAFF', 'CUSTOM_ADMIN'] },
           isAttendanceExempt: false,
         },
         select: {

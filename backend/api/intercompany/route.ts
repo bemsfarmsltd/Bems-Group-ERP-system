@@ -2,7 +2,7 @@ import { executeDashboardCommand } from '@/lib/staged-actions';
 import { NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
 import { prisma } from '@/lib/prisma';
-import { getAuthenticatedEmployee, hasAnyRole } from '@/lib/auth';
+import { getAuthenticatedEmployee, hasAdminOrCustomPermission } from '@/lib/auth';
 import { resolveOrganizationScope } from '@/lib/organizations';
 
 export const dynamic = 'force-dynamic';
@@ -11,7 +11,7 @@ export async function GET(request: Request) {
   try {
     const actor = await getAuthenticatedEmployee(request);
     if (!actor) return NextResponse.json({ error: 'Sign in to view intercompany records.' }, { status: 401 });
-    if (!hasAnyRole(actor, ['SYSTEM_ADMIN', 'SUPER_ADMIN', 'GMD'])) {
+    if (!hasAdminOrCustomPermission(actor, 'finance', 'Accounting', 'view_accounting')) {
       return NextResponse.json({ error: 'Executive or Super admin access is required.' }, { status: 403 });
     }
 

@@ -23,7 +23,7 @@ export async function GET(request: Request) {
     const format = (searchParams.get('format') || 'json').toLowerCase();
     const reportType = (searchParams.get('report_type') || 'audit').toLowerCase();
 
-    const scope = await resolveAuthorizedOrganizationScope(actor, subsidiary);
+    const scope = await resolveAuthorizedOrganizationScope(actor, subsidiary, 'finance');
     const scopeIds = scope.organizationIds;
 
     if (isExport) {

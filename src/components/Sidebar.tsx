@@ -31,26 +31,26 @@ export function Sidebar() {
       name: "Finance Desk",
       href: "/finance",
       icon: LayoutDashboard,
-      roles: ["GMD", "HR", "SYSTEM_ADMIN", "STAFF"],
+      roles: ["GMD", "SYSTEM_ADMIN", "CUSTOM_ADMIN", "STAFF"],
     },
     {
       name: "Requests & Channels",
       href: "/requests",
       icon: FileSpreadsheet,
-      roles: ["GMD", "SYSTEM_ADMIN"],
+      roles: ["GMD", "SYSTEM_ADMIN", "CUSTOM_ADMIN"],
       badge: "Active",
     },
     {
       name: "Staff Onboarding & Approvals",
       href: "/finance?tab=Staff+onboarding",
       icon: UserCheck,
-      roles: ["GMD", "SYSTEM_ADMIN"],
+      roles: ["GMD", "SYSTEM_ADMIN", "CUSTOM_ADMIN"],
     },
     {
       name: "Approvals Console",
       href: "/approvals",
       icon: CheckCircle2,
-      roles: ["GMD", "SYSTEM_ADMIN"],
+      roles: ["GMD", "SYSTEM_ADMIN", "CUSTOM_ADMIN"],
       badge: "GMD Signoff",
       badgeColor: "bg-amber-500/20 text-amber-400 border border-amber-500/30",
     },
@@ -58,13 +58,13 @@ export function Sidebar() {
       name: "Disbursements & Bank Proof",
       href: "/disbursements",
       icon: Receipt,
-      roles: ["GMD", "SYSTEM_ADMIN"],
+      roles: ["GMD", "SYSTEM_ADMIN", "CUSTOM_ADMIN"],
     },
     {
       name: "Accountability & Closure",
       href: "/accountability",
       icon: ShieldCheck,
-      roles: ["GMD", "HR", "SYSTEM_ADMIN", "STAFF"],
+      roles: ["GMD", "SYSTEM_ADMIN", "CUSTOM_ADMIN", "STAFF"],
       badge: "Receipts",
       badgeColor: "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30",
     },
@@ -72,13 +72,13 @@ export function Sidebar() {
       name: "Hybrid Payroll & Splits",
       href: "/payroll",
       icon: Users2,
-      roles: ["GMD", "HR", "SYSTEM_ADMIN"],
+      roles: ["GMD", "SYSTEM_ADMIN", "CUSTOM_ADMIN"],
     },
     {
       name: "Attendance & Timekeeping",
       href: "/attendance",
       icon: Clock,
-      roles: ["GMD", "HR", "SYSTEM_ADMIN", "STAFF"],
+      roles: ["GMD", "SYSTEM_ADMIN", "CUSTOM_ADMIN", "STAFF"],
       badge: "Kiosk",
       badgeColor: "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30",
     },
@@ -86,19 +86,19 @@ export function Sidebar() {
       name: "Vendors & Benchmark Rates",
       href: "/vendors",
       icon: Building2,
-      roles: ["GMD", "HR", "SYSTEM_ADMIN", "STAFF"],
+      roles: ["GMD", "SYSTEM_ADMIN", "CUSTOM_ADMIN", "STAFF"],
     },
     {
       name: "Intercompany Notes",
       href: "/intercompany",
       icon: FileText,
-      roles: ["GMD", "SYSTEM_ADMIN"],
+      roles: ["GMD", "SYSTEM_ADMIN", "CUSTOM_ADMIN"],
     },
     {
       name: "Audit Trail & Compliance",
       href: "/audit",
       icon: History,
-      roles: ["GMD", "SYSTEM_ADMIN"],
+      roles: ["GMD", "SYSTEM_ADMIN", "CUSTOM_ADMIN"],
     },
     {
       name: "Admin Settings",
@@ -110,14 +110,14 @@ export function Sidebar() {
       name: "Mobile App Gates",
       href: "/finance?tab=Mobile+App+Settings",
       icon: Smartphone,
-      roles: ["GMD", "SYSTEM_ADMIN"],
+      roles: ["GMD", "SYSTEM_ADMIN", "CUSTOM_ADMIN"],
       badge: "HTTP 426",
       badgeColor: "bg-orange-500/20 text-orange-400 border border-orange-500/30",
     },
   ];
 
   const allowedItems = navItems.filter((item) =>
-    (currentUser.role === 'SYSTEM_ADMIN' || item.roles.includes(currentUser.role))
+    (currentUser.role === 'SYSTEM_ADMIN' || currentUser.role === 'SUPER_ADMIN' || item.roles.includes(currentUser.role))
   );
 
   return (

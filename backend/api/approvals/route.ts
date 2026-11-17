@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getAuthenticatedEmployee, hasAnyRole, hasEmployeePermission } from '@/lib/auth';
 import { toSystemRequestId } from '@/lib/request-id';
-import { resolveOrganizationScope } from '@/lib/organizations';
+import { resolveAuthorizedOrganizationScope } from '@/lib/organizations';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,15 +19,13 @@ export async function GET(request: Request) {
     const canViewApprovals =
       hasAnyRole(actor, ['SYSTEM_ADMIN', 'SUPER_ADMIN', 'GMD']) ||
       (hasAnyRole(actor, ['CUSTOM_ADMIN']) && hasEmployeePermission(actor, 'finance', 'Approvals & payments', 'view_approvals'));
-    if (actor.role === 'STAFF') {
+    if (actor.role === 'STAFF' || (actor.role === 'CUSTOM_ADMIN' && !canViewApprovals)) {
       whereCondition.requestedById = actor.id;
     } else if (!canViewApprovals) {
       return NextResponse.json({ error: 'You do not have access to request records.' }, { status: 403 });
     }
-    const scopedOrgIds = await resolveOrganizationScope(subsidiaryCode);
-    if (!scopedOrgIds.isGroup && scopedOrgIds.organizationIds.length > 0) {
-      whereCondition.subsidiaryId = { in: scopedOrgIds.organizationIds };
-    }
+    const scopedOrgIds = await resolveAuthorizedOrganizationScope(actor, subsidiaryCode, canViewApprovals ? 'finance' : 'staff');
+    whereCondition.subsidiaryId = { in: scopedOrgIds.organizationIds };
 
     if (statusParam && statusParam !== 'ALL') {
       if (statusParam === 'PENDING') {
@@ -71,12 +69,14 @@ export async function GET(request: Request) {
         orderBy: [{ amountMinor: 'desc' }, { createdAt: 'desc' }],
       }),
       prisma.organization.findMany({
+        where: { id: { in: scopedOrgIds.organizationIds } },
         select: { id: true, code: true, legalName: true },
         orderBy: { code: 'asc' },
       }),
-      prisma.budget.findMany({
+      canViewApprovals ? prisma.budget.findMany({
+        where: { organizationId: { in: scopedOrgIds.organizationIds } },
         include: { lines: true },
-      }),
+      }) : Promise.resolve([]),
     ]);
 
     const now = new Date().getTime();

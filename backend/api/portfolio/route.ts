@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getServerCache, setServerCache } from '@/lib/server-cache';
-import { getAuthenticatedEmployee, hasAnyRole } from '@/lib/auth';
+import { getAuthenticatedEmployee, hasAdminOrCustomPermission } from '@/lib/auth';
 import { toSystemRequestId } from '@/lib/request-id';
 
 export const dynamic = 'force-dynamic';
@@ -10,7 +10,10 @@ export async function GET(request: Request) {
   try {
     const actor = await getAuthenticatedEmployee(request);
     if (!actor) return NextResponse.json({ error: 'Sign in to view the group portfolio.' }, { status: 401 });
-    if (!hasAnyRole(actor, ['SYSTEM_ADMIN', 'SUPER_ADMIN', 'GMD'])) {
+    if (
+      !hasAdminOrCustomPermission(actor, 'finance', 'Overview', 'view_telemetry') &&
+      !hasAdminOrCustomPermission(actor, 'projects', 'portfolios', 'view_portfolios')
+    ) {
       return NextResponse.json({ error: 'Executive access is required to view the group portfolio.' }, { status: 403 });
     }
     const cacheKey = `portfolio:${actor.id}`;

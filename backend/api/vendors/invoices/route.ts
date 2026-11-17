@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
     const requestId = searchParams.get('requestId') || undefined;
     const status = searchParams.get('status') || undefined;
     const subsidiaryId = searchParams.get('subsidiaryId') || searchParams.get('subsidiary') || 'ALL';
-    const scope = await resolveAuthorizedOrganizationScope(user, subsidiaryId);
+    const scope = await resolveAuthorizedOrganizationScope(user, subsidiaryId, 'finance');
 
     const invoices = await prisma.vendorInvoice.findMany({
       where: {
@@ -126,7 +126,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const scopeCheck = await resolveAuthorizedOrganizationScope(user, request.subsidiaryId);
+    const scopeCheck = await resolveAuthorizedOrganizationScope(user, request.subsidiaryId, 'finance');
     if (scopeCheck.organizationIds.length === 0 && !isExecutive && request.requestedById !== user.id) {
       return NextResponse.json({ ok: false, error: 'Forbidden: Outside authorized subsidiary scope.' }, { status: 403 });
     }

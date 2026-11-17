@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { hashPassword, invalidateSessionCache } from '@/lib/auth';
+import { hashPassword, invalidateSessionCache, normalizeSystemRole } from '@/lib/auth';
 import { checkRateLimit } from '@/lib/rate-limiter';
 
 export const dynamic = 'force-dynamic';
@@ -45,20 +45,18 @@ export async function POST(request: Request) {
 
     const requestedRole = typeof body.role === 'string' ? body.role.trim().toUpperCase() : '';
     const [candidates, tokenRecord] = await Promise.all([
-      prisma.employee.findMany({ where: { workEmail: email } }),
+      prisma.employee.findMany({ where: { workEmail: { equals: email, mode: 'insensitive' } }, take: 2 }),
       prisma.emailVerificationToken.findFirst({
         where: { email },
         orderBy: { createdAt: 'desc' },
       }),
     ]);
-    const employee =
-      (requestedRole ? candidates.find((c) => c.role.toUpperCase() === requestedRole) : null) ||
-      candidates.find((c) => c.role === 'STAFF') ||
-      candidates[0] ||
-      null;
+    const employee = candidates.length === 1 ? candidates[0] : null;
+    const validRole = !requestedRole || (employee && ['GMD','SYSTEM_ADMIN','SUPER_ADMIN','CUSTOM_ADMIN','STAFF'].includes(requestedRole) &&
+      normalizeSystemRole(employee.role, employee.customAdminProfileId) === normalizeSystemRole(requestedRole));
 
     if (
-      !employee ||
+      !employee || !validRole ||
       employee.approvalStatus !== 'APPROVED' ||
       employee.status !== 'ACTIVE' ||
       !tokenRecord ||

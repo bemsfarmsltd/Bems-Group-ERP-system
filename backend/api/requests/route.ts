@@ -53,7 +53,7 @@ export async function GET(request: Request) {
     }
 
     const { resolveAuthorizedOrganizationScope } = await import('@/lib/organizations');
-    const scope = await resolveAuthorizedOrganizationScope(actor, subsidiaryId);
+    const scope = await resolveAuthorizedOrganizationScope(actor, subsidiaryId, isExecutive ? 'finance' : 'staff');
     where.subsidiaryId = { in: scope.organizationIds };
 
     if (minAmount && !isNaN(minAmount)) {

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getAuthenticatedEmployee, hasAnyRole } from '@/lib/auth';
+import { getAuthenticatedEmployee, hasAdminOrCustomPermission } from '@/lib/auth';
 import { resolveAuthorizedOrganizationScope } from '@/lib/organizations';
 
 export async function GET(req: NextRequest) {
@@ -18,7 +18,7 @@ export async function GET(req: NextRequest) {
             searchParams.get('orgId') ||
             'ALL';
 
-        const scope = await resolveAuthorizedOrganizationScope(authUser, requestedOrgId);
+        const scope = await resolveAuthorizedOrganizationScope(authUser, requestedOrgId, 'hr');
         if (scope.organizationIds.length === 0) {
             return NextResponse.json({
                 status: 'success',
@@ -62,9 +62,9 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Authentication required.' }, { status: 401 });
         }
 
-        if (!hasAnyRole(authUser, ['SYSTEM_ADMIN', 'SUPER_ADMIN', 'GMD'])) {
+        if (!hasAdminOrCustomPermission(authUser, 'control-center', 'org_structure', 'create_department')) {
             return NextResponse.json(
-                { error: 'Executive clearance (Super admin or GMD) required to create departments.' },
+                { error: 'Executive clearance (System Admin or GMD) required to create departments.' },
                 { status: 403 }
             );
         }
@@ -95,7 +95,7 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        const scope = await resolveAuthorizedOrganizationScope(authUser, requestedOrgId);
+        const scope = await resolveAuthorizedOrganizationScope(authUser, requestedOrgId, 'hr');
         const targetOrgId = scope.organizationIds[0];
         if (!targetOrgId) {
             return NextResponse.json(

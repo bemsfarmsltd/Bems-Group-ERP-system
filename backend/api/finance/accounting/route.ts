@@ -16,7 +16,7 @@ const category = 'Accounting';
 
 async function authorizedScope(actor: AuthenticatedEmployee, scope: string | null) {
   if (!hasCategoryAccess(actor.role, actor.customAdminPermissions, 'finance', category) || (!hasActionPermission(actor.role, actor.customAdminPermissions, 'finance', category, 'view_accounting') && !hasActionPermission(actor.role, actor.customAdminPermissions, 'finance', category, 'manage_accounting'))) invalid('Accounting access is required.', 403);
-  const requested = await resolveAuthorizedOrganizationScope(actor, scope);
+  const requested = await resolveAuthorizedOrganizationScope(actor, scope, 'finance');
   const granted = getAllowedSubsidiariesForModule(actor.role, actor.customAdminPermissions, 'finance');
   const organizations = await prisma.organization.findMany({
     where: { status: 'ACTIVE', defaultCurrency: 'NGN', id: { in: requested.organizationIds.filter(id => granted === 'ALL' || granted.includes(id)) } },

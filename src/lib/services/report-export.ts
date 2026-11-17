@@ -7,7 +7,7 @@ export async function createReportSnapshot(tx: Prisma.TransactionClient, actor: 
   const type = String(input.report_type || input.reportType || 'audit');
   const format = String(input.format || 'csv');
   if (!['audit', 'requests', 'fund_requests', 'disbursements', 'budgets'].includes(type) || !['csv', 'json'].includes(format)) throw new Error('Unsupported report type or format.');
-  const scope = await resolveAuthorizedOrganizationScope(actor as any, input.subsidiary || input.organization_id || input.organizationId || input.subsidiaryId || 'ALL');
+  const scope = await resolveAuthorizedOrganizationScope(actor as any, input.subsidiary || input.organization_id || input.organizationId || input.subsidiaryId || 'ALL', 'finance');
   if (!scope.organizationIds.length) throw new Error('No authorized report workspace.');
   const ids = scope.organizationIds;
   const limit = 500;

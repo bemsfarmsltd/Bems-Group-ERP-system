@@ -1,3 +1,4 @@
+import { isStaffAccount } from '@/lib/portal-access';
 import { accountabilityDeadline } from '@/lib/services/accountability-deadline';
 import { NextResponse } from 'next/server';
 import { getAuthenticatedEmployee, getHrAuthorizationScope, hasAnyRole } from '@/lib/auth';
@@ -10,7 +11,7 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: Request) {
   const actor = await getAuthenticatedEmployee(request);
   if (!actor) return NextResponse.json({ error: 'Sign in to view accountability cases.' }, { status: 401 });
-  if (!hasAnyRole(actor, ['SYSTEM_ADMIN', 'SUPER_ADMIN', 'GMD', 'STAFF'])) {
+  if (!isStaffAccount(actor.role) && !hasAnyRole(actor, ['SYSTEM_ADMIN', 'SUPER_ADMIN', 'GMD'])) {
     return NextResponse.json({ error: 'Accountability access is required.' }, { status: 403 });
   }
 
@@ -19,7 +20,7 @@ export async function GET(request: Request) {
   const scope = await resolveAuthorizedOrganizationScope(actor, rawSubsidiary);
 
   // Staff can see and submit proof only for requests they own or requested.
-  const ownCasesOnly = actor.role === 'STAFF';
+  const ownCasesOnly = isStaffAccount(actor.role);
 
   const cases = await prisma.accountabilityCase.findMany({
     where: ownCasesOnly

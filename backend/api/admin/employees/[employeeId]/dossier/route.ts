@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getAuthenticatedEmployee, hasAnyRole } from '@/lib/auth';
+import { getAuthenticatedEmployee, hasAdminOrCustomPermission } from '@/lib/auth';
 import { inferAuditModule } from '@/lib/audit-forensics';
 
 export const dynamic = 'force-dynamic';
@@ -8,7 +8,11 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: Request, context: { params: Promise<{ employeeId: string }> }) {
   try {
     const actor = await getAuthenticatedEmployee(request);
-    if (!actor || !hasAnyRole(actor, ['GMD', 'SYSTEM_ADMIN', 'SUPER_ADMIN'])) {
+    if (
+      !actor ||
+      (!hasAdminOrCustomPermission(actor, 'control-center', 'onboarding', 'view_admins') &&
+        !hasAdminOrCustomPermission(actor, 'hr', 'employees', 'view_directory'))
+    ) {
       return NextResponse.json({ error: 'Executive or admin authorization required.' }, { status: 403 });
     }
 

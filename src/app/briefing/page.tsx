@@ -1,6 +1,7 @@
 import React from 'react';
 import { redirect } from 'next/navigation';
 import { getSsrPageData, hasSsrAnyRole } from '@/lib/ssr-api';
+import { hasCategoryAccess, type CustomAdminPermissionsMap } from '@/lib/admin-permissions';
 import { ConnectAppShell } from '@/components/layout/ConnectAppShell';
 import { ExecutiveBriefingClient } from './ExecutiveBriefingClient';
 
@@ -13,6 +14,12 @@ export default async function ExecutiveBriefingPage() {
   }
   if (!hasSsrAnyRole(data.actor, ['SYSTEM_ADMIN', 'SUPER_ADMIN', 'CUSTOM_ADMIN', 'GMD'])) {
     redirect('/staff');
+  }
+  if (
+    data.actor.role === 'CUSTOM_ADMIN' &&
+    !hasCategoryAccess(data.actor.role, data.actor.customAdminPermissions as CustomAdminPermissionsMap | null, 'finance', 'Executive briefing')
+  ) {
+    redirect('/finance');
   }
   if (status === 403 || !data.briefing) {
     redirect('/finance');

@@ -9,11 +9,11 @@ export const dynamic = "force-dynamic";
 export default async function NewRequestPage() {
   const { status, data } = await getSsrPageData('requests-new');
   const actor = data?.actor;
-  if (status === 401 || !actor || actor.role === 'GMD' || actor.role === 'SYSTEM_ADMIN') {
+  if (status === 401 || !actor || actor.role === 'GMD' || actor.role === 'SYSTEM_ADMIN' || actor.role === 'SUPER_ADMIN') {
     redirect('/');
   }
-  if (actor.role === 'STAFF') {
-    redirect('/staff?create=true');
+  if (actor.role === 'STAFF' || actor.role === 'CUSTOM_ADMIN') {
+    redirect('/staff');
   }
 
   return (

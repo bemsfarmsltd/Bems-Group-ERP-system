@@ -37,9 +37,10 @@ export async function POST(request: Request) {
       );
     }
 
-    const employee = await prisma.employee.findFirst({
-      where: { workEmail: email },
+    const candidates = await prisma.employee.findMany({
+      where: { workEmail: { equals: email, mode: 'insensitive' } }, take: 2,
     });
+    const employee = candidates.length === 1 ? candidates[0] : null;
 
     // Only issue a single-use hashed OTP for active, approved accounts; always return a generic response to prevent account enumeration
     if (employee && canAccessEmployeePortal(employee)) {

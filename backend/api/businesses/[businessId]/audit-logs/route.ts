@@ -27,7 +27,7 @@ export async function GET(
     const { businessId: requestedBusinessId } = await params;
     const businessId = normalizeOrganizationIdentifier(requestedBusinessId);
 
-    const scopeCheck = await resolveAuthorizedOrganizationScope(actor, businessId);
+    const scopeCheck = await resolveAuthorizedOrganizationScope(actor, businessId, 'finance');
     if (scopeCheck.organizationIds.length === 0) {
       return NextResponse.json({ error: 'Forbidden: Outside authorized subsidiary scope.' }, { status: 403 });
     }

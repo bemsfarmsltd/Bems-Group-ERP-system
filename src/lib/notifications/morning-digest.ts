@@ -147,7 +147,7 @@ export async function buildAndSendGmdMorningDigest(options?: { force?: boolean }
     }),
     prisma.employee.count({
       where: {
-        role: "STAFF",
+        role: { in: ['STAFF', 'CUSTOM_ADMIN'] },
         approvalStatus: "PENDING",
         status: { not: "TERMINATED" },
       },

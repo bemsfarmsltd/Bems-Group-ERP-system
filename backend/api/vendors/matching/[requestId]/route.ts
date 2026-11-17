@@ -27,7 +27,7 @@ export async function GET(
     }
 
     const isExecutive = hasAnyRole(user, ['SYSTEM_ADMIN', 'SUPER_ADMIN', 'GMD']);
-    const scope = await resolveAuthorizedOrganizationScope(user, 'ALL');
+    const scope = await resolveAuthorizedOrganizationScope(user, 'ALL', 'finance');
     const withinOrgScope = scope.organizationIds.includes(request.subsidiaryId);
     const isOwnerOrExec = isExecutive || request.requestedById === user.id;
 

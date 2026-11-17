@@ -38,7 +38,7 @@ export async function queryAuthorizedBudgets(params: QueryAuthorizedBudgetsParam
     actor.scopedOrganizationId ||
     'ALL';
 
-  const orgScope = await resolveAuthorizedOrganizationScope(actor as any, effectiveOrgFilter);
+  const orgScope = await resolveAuthorizedOrganizationScope(actor as any, effectiveOrgFilter, 'finance');
   const permittedOrgIds = isExecutive
     ? orgScope.organizationIds
     : orgScope.organizationIds.filter((id) => hrScope.isGlobal || hrScope.subsidiaryIds.includes(id));

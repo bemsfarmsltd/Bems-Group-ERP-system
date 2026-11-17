@@ -1,8 +1,8 @@
 import type { Prisma } from '@prisma/client';
 import { assertSingleActiveGmd, assertSingleActiveSystemAdmin } from '../src/lib/employee-lifecycle';
 import { describe, expect, it, vi } from 'vitest';
-import { CANONICAL_ROLES, hasAnyRole, normalizeSystemRole, publicEmployee, type AuthenticatedEmployee } from '../src/lib/auth';
-import { hasModuleAccess } from '../src/lib/admin-permissions';
+import { CANONICAL_ROLES, hasAdminOrCustomPermission, hasAnyRole, normalizeSystemRole, publicEmployee, type AuthenticatedEmployee } from '../src/lib/auth';
+import { createMonnifyComplianceReadOnlyPermissions, hasModuleAccess } from '../src/lib/admin-permissions';
 import { canAccessEmployeePortal, isStaffAccount } from '../src/lib/portal-access';
 
 describe('Staff identity and custom grants', () => {
@@ -43,5 +43,22 @@ describe('Staff identity and custom grants', () => {
       const actor = publicEmployee({ role: 'CUSTOM_ADMIN', customAdminProfile: { permissionsJson } });
       expect(hasModuleAccess(actor.role, actor.customAdminPermissions, 'finance')).toBe(false);
     }
+  });
+
+  it('evaluates hasAdminOrCustomPermission across GMD, SYSTEM_ADMIN, CUSTOM_ADMIN, and STAFF', () => {
+    const gmd = { role: 'GMD' } as AuthenticatedEmployee;
+    const sysAdmin = { role: 'SYSTEM_ADMIN' } as AuthenticatedEmployee;
+    const staff = { role: 'STAFF' } as AuthenticatedEmployee;
+    const customAdmin = {
+      role: 'CUSTOM_ADMIN',
+      customAdminPermissions: createMonnifyComplianceReadOnlyPermissions(),
+    } as AuthenticatedEmployee;
+
+    expect(hasAdminOrCustomPermission(gmd, 'finance', 'Budgets & commitments', 'create_edit_budget')).toBe(true);
+    expect(hasAdminOrCustomPermission(sysAdmin, 'finance', 'Budgets & commitments', 'create_edit_budget')).toBe(true);
+    expect(hasAdminOrCustomPermission(staff, 'finance', 'Budgets & commitments', 'view_budgets')).toBe(false);
+    expect(hasAdminOrCustomPermission(customAdmin, 'finance', 'Budgets & commitments', 'view_budgets')).toBe(true);
+    expect(hasAdminOrCustomPermission(customAdmin, 'finance', 'Budgets & commitments', 'create_edit_budget')).toBe(false);
+    expect(hasAdminOrCustomPermission(customAdmin, 'hr', 'employees', 'view_directory')).toBe(false);
   });
 });

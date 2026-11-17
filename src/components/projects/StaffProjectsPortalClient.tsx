@@ -46,7 +46,7 @@ export default function StaffProjectsPortalClient() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/projects', { cache: 'no-store' });
+      const res = await fetch('/api/projects?view=staff', { cache: 'no-store' });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || 'Failed to load your projects.');
       setData(json);
@@ -98,7 +98,7 @@ export default function StaffProjectsPortalClient() {
   }, [projects, workItems, actor.id]);
 
   const handleMarkMyDeliverableDone = async (memberId: string) => {
-    await fetch('/api/projects/staff-timelines', {
+    await fetch('/api/projects/staff-timelines?view=staff', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ memberId, action: 'MARK_COMPLETED' }),
@@ -107,7 +107,7 @@ export default function StaffProjectsPortalClient() {
   };
 
   const handlePatchWorkItem = async (id: string, patch: Record<string, any>) => {
-    await fetch('/api/projects/work-items', {
+    await fetch('/api/projects/work-items?view=staff', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id, ...patch }),
@@ -116,7 +116,7 @@ export default function StaffProjectsPortalClient() {
   };
 
   const handleBulkPatchWorkItems = async (ids: string[], patch: Record<string, any>) => {
-    await fetch('/api/projects/work-items', {
+    await fetch('/api/projects/work-items?view=staff', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ bulkIds: ids, ...patch }),
@@ -130,7 +130,7 @@ export default function StaffProjectsPortalClient() {
     projectId: string;
     dueDate?: string;
   }) => {
-    await fetch('/api/projects/work-items', {
+    await fetch('/api/projects/work-items?view=staff', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

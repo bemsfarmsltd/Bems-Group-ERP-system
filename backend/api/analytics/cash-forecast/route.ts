@@ -20,7 +20,7 @@ export async function GET(req: Request) {
     const horizonDays = Math.min(365, Math.max(1, Number(searchParams.get('horizon_days')) || 30));
     const orgId = searchParams.get('organization_id') || searchParams.get('subsidiaryId') || 'ALL';
 
-    const scope = await resolveAuthorizedOrganizationScope(actor, orgId);
+    const scope = await resolveAuthorizedOrganizationScope(actor, orgId, 'finance');
     if (scope.organizationIds.length === 0) {
       return NextResponse.json({ ok: false, error_code: 'NOT_PERMITTED', message: 'Outside authorized organization scope.' }, { status: 403 });
     }
@@ -54,7 +54,7 @@ export async function GET(req: Request) {
     const activeAgreements = await prisma.employmentAgreement.findMany({
       where: {
         status: 'ACTIVE',
-        employee: { status: 'ACTIVE', role: 'STAFF' },
+        employee: { status: 'ACTIVE', role: { in: ['STAFF', 'CUSTOM_ADMIN'] } },
         ...(!scope.isGroup ? { employerEntityId: { in: scope.organizationIds } } : {}),
       },
       include: {

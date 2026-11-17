@@ -16,7 +16,7 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const requestId = searchParams.get("requestId");
     const subsidiaryId = searchParams.get("subsidiaryId") || searchParams.get("subsidiary") || "ALL";
-    const scope = await resolveAuthorizedOrganizationScope(actor, subsidiaryId);
+    const scope = await resolveAuthorizedOrganizationScope(actor, subsidiaryId, 'finance');
 
     if (!requestId) {
       // Return scoped match records

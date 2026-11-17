@@ -92,17 +92,17 @@ export async function POST(req: Request) {
 
 export async function PATCH(req: Request) {
   try {
-    const ctx = await resolveProjectContext(req);
+    const ctx = await resolveProjectContext(req, true);
     if ('error' in ctx) return ctx.error;
-    const { actor, isExecutive } = ctx;
+    const { actor, isExecutive, allowedSubIds } = ctx;
 
     const body = await req.json();
     const memberId = String(body.memberId || '');
     const action = String(body.action || 'UPDATE');
     if (!memberId) return NextResponse.json({ error: 'memberId is required.' }, { status: 400 });
 
-    const existing = await prisma.projectMember.findUnique({
-      where: { id: memberId },
+    const existing = await prisma.projectMember.findFirst({
+      where: { id: memberId, project: { organizationId: { in: allowedSubIds } } },
       include: { project: true, employee: { select: { id: true, legalName: true } } },
     });
     if (!existing) return NextResponse.json({ error: 'Staff assignment not found.' }, { status: 404 });

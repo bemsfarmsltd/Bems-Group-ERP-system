@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAuthenticatedEmployee, hasAnyRole } from '@/lib/auth';
+import { getAuthenticatedEmployee, hasAdminOrCustomPermission } from '@/lib/auth';
 import { getIntercompanyMatrix } from '@/lib/services/intercompany';
 
 export const dynamic = 'force-dynamic';
@@ -10,7 +10,7 @@ export async function GET(req: NextRequest) {
     if (!actor) {
       return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
     }
-    if (!hasAnyRole(actor, ['SYSTEM_ADMIN', 'SUPER_ADMIN', 'GMD'])) {
+    if (!hasAdminOrCustomPermission(actor, 'finance', 'Accounting', 'view_accounting')) {
       return NextResponse.json({ ok: false, error: 'Executive authority required.' }, { status: 403 });
     }
 

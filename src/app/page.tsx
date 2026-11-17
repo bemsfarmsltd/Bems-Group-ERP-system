@@ -90,6 +90,13 @@ export default function RootPage() {
   }
 
   const upperRole = String(user.role || '').toUpperCase();
+  if (upperRole === 'STAFF') {
+    if (typeof window !== 'undefined') {
+      window.location.replace('/staff');
+    }
+    return null;
+  }
+
   const isAdminEntry =
     upperRole === 'GMD' ||
     upperRole === 'SUPER_ADMIN' ||

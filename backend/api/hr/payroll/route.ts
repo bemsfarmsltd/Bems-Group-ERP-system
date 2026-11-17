@@ -62,7 +62,7 @@ export async function GET(req: Request) {
       }),
       prisma.employee.findMany({
         where: {
-          role: 'STAFF',
+          role: { in: ['STAFF', 'CUSTOM_ADMIN'] },
           status: 'ACTIVE',
           ...(useSubFilter
             ? {

@@ -20,7 +20,7 @@ export async function GET(req: Request) {
     const dataset = searchParams.get('dataset') || 'requests';
     const orgId = searchParams.get('organization_id') || searchParams.get('subsidiaryId') || 'ALL';
 
-    const scope = await resolveAuthorizedOrganizationScope(actor, orgId);
+    const scope = await resolveAuthorizedOrganizationScope(actor, orgId, 'finance');
     if (scope.organizationIds.length === 0) {
       return NextResponse.json({ ok: false, error_code: 'NOT_PERMITTED', message: 'Outside authorized organization scope.' }, { status: 403 });
     }

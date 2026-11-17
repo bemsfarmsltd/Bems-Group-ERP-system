@@ -238,7 +238,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Please provide the residential address of your Next of Kin.' }, { status: 400 });
     }
 
-    if (await prisma.employee.findFirst({ where: { workEmail: email, role: 'STAFF' }, select: { id: true } })) {
+    if (await prisma.employee.findFirst({ where: { workEmail: { equals: email, mode: 'insensitive' } }, select: { id: true } })) {
       return NextResponse.json({ error: 'A staff account already exists for this email address.' }, { status: 409 });
     }
 

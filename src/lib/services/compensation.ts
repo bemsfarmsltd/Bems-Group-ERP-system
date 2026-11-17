@@ -1,3 +1,4 @@
+import { isStaffAccount } from '@/lib/portal-access';
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 
@@ -62,7 +63,7 @@ export async function inspectEmployeeCompensationContext(
 
   let emp = await prisma.employee.findFirst({
     where: {
-      role: 'STAFF',
+      role: { in: ['STAFF', 'CUSTOM_ADMIN'] },
       status: 'ACTIVE',
       OR: [
         { id: cleanQuery },
@@ -93,7 +94,7 @@ export async function inspectEmployeeCompensationContext(
   if (!emp) {
     throw new Error(`Employee "${cleanQuery}" not found.`);
   }
-  if (emp.role !== 'STAFF') {
+  if (!isStaffAccount(emp.role)) {
     throw new Error(`Staff salary adjustments are only applicable to STAFF records (${emp.legalName} has role ${emp.role}).`);
   }
   if (emp.status !== 'ACTIVE') {
@@ -246,7 +247,7 @@ export async function applyCanonicalCompensationChange(
   if (!employee) {
     throw new Error('Staff member not found.');
   }
-  if (employee.role !== 'STAFF') {
+  if (!isStaffAccount(employee.role)) {
     throw new Error('Staff salary adjustments are only applicable to staff members.');
   }
   if (employee.status !== 'ACTIVE') {

@@ -1,3 +1,4 @@
+import { hasEmployeePermission } from '@/lib/auth';
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { resolveProjectContext, logProjectAudit } from '@/lib/projectRouteHelper';
@@ -23,12 +24,25 @@ async function hasPath(startId: string, targetId: string): Promise<boolean> {
 
 export async function POST(req: Request) {
   try {
-    const ctx = await resolveProjectContext(req);
+    const ctx = await resolveProjectContext(req, true);
     if ('error' in ctx) return ctx.error;
-    const { actor } = ctx;
+    const { actor, allowedSubIds, isExecutive, staffPortal } = ctx;
 
     const body = await req.json();
     const action = String(body.action || '');
+    if (staffPortal && action !== 'CREATE_WORK_ITEM') {
+      return NextResponse.json({ error: 'This action requires the Projects workspace.' }, { status: 403 });
+    }
+    if (!staffPortal && actor.role === 'CUSTOM_ADMIN') {
+      const allowed = action === 'ADD_COMMENT'
+        ? hasEmployeePermission(actor, 'projects', 'project_chat', 'post_message')
+        : action === 'TOGGLE_SUBSCRIPTION'
+        ? hasEmployeePermission(actor, 'projects', 'issues', 'view_board')
+        : hasEmployeePermission(actor, 'projects', 'issues', 'create_edit_issue');
+      if (!allowed || (body.status !== undefined && !hasEmployeePermission(actor, 'projects', 'issues', 'move_stage'))) {
+        return NextResponse.json({ error: 'This project action is outside your assigned permissions.' }, { status: 403 });
+      }
+    }
 
     if (action === 'CREATE_WORK_ITEM') {
       const projectId = String(body.projectId || '');
@@ -36,7 +50,14 @@ export async function POST(req: Request) {
       if (!projectId || !title) {
         return NextResponse.json({ error: 'Project and work item title are required.' }, { status: 400 });
       }
-      const project = await prisma.project.findUnique({ where: { id: projectId } });
+      if (!isExecutive && body.status === 'ACCEPTED') {
+        return NextResponse.json({ error: 'A new work item must be reviewed before acceptance.' }, { status: 403 });
+      }
+      const project = await prisma.project.findFirst({ where: {
+        id: projectId,
+        organizationId: { in: allowedSubIds },
+        ...(staffPortal ? { OR: [{ teamLeadId: actor.id }, { members: { some: { employeeId: actor.id } } }] } : {}),
+      } });
       if (!project) return NextResponse.json({ error: 'Project not found.' }, { status: 404 });
 
       const count = await prisma.projectWorkItem.count();
@@ -61,7 +82,7 @@ export async function POST(req: Request) {
           environment: body.environment ? String(body.environment) : null,
           storyPoints: body.storyPoints ? Number(body.storyPoints) : null,
           estimatedHours: body.estimatedHours ? Number(body.estimatedHours) : null,
-          assigneeId: body.assigneeId ? String(body.assigneeId) : null,
+          assigneeId: staffPortal ? actor.id : body.assigneeId ? String(body.assigneeId) : null,
           reporterId: actor.id,
           reviewerId: body.reviewerId ? String(body.reviewerId) : null,
           startDate: body.startDate ? String(body.startDate) : null,
@@ -141,7 +162,7 @@ export async function POST(req: Request) {
 
     if (action === 'UPDATE_WORK_ITEM') {
       const id = String(body.id || '');
-      const existing = await prisma.projectWorkItem.findUnique({ where: { id } });
+      const existing = await prisma.projectWorkItem.findFirst({ where: { id, organizationId: { in: allowedSubIds } } });
       if (!existing) return NextResponse.json({ error: 'Work item not found.' }, { status: 404 });
 
       if (body.expectedVersion !== undefined && Number(body.expectedVersion) !== existing.version) {
@@ -152,10 +173,11 @@ export async function POST(req: Request) {
       }
 
       const nextStatus = body.status !== undefined ? String(body.status) : existing.status;
-      if (nextStatus === 'ACCEPTED' && existing.reviewerId && existing.reviewerId !== actor.id && actor.role === 'STAFF') {
+      const accepting = body.status === 'ACCEPTED';
+    if (accepting && !isExecutive && existing.reviewerId !== actor.id) {
         return NextResponse.json({ error: 'Only the assigned reviewer or executive can accept this deliverable.' }, { status: 403 });
       }
-      if (nextStatus === 'ACCEPTED' && existing.assigneeId === actor.id && actor.role === 'STAFF') {
+      if (nextStatus === 'ACCEPTED' && existing.assigneeId === actor.id && !isExecutive) {
         return NextResponse.json({ error: 'Assignees cannot self-accept deliverables requiring independent verification.' }, { status: 403 });
       }
 
@@ -197,6 +219,10 @@ export async function POST(req: Request) {
       if (!sourceItemId || !targetItemId || sourceItemId === targetItemId) {
         return NextResponse.json({ error: 'Valid distinct source and target tasks are required.' }, { status: 400 });
       }
+      const scopedItems = await prisma.projectWorkItem.count({ where: {
+        id: { in: [sourceItemId, targetItemId] }, organizationId: { in: allowedSubIds },
+      } });
+      if (scopedItems !== 2) return NextResponse.json({ error: 'Work item not found in your workspace.' }, { status: 404 });
       // Prevent circular dependency
       if (await hasPath(targetItemId, sourceItemId)) {
         return NextResponse.json({ error: 'Circular dependency detected. This link cannot be created.' }, { status: 400 });
@@ -214,6 +240,9 @@ export async function POST(req: Request) {
       if (!projectId || !bodyText) {
         return NextResponse.json({ error: 'Comment text is required.' }, { status: 400 });
       }
+      const project = await prisma.project.findFirst({ where: { id: projectId, organizationId: { in: allowedSubIds } }, select: { id: true } });
+      const item = workItemId ? await prisma.projectWorkItem.findFirst({ where: { id: workItemId, projectId }, select: { id: true } }) : null;
+      if (!project || (workItemId && !item)) return NextResponse.json({ error: 'Project or task not found in your workspace.' }, { status: 404 });
       const comment = await prisma.projectComment.create({
         data: { projectId, workItemId, authorId: actor.id, body: bodyText, isInternal: Boolean(body.isInternal) },
       });
@@ -229,6 +258,9 @@ export async function POST(req: Request) {
       if (!projectId || hours <= 0 || !description) {
         return NextResponse.json({ error: 'Project, positive hours, and work description are required.' }, { status: 400 });
       }
+      const project = await prisma.project.findFirst({ where: { id: projectId, organizationId: { in: allowedSubIds } }, select: { id: true } });
+      const item = workItemId ? await prisma.projectWorkItem.findFirst({ where: { id: workItemId, projectId }, select: { id: true } }) : null;
+      if (!project || (workItemId && !item)) return NextResponse.json({ error: 'Project or task not found in your workspace.' }, { status: 404 });
       const entry = await prisma.projectTimeEntry.create({
         data: {
           projectId,
@@ -246,6 +278,8 @@ export async function POST(req: Request) {
     if (action === 'TOGGLE_SUBSCRIPTION') {
       const workItemId = String(body.workItemId || '');
       if (!workItemId) return NextResponse.json({ error: 'workItemId is required.' }, { status: 400 });
+      const item = await prisma.projectWorkItem.findFirst({ where: { id: workItemId, organizationId: { in: allowedSubIds } }, select: { id: true } });
+      if (!item) return NextResponse.json({ error: 'Work item not found in your workspace.' }, { status: 404 });
       const existingSub = await prisma.projectWorkItemSubscription.findUnique({
         where: { workItemId_employeeId: { workItemId, employeeId: actor.id } },
       });
@@ -266,15 +300,32 @@ export async function POST(req: Request) {
 
 export async function PATCH(req: Request) {
   try {
-    const ctx = await resolveProjectContext(req);
+    const ctx = await resolveProjectContext(req, true);
     if ('error' in ctx) return ctx.error;
-    const { actor } = ctx;
+    const { actor, allowedSubIds, isExecutive, staffPortal } = ctx;
 
     const body = await req.json();
 
+    if (!staffPortal && actor.role === 'CUSTOM_ADMIN' &&
+      (!hasEmployeePermission(actor, 'projects', 'issues', 'create_edit_issue') ||
+      (body.status !== undefined && !hasEmployeePermission(actor, 'projects', 'issues', 'move_stage')))) {
+      return NextResponse.json({ error: 'This project action is outside your assigned permissions.' }, { status: 403 });
+    }
+
+    if (!isExecutive && body.status === 'ACCEPTED' && body.assigneeId === actor.id) {
+      return NextResponse.json({ error: 'Assignees cannot self-accept deliverables.' }, { status: 403 });
+    }
+
+    const workItemScope = {
+      organizationId: { in: allowedSubIds },
+      ...(staffPortal ? { assigneeId: actor.id } : {}),
+    };
+
     // Bulk update support
     if (Array.isArray(body.bulkIds) && body.bulkIds.length > 0) {
-      const ids = body.bulkIds.map((x: unknown) => String(x));
+      const ids = [...new Set<string>(body.bulkIds.map((x: unknown) => String(x)))];
+      const matching = await prisma.projectWorkItem.count({ where: { id: { in: ids }, ...workItemScope } });
+      if (matching !== ids.length) return NextResponse.json({ error: 'One or more tasks are outside your workspace.' }, { status: 404 });
       const data: Record<string, unknown> = { version: { increment: 1 } };
       if (body.status !== undefined) {
         data.status = String(body.status);
@@ -285,23 +336,34 @@ export async function PATCH(req: Request) {
       if (body.sprintId !== undefined) data.sprintId = body.sprintId ? String(body.sprintId) : null;
       if (body.labelsJson !== undefined) data.labelsJson = body.labelsJson ? String(body.labelsJson) : null;
 
-      await prisma.projectWorkItem.updateMany({
-        where: { id: { in: ids } },
+      const updated = await prisma.projectWorkItem.updateMany({
+        where: {
+          id: { in: ids }, ...workItemScope,
+          ...(!isExecutive && body.status === 'ACCEPTED' ? {
+            reviewerId: actor.id,
+            AND: [{ OR: [{ assigneeId: null }, { assigneeId: { not: actor.id } }] }],
+          } : {}),
+        },
         data,
       });
 
-      return NextResponse.json({ success: true, updatedCount: ids.length });
+      return NextResponse.json({ success: true, updatedCount: updated.count });
     }
 
     const id = String(body.id || '');
     if (!id) return NextResponse.json({ error: 'Work item id is required.' }, { status: 400 });
 
-    const existing = await prisma.projectWorkItem.findUnique({ where: { id } });
+    const existing = await prisma.projectWorkItem.findFirst({ where: { id, ...workItemScope } });
     if (!existing) return NextResponse.json({ error: 'Work item not found.' }, { status: 404 });
 
     const nextStatus = body.status !== undefined ? String(body.status) : existing.status;
-    if (nextStatus === 'ACCEPTED' && existing.reviewerId && existing.reviewerId !== actor.id && actor.role === 'STAFF') {
+    const accepting = body.status === 'ACCEPTED';
+    if (accepting && !isExecutive && existing.reviewerId !== actor.id) {
       return NextResponse.json({ error: 'Only the assigned reviewer or executive can accept this deliverable.' }, { status: 403 });
+    }
+
+    if (accepting && !isExecutive && existing.assigneeId === actor.id) {
+      return NextResponse.json({ error: 'Assignees cannot self-accept deliverables.' }, { status: 403 });
     }
 
     const updated = await prisma.projectWorkItem.update({
@@ -440,13 +502,16 @@ export async function DELETE(req: Request) {
   try {
     const ctx = await resolveProjectContext(req);
     if ('error' in ctx) return ctx.error;
-    const { actor, isExecutive } = ctx;
+    const { actor, isExecutive, allowedSubIds } = ctx;
+    if (actor.role === 'CUSTOM_ADMIN' && !hasEmployeePermission(actor, 'projects', 'issues', 'create_edit_issue')) {
+      return NextResponse.json({ error: 'This project action is outside your assigned permissions.' }, { status: 403 });
+    }
 
     const { searchParams } = new URL(req.url);
     const id = String(searchParams.get('id') || '');
     if (!id) return NextResponse.json({ error: 'Work item id is required.' }, { status: 400 });
 
-    const existing = await prisma.projectWorkItem.findUnique({ where: { id } });
+    const existing = await prisma.projectWorkItem.findFirst({ where: { id, organizationId: { in: allowedSubIds } } });
     if (!existing) return NextResponse.json({ error: 'Work item not found.' }, { status: 404 });
 
     if (!isExecutive && existing.reporterId !== actor.id) {

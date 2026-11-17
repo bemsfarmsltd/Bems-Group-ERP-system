@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Smartphone, Monitor, Zap, ExternalLink, RefreshCw, ShieldCheck } from 'lucide-react';
-import { StaffDashboardClient } from './StaffDashboardClient';
+import Link from 'next/link';
+import { Smartphone, Monitor, ExternalLink, RefreshCw, ShieldCheck, LayoutGrid } from 'lucide-react';
 
 interface StaffPortalContainerProps {
   user: any;
@@ -15,18 +15,12 @@ interface StaffPortalContainerProps {
 export function StaffPortalContainer({
   user,
   businessName,
-  subsidiaries = [],
-  vendors = [],
-  currentStaff,
 }: StaffPortalContainerProps) {
-  // View Engine Mode: 'FLUTTER_NATIVE' (the exact mobile app) or 'WEB_TWIN' (the Next.js client)
-  const [engineMode, setEngineMode] = useState<'FLUTTER_NATIVE' | 'WEB_TWIN'>('FLUTTER_NATIVE');
-  
-  // Desktop Frame Style for Flutter App: 'PHONE_FRAME' (centered mobile simulator) or 'FULL_SCREEN' (wide)
-  const [desktopLayout, setDesktopLayout] = useState<'PHONE_FRAME' | 'FULL_SCREEN'>('PHONE_FRAME');
-  
+  const [desktopLayout, setDesktopLayout] = useState<'PHONE_FRAME' | 'FULL_SCREEN'>('FULL_SCREEN');
   const [iframeKey, setIframeKey] = useState<number>(Date.now());
   const [isLoadingEngine, setIsLoadingEngine] = useState(true);
+
+  const isCustomAdmin = String(user?.role || '').toUpperCase() === 'CUSTOM_ADMIN';
 
   // Auto-seed session into Flutter's Web SharedPreferences (localStorage)
   useEffect(() => {
@@ -34,8 +28,8 @@ export function StaffPortalContainer({
       if (typeof window !== 'undefined' && user) {
         const flutterUserPayload = {
           id: user.id || '',
-          fullName: user.fullName || '',
-          email: user.email || '',
+          fullName: user.fullName || user.legalName || '',
+          email: user.email || user.workEmail || '',
           phone: user.phone || '',
           employeeNumber: user.employeeNumber || '',
           role: user.role || 'STAFF',
@@ -46,10 +40,10 @@ export function StaffPortalContainer({
           staffGrade: user.staffGrade || 'OFFICER',
           bankName: user.bankName || '',
           accountNumber: user.accountNumber || '',
-          accountName: user.accountName || user.fullName || '',
+          accountName: user.accountName || user.fullName || user.legalName || '',
           salaryBankName: user.salaryBankName || user.bankName || '',
           salaryAccountNumber: user.salaryAccountNumber || user.accountNumber || '',
-          salaryAccountName: user.salaryAccountName || user.fullName || '',
+          salaryAccountName: user.salaryAccountName || user.accountName || user.fullName || '',
           avatarUrl: user.avatarUrl || '',
           token: user.id || 'bems-staff-active-token',
         };
@@ -65,31 +59,6 @@ export function StaffPortalContainer({
     setIframeKey(Date.now());
   };
 
-  if (engineMode === 'WEB_TWIN') {
-    return (
-      <div className="relative">
-        {/* Floating Switcher Back to Native Mobile */}
-        <div className="fixed top-3 right-4 z-50">
-          <button
-            onClick={() => setEngineMode('FLUTTER_NATIVE')}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-[#EA580C] text-white rounded-full text-xs font-black shadow-lg shadow-orange-500/30 hover:bg-orange-700 transition-all"
-            title="Switch to Native Flutter Mobile App Engine"
-          >
-            <Smartphone className="w-3.5 h-3.5" />
-            <span>Switch to Native Mobile App</span>
-          </button>
-        </div>
-        <StaffDashboardClient
-          user={user}
-          businessName={businessName}
-          subsidiaries={subsidiaries}
-          vendors={vendors}
-          currentStaff={currentStaff}
-        />
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-[#f8fafc] flex flex-col font-sans select-none overflow-hidden">
       {/* Top Desktop Controls Bar */}
@@ -100,20 +69,31 @@ export function StaffPortalContainer({
           </div>
           <div className="hidden sm:block">
             <div className="flex items-center gap-2">
-              <span className="text-xs font-black tracking-wide text-slate-900">BEMS STAFF APP</span>
+              <span className="text-xs font-black tracking-wide text-slate-900">BEMS STAFF PORTAL</span>
               <span className="px-1.5 py-0.5 rounded text-[9.5px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
                 <ShieldCheck className="w-3 h-3 text-emerald-600" />
-                Native Flutter Engine
+                Flutter Engine
               </span>
             </div>
             <p className="text-[10px] text-slate-500 font-medium">
-              {user.fullName} · {user.employeeNumber} · {user.subsidiary}
+              {user?.fullName || user?.legalName} · {user?.employeeNumber} · {user?.subsidiary || businessName}
             </p>
           </div>
         </div>
 
         {/* Layout & Engine Controls */}
         <div className="flex items-center gap-2">
+          {isCustomAdmin && (
+            <Link
+              href="/?view=admin"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold shadow-sm transition-all"
+              title="Switch to your assigned Admin Modules"
+            >
+              <LayoutGrid className="w-3.5 h-3.5" />
+              <span>Admin Modules</span>
+            </Link>
+          )}
+
           {/* Frame Toggle (Desktop only) */}
           <div className="hidden md:flex items-center bg-slate-100 rounded-lg p-0.5 border border-slate-200 text-xs">
             <button
@@ -146,7 +126,7 @@ export function StaffPortalContainer({
           <button
             onClick={handleReloadEngine}
             className="p-1.5 rounded-lg bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 shadow-sm transition-all"
-            title="Reload Mobile Engine"
+            title="Reload Staff Engine"
           >
             <RefreshCw className="w-4 h-4" />
           </button>
@@ -162,33 +142,21 @@ export function StaffPortalContainer({
             <ExternalLink className="w-3.5 h-3.5" />
             <span>Dedicated Tab</span>
           </a>
-
-          {/* Switch to Web Twin */}
-          <button
-            onClick={() => setEngineMode('WEB_TWIN')}
-            className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white hover:bg-slate-50 text-orange-600 border border-orange-200 text-xs font-black shadow-sm transition-all"
-            title="Switch to lightweight React web dashboard"
-          >
-            <Zap className="w-3.5 h-3.5 text-orange-600" />
-            <span className="hidden sm:inline">React Twin</span>
-          </button>
         </div>
       </header>
 
       {/* Main Canvas Area */}
       <main className="flex-1 flex items-center justify-center p-0 md:p-4 bg-slate-100 relative overflow-hidden">
-        {/* Loading Overlay */}
         {isLoadingEngine && (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/90 backdrop-blur-sm z-30 transition-opacity">
             <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-orange-600 to-amber-500 flex items-center justify-center text-white font-black text-xl shadow-xl shadow-orange-500/25 animate-pulse mb-3">
               B
             </div>
-            <p className="text-sm font-bold text-slate-900">Starting BEMS Staff Mobile Engine...</p>
+            <p className="text-sm font-bold text-slate-900">Starting BEMS Staff Portal...</p>
             <p className="text-xs text-slate-500 mt-1">Connecting to live ERP services</p>
           </div>
         )}
 
-        {/* Responsive Frame */}
         <div
           className={`w-full transition-all duration-300 flex items-center justify-center ${
             desktopLayout === 'FULL_SCREEN'
@@ -203,7 +171,6 @@ export function StaffPortalContainer({
                 : 'rounded-none'
             }`}
           >
-            {/* Phone Speaker Notch (Desktop Phone Mockup only) */}
             {desktopLayout === 'PHONE_FRAME' && (
               <div className="hidden md:flex absolute top-2 left-1/2 -translate-x-1/2 z-20 items-center justify-center">
                 <div className="w-20 h-4 bg-slate-200 rounded-full flex items-center justify-center">
@@ -212,7 +179,6 @@ export function StaffPortalContainer({
               </div>
             )}
 
-            {/* The Native Flutter Web Application */}
             <iframe
               key={iframeKey}
               src="/staff-app/index.html"

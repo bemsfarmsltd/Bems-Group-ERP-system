@@ -136,7 +136,7 @@ export const DEFAULT_WORKFLOWS = [
   },
 ] as const;
 
-export async function resolveProjectContext(req: Request) {
+export async function resolveProjectContext(req: Request, allowStaffPortal = false) {
   const actor = await getAuthenticatedEmployee(req);
   if (!actor) {
     return {
@@ -147,7 +147,8 @@ export async function resolveProjectContext(req: Request) {
   const { searchParams } = new URL(req.url);
   const requestedSubId = searchParams.get('subsidiaryId') || '';
 
-  const orgScope = await resolveAuthorizedOrganizationScope(actor, requestedSubId || 'ALL');
+  const staffPortal = allowStaffPortal && searchParams.get('view') === 'staff' && actor.role === 'CUSTOM_ADMIN';
+  const orgScope = await resolveAuthorizedOrganizationScope(actor, requestedSubId || 'ALL', staffPortal ? 'staff' : 'projects');
   if (!orgScope.organizationIds.length) {
     return {
       error: NextResponse.json({ error: 'Forbidden. No authorized workspace access.' }, { status: 403 }),
@@ -155,7 +156,11 @@ export async function resolveProjectContext(req: Request) {
   }
 
   const roleUpper = String(actor.role || 'STAFF').toUpperCase();
-  const isExecutive = roleUpper === 'GMD' || roleUpper === 'SUPER_ADMIN' || roleUpper === 'SYSTEM_ADMIN';
+  const isExecutive =
+    roleUpper === 'GMD' ||
+    roleUpper === 'SUPER_ADMIN' ||
+    roleUpper === 'SYSTEM_ADMIN' ||
+    (roleUpper === 'CUSTOM_ADMIN' && !staffPortal);
   const isGmd = roleUpper === 'GMD';
 
   const allowedSubIds = requestedSubId
@@ -179,6 +184,7 @@ export async function resolveProjectContext(req: Request) {
 
   return {
     actor,
+    staffPortal,
     roleUpper,
     isExecutive,
     isGmd,

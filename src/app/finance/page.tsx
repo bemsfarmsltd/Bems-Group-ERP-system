@@ -51,7 +51,6 @@ import { KineticOptikkaTorus } from "@/components/ai/KineticOptikkaTorus";
 import { AiChatWorkspaceView } from "@/components/ai/AiChatWorkspaceView";
 import { UniversalClickToAskProvider } from "@/components/ai/UniversalClickToAskProvider";
 import { PeopleAccessWorkspaceModule } from "@/components/dashboard/gmd/PeopleAccessWorkspaceModule";
-import { StaffWorkspaceModule } from "@/components/dashboard/staff/StaffWorkspaceModule";
 import { NIGERIAN_STATES, NIGERIAN_STATE_LGAS, RESIDENTIAL_CITIES_AND_STATES } from "@/lib/nigeriaGeoData";
 import { CorporateSubsidiaryModal } from "@/components/dashboard/CorporateSubsidiaryModal";
 import { EditSubsidiaryModal } from "@/components/dashboard/EditSubsidiaryModal";
@@ -3242,6 +3241,11 @@ function AppWorkspace({user,onSignOut,onAddBusiness,onEditBusiness,businesses:ra
     return () => window.removeEventListener('keydown', handleAiKey);
   }, [isAiAuthorized]);
 
+  const navCategoryKeyMap: Record<string, string> = {
+    'Report studio': 'Overview',
+    'Accountability (72h)': 'Fund requests',
+    'Intercompany notes': 'Accounting',
+  };
   const rawNavigation = getRoleNavigation((currentRole as string) === 'STAFF' ? 'STAFF' : safeUser.role);
   const navigation =
     (currentRole as string) === 'STAFF'
@@ -3250,7 +3254,12 @@ function AppWorkspace({user,onSignOut,onAddBusiness,onEditBusiness,businesses:ra
           .map((group) => ({
             ...group,
             items: group.items.filter(([name]) =>
-              hasCategoryAccess(safeUser.role, (safeUser as any).customAdminPermissions, 'finance', name)
+              hasCategoryAccess(
+                safeUser.role,
+                (safeUser as any).customAdminPermissions,
+                'finance',
+                navCategoryKeyMap[name] || name
+              )
             ),
           }))
           .filter((group) => group.items.length > 0);
@@ -3344,46 +3353,10 @@ function AppWorkspace({user,onSignOut,onAddBusiness,onEditBusiness,businesses:ra
     if (target === 'My wallet' && safeUser.role === 'STAFF') return <WalletView brandColor={activeBrandColor} />;
 
     if (isStaff) {
-      if (target === 'Overview') {
-        return (
-          <StaffWorkspaceModule
-            user={safeUser}
-            businessName={current.name}
-            onNavigate={setActive}
-            setNotice={setNotice}
-          />
-        );
+      if (typeof window !== 'undefined') {
+        window.location.href = '/staff-app/index.html';
       }
-      if (target === 'New fund request') {
-        if (typeof window !== 'undefined') window.location.href = '/requests/new';
-        return null;
-      }
-      if (target === 'My requests' || target === 'Fund requests') {
-        return <FundRequestsModule business={current} setNotice={setNotice} onNavigate={(p)=>window.location.href=p} canCreate={true}/>;
-      }
-      if (target === '72h Evidence Vault' || target === 'Accountability closure' || target === 'Proof & deliverables') {
-        return <LiveAccountabilityModule setNotice={setNotice}/>;
-      }
-      if (target === 'Receipt archive') {
-        return <LiveReceiptArchiveModule setNotice={setNotice}/>;
-      }
-      if (target === 'Request channels') {
-        return <RequestChannelsModule business={current} setNotice={setNotice} onNavigate={(p)=>p==='/requests'?setActive('My requests'):window.location.href=p}/>;
-      }
-      if (target === 'Settings & Profile' || target === 'Settings' || target === 'Admin Settings') {
-        return <LiveWorkspaceSettingsModule businessName={current.name} setNotice={setNotice}/>;
-      }
-      if (target === 'Mobile App Settings' || target === 'Mobile settings' || target === 'Mobile App Version Control') {
-        return <LiveWorkspaceSettingsModule businessName={current.name} setNotice={setNotice} initialSection="Mobile App Settings"/>;
-      }
-      return (
-        <StaffWorkspaceModule
-          user={safeUser}
-          businessName={current.name}
-          onNavigate={setActive}
-          setNotice={setNotice}
-        />
-      );
+      return null;
     }
 
 
@@ -4350,12 +4323,12 @@ export default function Home() {
         setStatus('error');
       });
   };
-  useEffect(()=>{ if(authStatus==='signed-in') fetchBusinesses(); },[authStatus]);
+  useEffect(()=>{ if(authStatus==='signed-in' && user?.role !== 'STAFF') fetchBusinesses(); },[authStatus, user?.role]);
   const retryLoad=()=>{setStatus('loading');fetchBusinesses()};
 
   useEffect(() => {
-    if (authStatus === 'signed-in' && user?.role === 'STAFF' && typeof window !== 'undefined' && window.location.pathname === '/') {
-      window.location.href = '/staff';
+    if (authStatus === 'signed-in' && user?.role === 'STAFF' && typeof window !== 'undefined') {
+      window.location.href = '/staff-app/index.html';
     }
   }, [authStatus, user]);
 

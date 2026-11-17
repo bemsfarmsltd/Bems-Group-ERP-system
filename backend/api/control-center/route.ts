@@ -23,12 +23,17 @@ export async function GET(request: Request) {
       );
     }
 
+    const scopedAdmin = actor.role === 'CUSTOM_ADMIN';
     const cacheKey = `control-center:${actor.id}`;
-    const cached = getServerCache<any>(cacheKey);
-    if (cached) {
-      return NextResponse.json(cached);
-    }
-
+    const cached = scopedAdmin ? null : getServerCache<any>(cacheKey);
+    if (cached) return NextResponse.json(cached);
+    const allowedSubIds = getAllowedSubsidiariesForModule(actor.role, actor.customAdminPermissions, 'control-center');
+    const subsidiaryFilter = allowedSubIds === 'ALL' ? {} : { in: allowedSubIds };
+    const canView = (category: string, action: string) => !scopedAdmin || hasEmployeePermission(actor, 'control-center', category, action);
+    const viewOverview = canView('overview', 'view_control_overview');
+    const viewLeadership = canView('onboarding', 'view_admins');
+    const viewMobile = canView('mobile_apps', 'view_mobile_releases');
+    const viewAudit = canView('audit_trail', 'view_audit_logs');
     const [
       subsidiaries,
       departments,
@@ -42,15 +47,18 @@ export async function GET(request: Request) {
       staffGate,
     ] = await Promise.all([
       prisma.organization.findMany({
+        where: { id: subsidiaryFilter },
         orderBy: { legalName: 'asc' },
         select: { id: true, legalName: true, code: true, type: true, status: true, brandColor: true },
       }),
-      prisma.department.findMany({
+      canView('org_structure', 'view_orgs_depts') ? prisma.department.findMany({
+        where: { organizationId: subsidiaryFilter },
         orderBy: { name: 'asc' },
         include: { organization: { select: { id: true, legalName: true, code: true } } },
-      }),
-      prisma.employee.findMany({
-        where: { role: { in: [...EXEC_ROLES, 'CUSTOM_ADMIN'] }, status: { notIn: ['DELETED', 'TERMINATED'] } },
+      }) : Promise.resolve([]),
+      viewLeadership ? prisma.employee.findMany({
+        where: { role: { in: [...EXEC_ROLES, 'CUSTOM_ADMIN'] }, status: { notIn: ['DELETED', 'TERMINATED'] },
+          ...(allowedSubIds === 'ALL' ? {} : { assignments: { some: { status: 'ACTIVE', subsidiaryId: subsidiaryFilter } } }) },
         orderBy: [{ role: 'asc' }, { legalName: 'asc' }],
         select: {
           id: true,
@@ -62,14 +70,17 @@ export async function GET(request: Request) {
           jobTitle: true,
           createdAt: true,
         },
-      }),
-      prisma.employee.count({ where: { role: 'STAFF', status: 'ACTIVE' } }),
-      prisma.project.count({ where: { status: { in: ['ACTIVE', 'APPROVED_PLANNED'] } } }),
-      prisma.expenditureRequest.count({ where: { approvalStatus: { in: ['PENDING', 'SUBMITTED'] } } }),
-      prisma.mobileAppRelease.findMany({ orderBy: { createdAt: 'desc' }, take: 10 }),
-      prisma.auditEvent.findMany({ orderBy: { createdAt: 'desc' }, take: 80 }),
-      getMobileAppGate('GMD_APP'),
-      getMobileAppGate('STAFF_APP'),
+      }) : Promise.resolve([]),
+      viewOverview ? prisma.employee.count({ where: {
+        role: { in: ['STAFF', 'CUSTOM_ADMIN'] }, status: 'ACTIVE',
+        ...(allowedSubIds === 'ALL' ? {} : { assignments: { some: { status: 'ACTIVE', subsidiaryId: subsidiaryFilter } } }),
+      } }) : Promise.resolve(0),
+      viewOverview ? prisma.project.count({ where: { organizationId: subsidiaryFilter, status: { in: ['ACTIVE', 'APPROVED_PLANNED'] } } }) : Promise.resolve(0),
+      viewOverview ? prisma.expenditureRequest.count({ where: { subsidiaryId: subsidiaryFilter, approvalStatus: { in: ['PENDING', 'SUBMITTED'] } } }) : Promise.resolve(0),
+      viewMobile ? prisma.mobileAppRelease.findMany({ orderBy: { createdAt: 'desc' }, take: 10 }) : Promise.resolve([]),
+      viewAudit ? prisma.auditEvent.findMany({ where: { subsidiaryId: subsidiaryFilter }, orderBy: { createdAt: 'desc' }, take: 80 }) : Promise.resolve([]),
+      viewMobile ? getMobileAppGate('GMD_APP') : Promise.resolve(null),
+      viewMobile ? getMobileAppGate('STAFF_APP') : Promise.resolve(null),
     ]);
 
     const rootOrgId = subsidiaries[0]?.id || '';
@@ -97,16 +108,6 @@ export async function GET(request: Request) {
       }
     }
 
-    const allowedSubIds = getAllowedSubsidiariesForModule(
-      actor.role,
-      actor.customAdminPermissions,
-      'control-center'
-    );
-    const visibleSubsidiaries =
-      allowedSubIds === 'ALL'
-        ? subsidiaries
-        : subsidiaries.filter((s) => allowedSubIds.includes(s.id));
-
     const payload = {
       success: true,
       actor: {
@@ -119,14 +120,14 @@ export async function GET(request: Request) {
         customAdminPermissions: actor.customAdminPermissions || null,
       },
       metrics: {
-        subsidiariesCount: visibleSubsidiaries.length,
+        subsidiariesCount: subsidiaries.length,
         departmentsCount: departments.length,
         activeStaffCount,
         leadersCount: leaders.length,
         activeProjectsCount,
         openRequestsCount,
       },
-      subsidiaries: visibleSubsidiaries,
+      subsidiaries,
       departments,
       leaders,
       mobileGates: { GMD_APP: gmdGate, STAFF_APP: staffGate },
@@ -134,7 +135,7 @@ export async function GET(request: Request) {
       aiPolicy,
       auditEvents,
     };
-    setServerCache(cacheKey, payload, 12_000);
+    if (!scopedAdmin) setServerCache(cacheKey, payload, 12_000);
     return NextResponse.json(payload);
   } catch (error) {
     console.error('GET /api/control-center error:', error);
@@ -155,77 +156,6 @@ export async function POST(request: Request) {
 
     const rootOrg = await prisma.organization.findFirst({ orderBy: { createdAt: 'asc' } });
     const groupId = rootOrg?.id || '';
-
-    if (action === 'INVITE_EXECUTIVE') {
-      const legalName = String(body.legalName || '').trim();
-      const workEmail = String(body.workEmail || '').trim().toLowerCase();
-      const role = String(body.role || '').toUpperCase();
-      const jobTitle = String(body.jobTitle || '').trim();
-
-      if (!legalName || !workEmail) {
-        return NextResponse.json({ error: 'Full name and work email are required.' }, { status: 400 });
-      }
-      if (!['GMD', 'SUPER_ADMIN'].includes(role)) {
-        return NextResponse.json(
-          { error: 'Executive invitations are strictly reserved for GMD and SUPER_ADMIN. Staff onboard via self-service.' },
-          { status: 400 }
-        );
-      }
-
-      const existing = await prisma.employee.findFirst({
-        where: { workEmail: { equals: workEmail, mode: 'insensitive' } },
-      });
-      if (existing) {
-        return NextResponse.json({ error: 'An account with this work email already exists.' }, { status: 409 });
-      }
-
-      const count = await prisma.employee.count();
-      const employeeNumber = `EXEC-${String(count + 101).padStart(4, '0')}`;
-
-      const invited = await prisma.employee.create({
-        data: {
-          employeeNumber,
-          legalName,
-          workEmail,
-          role,
-          jobTitle: jobTitle || (role === 'GMD' ? 'Group Managing Director' : 'Super Administrator'),
-          status: 'ACTIVE',
-        },
-      });
-
-      if (groupId) {
-        await prisma.auditEvent.create({
-          data: {
-            actorId: actor.id,
-            actorName: actor.legalName,
-            actorRole: actor.role,
-            groupId,
-            targetType: 'EMPLOYEE',
-            targetId: invited.id,
-            action: 'EXECUTIVE_INVITED',
-            metadata: JSON.stringify({ workEmail, role }),
-            correlationId: `cc-${Date.now()}`,
-          },
-        });
-      }
-
-      return NextResponse.json({ success: true, leader: invited });
-    }
-
-    if (action === 'TOGGLE_LEADER_STATUS') {
-      const targetId = String(body.employeeId || '');
-      const nextStatus = String(body.status || 'ACTIVE');
-      if (!targetId) return NextResponse.json({ error: 'employeeId is required.' }, { status: 400 });
-      if (targetId === actor.id) {
-        return NextResponse.json({ error: 'You cannot suspend your own active executive account.' }, { status: 400 });
-      }
-
-      const updated = await prisma.employee.update({
-        where: { id: targetId },
-        data: { status: nextStatus },
-      });
-      return NextResponse.json({ success: true, leader: updated });
-    }
 
     if (action === 'UPDATE_AI_POLICY') {
       if (!groupId) return NextResponse.json({ error: 'No root organization configured.' }, { status: 400 });

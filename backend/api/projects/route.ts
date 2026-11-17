@@ -10,7 +10,7 @@ import {
 
 export async function GET(req: Request) {
   try {
-    const ctx = await resolveProjectContext(req);
+    const ctx = await resolveProjectContext(req, true);
     if ('error' in ctx) return ctx.error;
     const { actor, isExecutive, allowedSubIds, useSubFilter } = ctx;
 

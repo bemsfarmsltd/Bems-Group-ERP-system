@@ -1,7 +1,7 @@
 import { executeDashboardCommand } from '@/lib/staged-actions';
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getAuthenticatedEmployee, hasAnyRole } from '@/lib/auth';
+import { getAuthenticatedEmployee, hasAdminOrCustomPermission } from '@/lib/auth';
 
 export async function GET(
   req: Request,
@@ -10,7 +10,7 @@ export async function GET(
   try {
     const actor = await getAuthenticatedEmployee(req);
     if (!actor) return NextResponse.json({ error: 'Sign in to view budgets.' }, { status: 401 });
-    if (!hasAnyRole(actor, ['SYSTEM_ADMIN', 'SUPER_ADMIN', 'GMD'])) {
+    if (!hasAdminOrCustomPermission(actor, 'finance', 'Budgets & commitments', 'view_budgets')) {
       return NextResponse.json({ error: 'Executive access is required to view budgets.' }, { status: 403 });
     }
     const { id } = await params;
@@ -36,7 +36,7 @@ async function mutate(req: Request, params: Promise<{ id: string }>, archive: bo
   try {
     const actor = await getAuthenticatedEmployee(req);
     if (!actor) return NextResponse.json({ error: 'Sign in to manage budgets.' }, { status: 401 });
-    if (!hasAnyRole(actor, ['SYSTEM_ADMIN', 'SUPER_ADMIN', 'GMD'])) return NextResponse.json({ error: 'Executive access required.' }, { status: 403 });
+    if (!hasAdminOrCustomPermission(actor, 'finance', 'Budgets & commitments', 'create_edit_budget')) return NextResponse.json({ error: 'Executive access required.' }, { status: 403 });
     const { id } = await params;
     const existing = await prisma.budget.findUnique({ where: { id } });
     if (!existing) return NextResponse.json({ error: 'Budget not found.' }, { status: 404 });

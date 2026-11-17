@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
 import { getSsrActor } from '@/lib/ssr-api';
+import { hasCategoryAccess, type CustomAdminPermissionsMap } from '@/lib/admin-permissions';
 import { ConnectAppShell } from '@/components/layout/ConnectAppShell';
 import FundingView from '@/components/wallet/FundingView';
 
@@ -11,6 +12,12 @@ export default async function FundingPage({ searchParams }: { searchParams: Prom
     redirect('/?redirect=/wallet/funding');
   }
   if (!['GMD', 'SUPER_ADMIN', 'SYSTEM_ADMIN', 'CUSTOM_ADMIN'].includes(actor.role)) {
+    redirect('/staff');
+  }
+  if (
+    actor.role === 'CUSTOM_ADMIN' &&
+    !hasCategoryAccess(actor.role, actor.customAdminPermissions as CustomAdminPermissionsMap | null, 'finance', 'Wallets & funded budgets')
+  ) {
     redirect('/finance');
   }
   const initialRole = actor.role === 'GMD' ? 'GMD' : 'SystemAdmin';

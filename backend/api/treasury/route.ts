@@ -35,15 +35,11 @@ export async function GET(req: NextRequest) {
     let disbWhere: any = { status: 'RECIPIENT_CONFIRMED' };
     let bankWhere: any = { status: 'ACTIVE' };
 
-    if (subsidiary && subsidiary !== 'ALL') {
-      const { resolveAuthorizedOrganizationScope } = await import('@/lib/organizations');
-      const scope = await resolveAuthorizedOrganizationScope(actor, subsidiary);
-      if (!scope.isGroup) {
-        reqWhere.subsidiaryId = { in: scope.organizationIds };
-        disbWhere.request = { subsidiaryId: { in: scope.organizationIds } };
-        bankWhere.organizationId = { in: scope.organizationIds };
-      }
-    }
+    const { resolveAuthorizedOrganizationScope } = await import('@/lib/organizations');
+    const scope = await resolveAuthorizedOrganizationScope(actor, subsidiary, 'finance');
+    reqWhere.subsidiaryId = { in: scope.organizationIds };
+    disbWhere = { ...disbWhere, payerOrgId: { in: scope.organizationIds } };
+    bankWhere.organizationId = { in: scope.organizationIds };
 
     // 1. Fetch live Bank Accounts directly from PostgreSQL
     const dbAccounts = await prisma.companyBankAccount.findMany({

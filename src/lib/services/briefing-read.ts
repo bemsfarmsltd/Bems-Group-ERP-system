@@ -26,7 +26,7 @@ export async function loadAuthorizedExecutiveBriefing(
     };
   }
 
-  const scope = await resolveAuthorizedOrganizationScope(actor, requestedOrgId || 'ALL');
+  const scope = await resolveAuthorizedOrganizationScope(actor, requestedOrgId || 'ALL', 'finance');
   const orgFilter = scope.isGroup ? {} : { id: { in: scope.organizationIds } };
   const subFilter = scope.isGroup ? {} : { subsidiaryId: { in: scope.organizationIds } };
   const budgetOrgFilter = scope.isGroup ? {} : { organizationId: { in: scope.organizationIds } };

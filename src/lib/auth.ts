@@ -2,6 +2,7 @@ import { canAccessEmployeePortal } from '@/lib/portal-access';
 import {
   type AdminModuleKey,
   type CustomAdminPermissionsMap,
+  getAllowedSubsidiariesForModule,
   hasActionPermission,
   hasCategoryAccess,
   hasModuleAccess,
@@ -420,6 +421,31 @@ export async function getHrAuthorizationScope(
       };
     }
 
+    if (
+      String(employee.role || '').toUpperCase() === 'CUSTOM_ADMIN' &&
+      hasModuleAccess(employee.role, employee.customAdminPermissions, 'hr')
+    ) {
+      const allowedSubs = getAllowedSubsidiariesForModule(employee.role, employee.customAdminPermissions, 'hr');
+      if (allowedSubs === 'ALL') {
+        const allActiveOrgs = await prisma.organization.findMany({
+          where: { status: 'ACTIVE' },
+          select: { id: true },
+        });
+        return {
+          authorized: true,
+          isExecutive: false,
+          isGlobal: true,
+          subsidiaryIds: allActiveOrgs.map((o) => o.id),
+        };
+      }
+      return {
+        authorized: allowedSubs.length > 0,
+        isExecutive: false,
+        isGlobal: false,
+        subsidiaryIds: allowedSubs,
+      };
+    }
+
     const authorizedSubsidiaryIds = new Set<string>();
     let hasGroupLevelGrant = false;
 
@@ -498,7 +524,7 @@ export function hasEmployeePermission(
   moduleKey: AdminModuleKey,
   categoryKey?: string,
   actionKey?: string
-): boolean {
+ ): boolean {
   if (!employee) return false;
   if (actionKey && categoryKey) {
     return hasActionPermission(
@@ -513,6 +539,28 @@ export function hasEmployeePermission(
     return hasCategoryAccess(employee.role, employee.customAdminPermissions, moduleKey, categoryKey);
   }
   return hasModuleAccess(employee.role, employee.customAdminPermissions, moduleKey);
+}
+
+/**
+ * Unified authorization helper for Admin & Custom Admin routes:
+ * - GMD & SYSTEM_ADMIN pass (unrestricted unless a custom profile is attached).
+ * - CUSTOM_ADMIN passes if and only if their CustomAdminProfile grants the module/category/action.
+ * - STAFF fails closed (false).
+ */
+export function hasAdminOrCustomPermission(
+  employee: AuthenticatedEmployee | null | undefined,
+  moduleKey: AdminModuleKey,
+  categoryKey?: string,
+  actionKey?: string
+): boolean {
+  if (!employee) return false;
+  if (hasAnyRole(employee, ['GMD', 'SYSTEM_ADMIN', 'SUPER_ADMIN'])) {
+    return hasEmployeePermission(employee, moduleKey, categoryKey, actionKey);
+  }
+  if (hasAnyRole(employee, ['CUSTOM_ADMIN'])) {
+    return hasEmployeePermission(employee, moduleKey, categoryKey, actionKey);
+  }
+  return false;
 }
 
 

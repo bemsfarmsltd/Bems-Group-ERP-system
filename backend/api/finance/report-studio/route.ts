@@ -153,7 +153,7 @@ export async function GET(request: Request) {
       url.searchParams.get('to'),
     );
 
-    const requested = await resolveAuthorizedOrganizationScope(actor, scope);
+    const requested = await resolveAuthorizedOrganizationScope(actor, scope, 'finance');
     const granted = getAllowedSubsidiariesForModule(actor.role, actor.customAdminPermissions, 'finance');
     const allowedIds = requested.organizationIds.filter((id) => granted === 'ALL' || granted.includes(id));
 

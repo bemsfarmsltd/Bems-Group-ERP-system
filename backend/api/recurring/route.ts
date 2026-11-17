@@ -22,7 +22,7 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const subsidiary = searchParams.get('subsidiary') || searchParams.get('organization_id');
 
-    const scope = await resolveAuthorizedOrganizationScope(actor, subsidiary);
+    const scope = await resolveAuthorizedOrganizationScope(actor, subsidiary, 'finance');
     if (scope.organizationIds.length === 0) {
       return NextResponse.json(
         {

@@ -1,3 +1,4 @@
+import { getAllowedSubsidiariesForModule, type AdminModuleKey } from '@/lib/admin-permissions';
 import { normalizeOrganizationIdentifier } from '@/lib/organization-identity';
 import { prisma } from '@/lib/prisma';
 import { type AuthenticatedEmployee, hasAnyRole } from '@/lib/auth';
@@ -88,7 +89,8 @@ export async function resolveOrganizationScope(orgIdentifier?: string | null): P
  */
 export async function resolveAuthorizedOrganizationScope(
   actor: AuthenticatedEmployee | null | undefined,
-  orgIdentifier?: string | null
+  orgIdentifier?: string | null,
+  access?: AdminModuleKey | 'staff'
 ): Promise<OrganizationScopeResult> {
   if (!actor) {
     return new OrganizationScopeResult(false, []);
@@ -111,26 +113,12 @@ export async function resolveAuthorizedOrganizationScope(
   const isExecutive = hasAnyRole(actor, ['SYSTEM_ADMIN', 'SUPER_ADMIN', 'GMD']);
   if (isExecutive) return permittedScope;
 
-  if (String(actor.role || '').toUpperCase() === 'CUSTOM_ADMIN') {
-    const perms = actor.customAdminPermissions;
-    if (!perms || Object.keys(perms).length === 0) {
-      return new OrganizationScopeResult(false, []);
-    }
-    let hasAllScope = false;
-    const allowedIds = new Set<string>();
-    for (const grant of Object.values(perms)) {
-      if (!grant?.enabled) continue;
-      if (grant.subsidiaryScope === 'ALL') {
-        hasAllScope = true;
-        break;
-      }
-      for (const sid of grant.subsidiaryIds || []) {
-        allowedIds.add(sid);
-      }
-    }
-    if (hasAllScope) return permittedScope;
-    const intersected = permittedScope.organizationIds.filter((id) => allowedIds.has(id));
-    return new OrganizationScopeResult(false, intersected);
+  if (actor.role === 'CUSTOM_ADMIN' && access !== 'staff') {
+    if (!access) return new OrganizationScopeResult(false, []);
+    const allowed = getAllowedSubsidiariesForModule(actor.role, actor.customAdminPermissions, access);
+    if (allowed === 'ALL') return permittedScope;
+    const allowedIds = new Set(allowed);
+    return new OrganizationScopeResult(false, permittedScope.organizationIds.filter(id => allowedIds.has(id)));
   }
 
   // Non-executive staff: intersect with active assignments

@@ -264,7 +264,7 @@ class _StaffMainScreenState extends State<StaffMainScreen> {
 
   void _evaluateAttendancePrompt() {
     final role = _currentUser.role.toUpperCase();
-    final isExecutive = role == 'GMD' || role == 'SUPER_ADMIN' || role == 'SYSTEM_ADMIN' || _currentUser.employeeNumber == 'BEMS-GRO-2026-0001';
+    final isExecutive = role == 'GMD' || role == 'SUPER_ADMIN' || role == 'SYSTEM_ADMIN';
     if (isExecutive) return;
 
     final isPunchedIn = _todayAttendance != null && _todayAttendance!['checkInTime'] != null;
@@ -286,7 +286,7 @@ class _StaffMainScreenState extends State<StaffMainScreen> {
 
   void _checkAndShowAttendanceModal() {
     final role = _currentUser.role.toUpperCase();
-    final isExecutive = role == 'GMD' || role == 'SUPER_ADMIN' || role == 'SYSTEM_ADMIN' || _currentUser.employeeNumber == 'BEMS-GRO-2026-0001';
+    final isExecutive = role == 'GMD' || role == 'SUPER_ADMIN' || role == 'SYSTEM_ADMIN';
     if (isExecutive) return;
 
     final isPunchedIn = _todayAttendance != null && _todayAttendance!['checkInTime'] != null;

@@ -90,7 +90,7 @@ interface RosterMember {
 
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-const ALLOWED_ADMIN_ROLES = ['GMD', 'SYSTEM_ADMIN', 'SUPER_ADMIN'];
+const ALLOWED_ADMIN_ROLES = ['GMD', 'SYSTEM_ADMIN', 'SUPER_ADMIN', 'CUSTOM_ADMIN'];
 
 export default function AttendanceDeskPage() {
   const router = useRouter();

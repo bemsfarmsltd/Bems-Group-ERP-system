@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getAuthenticatedEmployee, hasAnyRole } from '@/lib/auth';
+import { getAuthenticatedEmployee, hasAnyRole, hasEmployeePermission } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { toSystemRequestId } from '@/lib/request-id';
 
@@ -37,7 +37,7 @@ function bucketLabel(key: string, granularity: 'day' | 'week' | 'month') {
 export async function GET(request: Request) {
   const actor = await getAuthenticatedEmployee(request);
   if (!actor) return NextResponse.json({ error: 'Sign in to view group analytics.' }, { status: 401 });
-  const isStaff = actor.role === 'STAFF';
+  const isStaff = actor.role === 'STAFF' || (actor.role === 'CUSTOM_ADMIN' && !hasEmployeePermission(actor, 'finance', 'Overview'));
 
   const { searchParams } = new URL(request.url);
   const period = ['30d', '90d', '12m', 'ytd'].includes(searchParams.get('period') || '') ? searchParams.get('period')! : '12m';
@@ -48,7 +48,7 @@ export async function GET(request: Request) {
   const { start, end, previousStart, previousEnd } = periodBounds(period, now);
 
   const { resolveAuthorizedOrganizationScope } = await import('@/lib/organizations');
-  const scope = await resolveAuthorizedOrganizationScope(actor, rawSubsidiary);
+  const scope = await resolveAuthorizedOrganizationScope(actor, rawSubsidiary, isStaff ? 'staff' : 'finance');
   const subsidiaryFilter = { subsidiaryId: { in: scope.organizationIds } };
   const staffFilter = isStaff ? { requestedById: actor.id } : {};
   const requestFilters = { ...subsidiaryFilter, ...staffFilter, ...(category === 'ALL' ? {} : { category }), ...(status === 'ALL' ? {} : { approvalStatus: status }) };
