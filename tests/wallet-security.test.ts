@@ -165,6 +165,12 @@ describe('Wallet & Fund Approval Security Controls', () => {
         payload: JSON.stringify({ autoPay: true, pin: '12345678' }),
       });
       expect([401, 403]).toContain(autoPayRes.statusCode);
+
+      const dossierRes = await app.inject({
+        method: 'GET',
+        url: '/api/admin/employees/test-emp-id/dossier',
+      });
+      expect([401, 403]).toContain(dossierRes.statusCode);
     } finally {
       await app.close();
       if (prevTransfers === undefined) delete process.env.BEMS_WALLET_TRANSFERS_ENABLED;

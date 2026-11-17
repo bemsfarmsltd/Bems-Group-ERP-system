@@ -11,6 +11,7 @@ import * as route_1 from "../api/accountability/evidence/[attachmentId]/route";
 import * as route_2 from "../api/accountability/evidence/route";
 import * as route_3 from "../api/accountability/route";
 import * as route_4 from "../api/admin/employees/[employeeId]/attendance-exemption/route";
+import * as route_emp_dossier from "../api/admin/employees/[employeeId]/dossier/route";
 import * as route_5 from "../api/admin/employees/[employeeId]/corporate/route";
 import * as route_6 from "../api/admin/employees/[employeeId]/request-update/route";
 import * as route_7 from "../api/admin/employees/[employeeId]/route";
@@ -237,6 +238,7 @@ export function registerAllNextApiRoutes(app: FastifyInstance): void {
   mountNextRoute(app, "/api/accountability/evidence", route_2 as unknown as NextRouteModule);
   mountNextRoute(app, "/api/accountability", route_3 as unknown as NextRouteModule);
   mountNextRoute(app, "/api/admin/employees/[employeeId]/attendance-exemption", route_4 as unknown as NextRouteModule);
+  mountNextRoute(app, "/api/admin/employees/[employeeId]/dossier", route_emp_dossier as unknown as NextRouteModule);
   mountNextRoute(app, "/api/admin/employees/[employeeId]/corporate", route_5 as unknown as NextRouteModule);
   mountNextRoute(app, "/api/admin/employees/[employeeId]/request-update", route_6 as unknown as NextRouteModule);
   mountNextRoute(app, "/api/admin/employees/[employeeId]", route_7 as unknown as NextRouteModule);

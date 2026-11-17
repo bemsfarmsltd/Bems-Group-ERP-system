@@ -30,6 +30,29 @@ export async function GET(request: Request) {
       orderBy: [{ role: 'asc' }, { legalName: 'asc' }],
     });
 
+    const leaderIds = leaders.map((l) => l.id);
+    const [sessions, latestAudits] = await Promise.all([
+      prisma.authSession.findMany({
+        where: { employeeId: { in: leaderIds } },
+        select: { employeeId: true, createdAt: true },
+        orderBy: { createdAt: 'desc' },
+      }),
+      prisma.auditEvent.findMany({
+        where: { actorId: { in: leaderIds } },
+        select: { actorId: true, createdAt: true },
+        orderBy: { createdAt: 'desc' },
+      }),
+    ]);
+
+    const lastLoginMap = new Map<string, Date>();
+    for (const s of sessions) {
+      if (!lastLoginMap.has(s.employeeId)) lastLoginMap.set(s.employeeId, s.createdAt);
+    }
+    const lastActiveMap = new Map<string, Date>();
+    for (const a of latestAudits) {
+      if (a.actorId && !lastActiveMap.has(a.actorId)) lastActiveMap.set(a.actorId, a.createdAt);
+    }
+
     const safeLeaders = leaders.map((l) => ({
       id: l.id,
       legalName: l.legalName,
@@ -43,6 +66,8 @@ export async function GET(request: Request) {
       positionName: l.jobTitle || l.role,
       isCurrentUser: l.id === actor.id || l.workEmail.toLowerCase() === actor.workEmail.toLowerCase(),
       createdAt: l.createdAt,
+      lastLoginAt: lastLoginMap.get(l.id) ?? null,
+      lastActiveAt: lastActiveMap.get(l.id) ?? lastLoginMap.get(l.id) ?? null,
     }));
 
     return NextResponse.json({ leaders: safeLeaders });

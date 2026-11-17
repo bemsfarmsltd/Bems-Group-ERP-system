@@ -3,6 +3,7 @@
 import { FormEvent, ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { RequestDossierModal, type RequestDossier } from '@/components/requests/RequestDossierModal';
+import { EmployeeDossierView } from '@/components/control-center/EmployeeDossierView';
 import {
   AI_ACCESS_SCOPES,
   buildDefaultAiAccessMatrix,
@@ -195,7 +196,7 @@ export function AccountabilityModule({ setNotice }: { setNotice: (message: strin
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
           {(['ALL', 'OPEN', 'EVIDENCE_SUBMITTED', 'VERIFIED', 'CLOSED'] as const).map((s) => {
             const active = statusFilter === s;
-            return (
+  return (
               <button
                 key={s}
                 type="button"
@@ -509,7 +510,7 @@ export function ReceiptArchiveModule({ setNotice, scope }: { setNotice: (message
               { id: 'PAYROLL', label: 'Payroll Payments' },
             ].map((tab) => {
               const active = categoryFilter === tab.id;
-              return (
+  return (
                 <button
                   key={tab.id}
                   onClick={() => setCategoryFilter(tab.id as any)}
@@ -644,7 +645,7 @@ export function ReceiptArchiveModule({ setNotice, scope }: { setNotice: (message
                 {filtered.map((r) => {
                   const req = r.disbursement?.request;
                   const payroll = r.disbursement?.payrollItem;
-                  return (
+  return (
                     <tr
                       key={r.id}
                       style={{
@@ -1249,7 +1250,7 @@ function StaffAvatarPhoto({ name, url }: { name: string; url?: string | null }) 
   };
 
   if (cleanUrl) {
-    return (
+  return (
       <img
         key={cleanUrl}
         src={cleanUrl}
@@ -1275,6 +1276,7 @@ export function StaffProfilesModule({ setNotice, onNavigate, scope }: { setNotic
 
   const [selected, setSelected] = useState<StaffDetail | null>(null);
   const [selectedId, setSelectedId] = useState('');
+  const [dossierEmployeeId, setDossierEmployeeId] = useState<string | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [salaryType, setSalaryType] = useState<'SET_EXACT' | 'ADDITION' | 'DEDUCTION' | 'REMOVE_FROM_PAYROLL'>('SET_EXACT');
   const [amount, setAmount] = useState('');
@@ -1669,6 +1671,10 @@ export function StaffProfilesModule({ setNotice, onNavigate, scope }: { setNotic
   const activeCount = rows.filter((s) => s.status === 'ACTIVE').length;
   const payrollCount = rows.filter((s) => s.employmentAgreements?.[0]?.compensations?.length).length;
 
+  if (dossierEmployeeId) {
+    return <EmployeeDossierView employeeId={dossierEmployeeId} onBack={() => setDossierEmployeeId(null)} />;
+  }
+
   return (
     <div data-ai-domain="hr" style={{ display: 'flex', flexDirection: 'column', gap: 24, minWidth: 0, paddingBottom: 24 }}>
       {/* 1. Header */}
@@ -2053,7 +2059,7 @@ export function StaffProfilesModule({ setNotice, onNavigate, scope }: { setNotic
           filtered.map((s) => {
             const comp = s.employmentAgreements?.[0]?.compensations?.[0];
             const primaryAssignment = s.assignments?.[0];
-            return (
+  return (
               <div
                 key={s.id}
                 onClick={() => void open(s.id)}
@@ -2247,6 +2253,29 @@ export function StaffProfilesModule({ setNotice, onNavigate, scope }: { setNotic
                       Exempt
                     </span>
                   )}
+
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDossierEmployeeId(s.id);
+                    }}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      background: '#f8fafc',
+                      border: '1px solid #cbd5e1',
+                      color: '#0f172a',
+                      padding: '6px 10px',
+                      borderRadius: 6,
+                      fontSize: 12,
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <span>Activity Dossier</span>
+                  </button>
 
                   <button
                     type="button"
@@ -2766,13 +2795,13 @@ export function StaffProfilesModule({ setNotice, onNavigate, scope }: { setNotic
                             {(() => {
                               const rowAssignments = rows.find((r) => r.id === selected.employee.id)?.assignments || [];
                               if (rowAssignments.length <= 1) return null;
-                              return (
+  return (
                                 <div style={{ marginTop: 6, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                                   {rowAssignments.map((a, idx) => {
                                     const subId = a.subsidiary?.id;
                                     const subName = a.subsidiary?.legalName || 'Subsidiary';
                                     const isPrim = idx === 0;
-                                    return (
+  return (
                                       <span
                                         key={`${subId || subName}-${idx}`}
                                         style={{
@@ -3148,7 +3177,7 @@ export function StaffProfilesModule({ setNotice, onNavigate, scope }: { setNotic
                               {(selected.employee as any).salaryHistory.map((v: any, idx: number) => {
                                 const isAct = v.status === 'ACTIVE_NOW';
                                 const isFut = v.status === 'SCHEDULED_FUTURE';
-                                return (
+  return (
                                   <tr key={v.id || idx} style={{ borderBottom: '1px solid #f1f5f9', background: isAct ? 'rgba(16, 185, 129, 0.03)' : isFut ? 'rgba(245, 158, 11, 0.03)' : 'transparent' }}>
                                     <td style={{ padding: '10px 14px', fontWeight: 700 }}>v{v.version}</td>
                                     <td style={{ padding: '10px 14px', fontWeight: 700, color: '#0f172a', fontFamily: 'monospace' }}>{v.grossFormatted}</td>
@@ -3374,7 +3403,7 @@ export function StaffProfilesModule({ setNotice, onNavigate, scope }: { setNotic
                               const isRejected = req.status === 'REJECTED';
                               const isPending = !isApproved && !isRejected;
 
-                              return (
+  return (
                                 <tr key={req.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
                                   <td style={{ padding: '12px 14px', fontWeight: 750, color: '#0f172a', fontFamily: 'monospace' }}>
                                     {req.requestNumber}
@@ -3536,7 +3565,7 @@ export function StaffProfilesModule({ setNotice, onNavigate, scope }: { setNotic
                 const groupFields = ALL_INDIVIDUAL_FIELDS.filter((f) => f.group === groupName);
                 if (groupFields.length === 0) return null;
 
-                return (
+  return (
                   <div key={groupName} style={{ marginBottom: 8 }}>
                     <div style={{ fontSize: 10.5, fontWeight: 800, color: '#ea580c', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6, paddingLeft: 2 }}>
                       {groupName} ({groupFields.filter(f => reqFields.includes(f.key)).length}/{groupFields.length})
@@ -3544,7 +3573,7 @@ export function StaffProfilesModule({ setNotice, onNavigate, scope }: { setNotic
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 8 }}>
                       {groupFields.map((f) => {
                         const checked = reqFields.includes(f.key);
-                        return (
+  return (
                           <label
                             key={f.key}
                             style={{
@@ -4125,7 +4154,7 @@ export function IntercompanyModule({ setNotice, scope }: { setNotice: (message: 
               { id: 'RECONCILED', label: 'Reconciled', count: reconciledCount },
             ].map((tab) => {
               const active = filter === tab.id;
-              return (
+  return (
                 <button
                   key={tab.id}
                   onClick={() => setFilter(tab.id)}
@@ -4279,7 +4308,7 @@ export function IntercompanyModule({ setNotice, scope }: { setNotice: (message: 
                 {visible.map((n) => {
                   const isDebit = n.noteType === 'DEBIT_NOTE';
                   const isReconciled = n.status === 'RECONCILED';
-                  return (
+  return (
                     <tr
                       key={n.id}
                       style={{
@@ -4929,7 +4958,7 @@ export function AuditLogsModule({ setNotice, scope }: { setNotice: (message: str
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
         {AUDIT_MODULES.map((m) => {
           const active = m.key === moduleFilter;
-          return (
+  return (
             <button
               key={m.key}
               type="button"
@@ -5038,23 +5067,23 @@ export function AuditLogsModule({ setNotice, scope }: { setNotice: (message: str
         </div>
       </section>
 
-      {/* FORENSIC INSPECT MODAL */}
+      {/* FORENSIC SLIDE-OVER AUDIT DRAWER */}
       {selected && (
         <div
           role="dialog"
           aria-modal="true"
           aria-label="Audit Event Dossier"
           onClick={() => setSelected(null)}
-          style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(15, 23, 42, 0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+          style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(15, 23, 42, 0.45)', display: 'flex', justifyContent: 'flex-end' }}
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            style={{ width: '100%', maxWidth: 680, maxHeight: '88vh', overflowY: 'auto', background: '#ffffff', borderRadius: 14, border: '1px solid #e2e8f0', boxShadow: '0 20px 50px rgba(15, 23, 42, 0.25)', padding: 20 }}
+            style={{ width: '100%', maxWidth: 480, height: '100vh', overflowY: 'auto', background: '#ffffff', borderLeft: '1px solid #e2e8f0', boxShadow: '-12px 0 40px rgba(15, 23, 42, 0.2)', padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid #e2e8f0', paddingBottom: 12 }}>
               <div>
                 <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.12em', color: '#ea580c', textTransform: 'uppercase' }}>
-                  FORENSIC AUDIT DOSSIER · {selected.module || 'SYSTEM'}
+                  EVENT #{selected.id.slice(0, 8)} · {selected.module || 'SYSTEM'}
                 </div>
                 <h3 style={{ margin: '4px 0 0', fontSize: 17, fontWeight: 800, color: '#0f172a' }}>
                   {selected.action.replaceAll('_', ' ')}
@@ -5069,50 +5098,44 @@ export function AuditLogsModule({ setNotice, scope }: { setNotice: (message: str
               </button>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10, marginTop: 14, fontSize: 12 }}>
-              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 10 }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Executed By</div>
-                <div style={{ fontWeight: 700, color: '#0f172a', marginTop: 2 }}>{selected.actorName}</div>
-                <div style={{ color: '#475569' }}>{selected.actorRole}{selected.actorId ? ` · ${selected.actorId}` : ''}</div>
+            <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: 10, padding: '10px 12px', fontSize: 12.5, color: '#065f46' }}>
+              <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 3 }}>Summary of Action</div>
+              <div>
+                <strong>{selected.actorName}</strong> ({selected.actorRole}) performed <strong>{selected.action.replaceAll('_', ' ')}</strong> on {selected.targetType} ({selected.targetId.slice(0, 12)}).
               </div>
-              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 10 }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Timestamp</div>
-                <div style={{ fontWeight: 700, color: '#0f172a', marginTop: 2 }}>{new Date(selected.createdAt).toLocaleString('en-NG')}</div>
-                <div style={{ color: '#475569', fontFamily: 'monospace', fontSize: 11 }}>{selected.createdAt}</div>
-              </div>
-              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 10 }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>IP Address & Device</div>
-                <div style={{ fontWeight: 700, color: '#0f172a', marginTop: 2 }}>{selected.ipAddress || 'Internal / Not captured'}</div>
-                <div style={{ color: '#475569' }}>{selected.deviceLabel || 'Server / API'}</div>
-              </div>
-              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 10 }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Entity & Target</div>
-                <div style={{ fontWeight: 700, color: '#0f172a', marginTop: 2 }}>{selected.organizationName || 'BEMS Group'}</div>
-                <div style={{ color: '#475569', fontFamily: 'monospace', fontSize: 11 }}>{selected.targetType} · {selected.targetId}</div>
-              </div>
-              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 10 }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Correlation ID</div>
-                <div style={{ fontWeight: 600, color: '#0f172a', marginTop: 2, fontFamily: 'monospace', fontSize: 11, wordBreak: 'break-all' }}>{selected.correlationId || selected.id}</div>
-              </div>
-              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 10 }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Integrity Hashes</div>
-                <div style={{ color: '#475569', fontFamily: 'monospace', fontSize: 11, marginTop: 2, wordBreak: 'break-all' }}>
-                  Before: {selected.beforeHash || '—'}<br />
-                  After: {selected.afterHash || '—'}
-                </div>
+            </div>
+
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.08em', color: '#64748b', textTransform: 'uppercase', marginBottom: 6 }}>Session &amp; Security Context</div>
+              <div style={{ border: '1px solid #e2e8f0', borderRadius: 10, overflow: 'hidden', fontSize: 12 }}>
+                {[
+                  ['Timestamp', new Date(selected.createdAt).toLocaleString('en-NG')],
+                  ['Status / Outcome', '✓ Recorded'],
+                  ['Authorizing Actor', selected.actorName],
+                  ['Role', selected.actorRole],
+                  ['Entity / Scope', selected.organizationName || 'BEMS Group'],
+                  ['Device / Client', selected.deviceLabel || 'Server / Internal'],
+                  ['IP Address', selected.ipAddress || '—'],
+                  ['Correlation ID', selected.correlationId || selected.id],
+                ].map(([k, v], i) => (
+                  <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '8px 12px', background: i % 2 === 0 ? '#ffffff' : '#f8fafc', borderBottom: '1px solid #f1f5f9' }}>
+                    <span style={{ color: '#64748b' }}>{k}</span>
+                    <strong style={{ color: '#0f172a', textAlign: 'right', wordBreak: 'break-all' }}>{v}</strong>
+                  </div>
+                ))}
               </div>
             </div>
 
             {selected.userAgent && (
-              <div style={{ marginTop: 10, background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 10, fontSize: 11 }}>
+              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 10, fontSize: 11 }}>
                 <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Full User-Agent</div>
                 <div style={{ color: '#334155', fontFamily: 'monospace', marginTop: 2, wordBreak: 'break-all' }}>{selected.userAgent}</div>
               </div>
             )}
 
-            <div style={{ marginTop: 10 }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', marginBottom: 4 }}>Event Metadata / Payload</div>
-              <pre style={{ margin: 0, background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 12, fontSize: 11.5, color: '#0f172a', overflowX: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 800, color: '#64748b', textTransform: 'uppercase', marginBottom: 4 }}>Technical Payload Data</div>
+              <pre style={{ margin: 0, background: '#0f172a', borderRadius: 10, padding: 12, fontSize: 11.5, color: '#e2e8f0', overflowX: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                 {parsedMeta || 'No additional JSON payload recorded.'}
               </pre>
             </div>
@@ -5414,7 +5437,7 @@ export function WorkspaceSettingsModule({ businessName, setNotice, initialSectio
       {/* Individual Capability Read & Write Toggles Grouped by Category */}
       {(['Financial & Approvals', 'People, Payroll & HR', 'Corporate, Attendance & Operations', 'Procurement, Intercompany & Governance'] as const).map((cat) => {
         const scopes = AI_ACCESS_SCOPES.filter((s) => s.category === cat);
-        return (
+  return (
           <div key={cat} style={{background:'#ffffff',border:'1px solid #e2e8f0',borderRadius:12,overflow:'hidden'}}>
             <div style={{background:'#f8fafc',padding:'11px 16px',borderBottom:'1px solid #e2e8f0',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
               <b style={{fontSize:13.5,color:'#0f172a',letterSpacing:'0.01em'}}>{cat}</b>
@@ -5424,7 +5447,7 @@ export function WorkspaceSettingsModule({ businessName, setNotice, initialSectio
               {scopes.map((scope, idx) => {
                 const readOn = aiMatrix['master.read'] !== false && aiMatrix[`${scope.key}.read`] !== false;
                 const writeOn = aiMatrix['master.write'] !== false && aiMatrix[`${scope.key}.write`] !== false;
-                return (
+  return (
                   <div
                     key={scope.key}
                     style={{

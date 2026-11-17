@@ -1,6 +1,7 @@
 'use client';
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { EmployeeDossierView } from '@/components/control-center/EmployeeDossierView';
 import {
   Check,
   RefreshCw,
@@ -39,6 +40,8 @@ type LeaderAccount = {
   positionName: string;
   isCurrentUser: boolean;
   createdAt: string;
+  lastLoginAt?: string | null;
+  lastActiveAt?: string | null;
 };
 
 type PendingSignup = {
@@ -121,6 +124,7 @@ export function PeopleAccessWorkspaceModule({
   const [copiedId, setCopiedId] = useState('');
   const [resendingId, setResendingId] = useState('');
   const [leadershipAccounts, setLeadershipAccounts] = useState<LeaderAccount[]>([]);
+  const [inspectingEmployeeId, setInspectingEmployeeId] = useState<string | null>(null);
 
   // Navigation tab state
   const [activeTab, setActiveTab] = useState<'approvals' | 'directory' | 'invitations' | 'profiles'>(
@@ -1182,7 +1186,9 @@ export function PeopleAccessWorkspaceModule({
       )}
 
       {/* 5. Tab 2 Content: Executive Leadership Directory */}
-      {activeTab === 'directory' && (
+      {inspectingEmployeeId ? (
+        <EmployeeDossierView employeeId={inspectingEmployeeId} onBack={() => setInspectingEmployeeId(null)} />
+      ) : activeTab === 'directory' && (
         <section style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {filteredLeaders.length > 0 ? (
             filteredLeaders.map((leader) => (
@@ -1244,10 +1250,31 @@ export function PeopleAccessWorkspaceModule({
                     <div style={{ fontSize: 12.5, color: '#64748b', marginTop: 3 }}>
                       {leader.workEmail} · 🏢 {leader.subsidiaryName} ({leader.positionName || 'Executive'})
                     </div>
+                    <div style={{ fontSize: 11, color: '#64748b', marginTop: 3 }}>
+                      Created: {new Date(leader.createdAt).toLocaleDateString('en-NG', { day: '2-digit', month: 'short', year: 'numeric' })}
+                      {' · '}
+                      Last Login: {leader.lastLoginAt ? new Date(leader.lastLoginAt).toLocaleString('en-NG', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'Never'}
+                    </div>
                   </div>
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    onClick={() => setInspectingEmployeeId(leader.id)}
+                    style={{
+                      padding: '6px 11px',
+                      borderRadius: 6,
+                      border: '1px solid #fed7aa',
+                      background: '#fff7ed',
+                      color: '#c2410c',
+                      fontSize: 12,
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Inspect Dossier →
+                  </button>
                   <span
                     style={{
                       background: leader.status === 'ACTIVE' ? '#dcfce7' : '#fee2e2',
