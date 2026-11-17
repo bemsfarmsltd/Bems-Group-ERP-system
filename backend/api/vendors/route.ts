@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getAuthenticatedEmployee, hasAnyRole } from '@/lib/auth';
+import { getAuthenticatedEmployee, hasAnyRole, hasEmployeePermission } from '@/lib/auth';
 
 export async function GET(req: NextRequest) {
   try {
@@ -38,7 +38,9 @@ export async function GET(req: NextRequest) {
       orderBy: { name: 'asc' },
     });
 
-    const isExecutive = hasAnyRole(user, ['SYSTEM_ADMIN', 'SUPER_ADMIN', 'GMD']);
+    const isExecutive =
+      hasAnyRole(user, ['SYSTEM_ADMIN', 'SUPER_ADMIN', 'GMD']) ||
+      (hasAnyRole(user, ['CUSTOM_ADMIN']) && hasEmployeePermission(user, 'finance'));
 
     return NextResponse.json({
       ok: true,

@@ -1,7 +1,7 @@
 import { normalizeOrganizationIdentifier } from '@/lib/organization-identity';
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getAuthenticatedEmployee, hasAnyRole } from '@/lib/auth';
+import { getAuthenticatedEmployee, hasAnyRole, hasEmployeePermission } from '@/lib/auth';
 import { resolveAuthorizedOrganizationScope } from '@/lib/organizations';
 
 export const dynamic = 'force-dynamic';
@@ -27,7 +27,9 @@ export async function GET(
 
   if (!q) return NextResponse.json([]);
 
-  const isExecutive = hasAnyRole(actor, ['SYSTEM_ADMIN', 'SUPER_ADMIN', 'GMD']);
+  const isExecutive =
+    hasAnyRole(actor, ['SYSTEM_ADMIN', 'SUPER_ADMIN', 'GMD']) ||
+    (hasAnyRole(actor, ['CUSTOM_ADMIN']) && hasEmployeePermission(actor, 'finance'));
 
   const defaultResults = [
     { type: 'Desk', label: 'Fund Requests Register', sublabel: 'View submitted requisitions', navigate: 'Fund requests' },

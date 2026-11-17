@@ -111,6 +111,28 @@ export async function resolveAuthorizedOrganizationScope(
   const isExecutive = hasAnyRole(actor, ['SYSTEM_ADMIN', 'SUPER_ADMIN', 'GMD']);
   if (isExecutive) return permittedScope;
 
+  if (String(actor.role || '').toUpperCase() === 'CUSTOM_ADMIN') {
+    const perms = actor.customAdminPermissions;
+    if (!perms || Object.keys(perms).length === 0) {
+      return new OrganizationScopeResult(false, []);
+    }
+    let hasAllScope = false;
+    const allowedIds = new Set<string>();
+    for (const grant of Object.values(perms)) {
+      if (!grant?.enabled) continue;
+      if (grant.subsidiaryScope === 'ALL') {
+        hasAllScope = true;
+        break;
+      }
+      for (const sid of grant.subsidiaryIds || []) {
+        allowedIds.add(sid);
+      }
+    }
+    if (hasAllScope) return permittedScope;
+    const intersected = permittedScope.organizationIds.filter((id) => allowedIds.has(id));
+    return new OrganizationScopeResult(false, intersected);
+  }
+
   // Non-executive staff: intersect with active assignments
   try {
     const activeAssignments = await prisma.employeeAssignment.findMany({

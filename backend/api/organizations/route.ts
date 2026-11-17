@@ -1,13 +1,17 @@
 import { assertGroupIdentityUpdate } from '@/lib/organization-identity';
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getAuthenticatedEmployee, hasAnyRole } from '@/lib/auth';
+import { getAuthenticatedEmployee, hasAnyRole, hasEmployeePermission } from '@/lib/auth';
 
 export async function GET(request: Request) {
   try {
     const actor = await getAuthenticatedEmployee(request);
     if (!actor) return NextResponse.json({ error: 'Sign in to view subsidiaries.' }, { status: 401 });
-    if (!hasAnyRole(actor, ['SYSTEM_ADMIN', 'SUPER_ADMIN', 'GMD'])) return NextResponse.json({ error: 'Executive access is required.' }, { status: 403 });
+    const canViewOrganizations =
+      hasAnyRole(actor, ['SYSTEM_ADMIN', 'SUPER_ADMIN', 'GMD']) ||
+      (hasAnyRole(actor, ['CUSTOM_ADMIN']) &&
+        (hasEmployeePermission(actor, 'finance') || hasEmployeePermission(actor, 'control-center')));
+    if (!canViewOrganizations) return NextResponse.json({ error: 'Executive access is required.' }, { status: 403 });
     // Ensure BEMS Group always exists in the database as the master holding entity
     const existingGroup = await prisma.organization.findFirst({
       where: { code: 'BEMS-GROUP' },

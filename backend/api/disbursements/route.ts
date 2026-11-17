@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requestIdentifierWhere, toSystemRequestId } from '@/lib/request-id';
 import crypto from 'crypto';
-import { getAuthenticatedEmployee, hasAnyRole } from '@/lib/auth';
+import { getAuthenticatedEmployee, hasAnyRole, hasEmployeePermission } from '@/lib/auth';
 import { resolveOrganizationScope } from '@/lib/organizations';
 
 export const dynamic = 'force-dynamic';
@@ -30,7 +30,12 @@ export async function GET(req: NextRequest) {
   try {
     const actor = await getAuthenticatedEmployee(req);
     if (!actor) return NextResponse.json({ error: 'Sign in to view disbursements.' }, { status: 401 });
-    if (!hasAnyRole(actor, ['SYSTEM_ADMIN', 'SUPER_ADMIN', 'GMD'])) return NextResponse.json({ error: 'Executive or Super admin access is required.' }, { status: 403 });
+    const canViewDisbursements =
+      hasAnyRole(actor, ['SYSTEM_ADMIN', 'SUPER_ADMIN', 'GMD']) ||
+      (hasAnyRole(actor, ['CUSTOM_ADMIN']) &&
+        (hasEmployeePermission(actor, 'finance', 'Approvals & payments', 'view_approvals') ||
+          hasEmployeePermission(actor, 'finance', 'Wallets & funded budgets', 'view_wallets')));
+    if (!canViewDisbursements) return NextResponse.json({ error: 'Executive or Super admin access is required.' }, { status: 403 });
     const { searchParams } = new URL(req.url);
     const subsidiary = searchParams.get('subsidiary') || 'ALL';
 

@@ -1,7 +1,7 @@
 import { normalizeOrganizationIdentifier } from '@/lib/organization-identity';
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getAuthenticatedEmployee, hasAnyRole } from '@/lib/auth';
+import { getAuthenticatedEmployee, hasAnyRole, hasEmployeePermission } from '@/lib/auth';
 import { resolveAuthorizedOrganizationScope } from '@/lib/organizations';
 
 export const dynamic = 'force-dynamic';
@@ -15,7 +15,12 @@ export async function GET(
     if (!actor) {
       return NextResponse.json({ error: 'Authentication required.' }, { status: 401 });
     }
-    if (!hasAnyRole(actor, ['SYSTEM_ADMIN', 'SUPER_ADMIN', 'GMD'])) {
+    const canReadAuditLogs =
+      hasAnyRole(actor, ['SYSTEM_ADMIN', 'SUPER_ADMIN', 'GMD']) ||
+      (hasAnyRole(actor, ['CUSTOM_ADMIN']) &&
+        (hasEmployeePermission(actor, 'control-center', 'audit_trail', 'view_audit_logs') ||
+          hasEmployeePermission(actor, 'finance', 'Overview', 'view_telemetry')));
+    if (!canReadAuditLogs) {
       return NextResponse.json({ error: 'Executive access is required to read business audit logs.' }, { status: 403 });
     }
 
