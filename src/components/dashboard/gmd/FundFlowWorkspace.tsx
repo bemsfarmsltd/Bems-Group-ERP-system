@@ -12,11 +12,10 @@ import {
 } from 'lucide-react';
 import { ApprovalsDeskView } from './ApprovalsDeskView';
 import { DisbursementsDeskView } from './DisbursementsDeskView';
-import { ApprovalMatrixView } from './ApprovalMatrixView';
 import { EmergencyOverridesView } from './EmergencyOverridesView';
 
 export type WorkspaceTab = 'approvals' | 'vendors' | 'settlements' | 'governance';
-export type GovernanceSubTab = 'matrix' | 'emergency';
+export type GovernanceSubTab = 'emergency';
 
 export function FundFlowWorkspace({
   businessName,
@@ -36,7 +35,6 @@ export function FundFlowWorkspace({
   onSelectBusiness: (id: string) => void;
 }) {
   const [activeTab, setActiveTab] = useState<WorkspaceTab>('approvals');
-  const [governanceTab, setGovernanceTab] = useState<GovernanceSubTab>('matrix');
   const [reviewCount, setReviewCount] = useState<number | null>(null);
   const [readyCount, setReadyCount] = useState<number | null>(null);
   const [confirmationCount, setConfirmationCount] = useState<number | null>(null);
@@ -82,7 +80,7 @@ export function FundFlowWorkspace({
     { key: 'approvals', label: 'Requisition Approvals', count: reviewCount, icon: <ClipboardCheck size={13} /> },
     { key: 'vendors', label: 'Disbursements Queue', count: readyCount, icon: <Building2 size={13} /> },
     { key: 'settlements', label: 'Settlement Ledger', count: confirmationCount, icon: <BadgeCheck size={13} /> },
-    { key: 'governance', label: 'Approval Matrix & Overrides', count: null, icon: <ShieldCheck size={13} /> },
+    { key: 'governance', label: 'Emergency Overrides', count: null, icon: <ShieldCheck size={13} /> },
   ];
 
   return (
@@ -249,78 +247,12 @@ export function FundFlowWorkspace({
 
       {activeTab === 'governance' && (
         <section style={{ display: 'grid', gap: 12 }}>
-          {/* Sub-tab navigation */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              background: '#ffffff',
-              border: '1px solid #e2e8f0',
-              borderRadius: 8,
-              padding: 4,
-              width: 'fit-content',
-            }}
-          >
-            <button
-              type="button"
-              onClick={() => setGovernanceTab('matrix')}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                padding: '6px 12px',
-                fontSize: 11.5,
-                fontWeight: governanceTab === 'matrix' ? 700 : 500,
-                borderRadius: 6,
-                border: 'none',
-                background: governanceTab === 'matrix' ? '#0f172a' : 'transparent',
-                color: governanceTab === 'matrix' ? '#ffffff' : '#64748b',
-                cursor: 'pointer',
-              }}
-            >
-              <SlidersHorizontal size={13} />
-              Approval Policy Matrix
-            </button>
-            <button
-              type="button"
-              onClick={() => setGovernanceTab('emergency')}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                padding: '6px 12px',
-                fontSize: 11.5,
-                fontWeight: governanceTab === 'emergency' ? 700 : 500,
-                borderRadius: 6,
-                border: 'none',
-                background: governanceTab === 'emergency' ? '#b42318' : 'transparent',
-                color: governanceTab === 'emergency' ? '#ffffff' : '#64748b',
-                cursor: 'pointer',
-              }}
-            >
-              <ShieldAlert size={13} />
-              Emergency Overrides
-            </button>
-          </div>
-
-          {governanceTab === 'matrix' && (
-            <ApprovalMatrixView
-              businessName={businessName}
-              userName={userName}
-              onNavigate={onNavigate}
-              onSelectBusiness={onSelectBusiness}
-            />
-          )}
-
-          {governanceTab === 'emergency' && (
-            <EmergencyOverridesView
-              businessName={businessName}
-              userName={userName}
-              onNavigate={onNavigate}
-              onSelectBusiness={onSelectBusiness}
-            />
-          )}
+          <EmergencyOverridesView
+            businessName={businessName}
+            userName={userName}
+            onNavigate={onNavigate}
+            onSelectBusiness={onSelectBusiness}
+          />
         </section>
       )}
     </div>

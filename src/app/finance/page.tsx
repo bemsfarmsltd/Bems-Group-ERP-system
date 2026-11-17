@@ -228,7 +228,6 @@ const gmdNavGroups = [
       ['Fund requests', '▱'],
       ['Approvals & payments', '✓'],
       ['Budgets & commitments', '◫'],
-      ['Treasury accounts', '🏦'],
       ['Wallets & funded budgets', '◈'],
       ['Recurring commitments', '◌'],
       ['Hybrid payroll', '⌁'],
