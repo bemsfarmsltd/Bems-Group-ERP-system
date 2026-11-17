@@ -93,7 +93,6 @@ const EXECUTIVE_INVITE_ROLES = [
 
 const STAFF_APPROVAL_ROLES = [
   { value: 'STAFF', label: 'Staff' },
-  { value: 'CUSTOM_ADMIN', label: 'Custom Admin' },
   { value: 'GMD', label: 'The Group Managing Director' },
   { value: 'SYSTEM_ADMIN', label: 'Super admin' },
 ];
