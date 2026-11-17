@@ -1,4 +1,5 @@
 'use client';
+import { WalletReleaseAuthorization } from './WalletReleaseAuthorization';
 import { isBemsGroup, normalizeOrganizationIdentifier } from '@/lib/organization-identity';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -40,6 +41,7 @@ export interface FundingViewProps {
   businessId?: string;
   brandColor?: string;
   isGroup?: boolean;
+  initialPayrollBatchId?: string;
 }
 
 export default function FundingView({
@@ -48,12 +50,13 @@ export default function FundingView({
   businessId,
   brandColor,
   isGroup,
+  initialPayrollBatchId,
 }: FundingViewProps = {}) {
   const [data, setData] = useState<any>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<TabKey>('envelopes');
+  const [activeTab, setActiveTab] = useState<TabKey>(initialPayrollBatchId ? 'releases' : 'envelopes');
 
   // Resolve active subsidiary from general workspace filtering
   const effectiveScope = scope || businessId;
@@ -97,8 +100,9 @@ export default function FundingView({
   const [bankList, setBankList] = useState<any[]>([]);
 
   // Release Preview Preparation State
-  const [sourceType, setSourceType] = useState('REQUEST');
-  const [sourceId, setSourceId] = useState('');
+  const [sourceType, setSourceType] = useState(initialPayrollBatchId ? 'PAYROLL_BATCH' : 'REQUEST');
+  const [sourceId, setSourceId] = useState(initialPayrollBatchId ?? '');
+  const [batchRequestIds, setBatchRequestIds] = useState<string[]>([]);
   const [mapping, setMapping] = useState<Record<string, string>>({});
 
   // Confirmation Modal State (GMD Password-proven approval / Issue Ack / Pool Pause)
@@ -258,8 +262,12 @@ export default function FundingView({
       ? data?.requests?.find((r: any) => r.id === sourceId)
       : data?.payrollBatches?.find((r: any) => r.id === sourceId);
 
-  const releaseOrganizations: string[] =
-    sourceType === 'REQUEST'
+  const eligibleBatchRequests = (data?.requests ?? []).filter((request: any) => !request.vendor);
+  const selectedBatchRequests = eligibleBatchRequests.filter((request: any) => batchRequestIds.includes(request.id));
+  const batchTotal = selectedBatchRequests.reduce((total: bigint, request: any) => total + BigInt(request.amountMinor), BigInt(0));
+  const releaseOrganizations: string[] = sourceType === 'REQUEST_BATCH'
+    ? [...new Set<string>(selectedBatchRequests.map((request: any) => request.subsidiaryId))]
+    : sourceType === 'REQUEST'
       ? selectedPaymentSource
         ? [selectedPaymentSource.subsidiaryId]
         : []
@@ -290,19 +298,7 @@ export default function FundingView({
           await api('pool-control', { ...payload, challengeId: proof.id, challengeToken: proof.token });
           setNotice('Funding pool controls updated successfully.');
         }
-      } else {
-        const payload = { id: confirmation.id, confirmationHash: confirmation.confirmationHash };
-        const proof = await api('challenges', { purpose: 'RELEASE', payload, password });
-        await api('releases/' + confirmation.id + '/approve', {
-          confirmationHash: confirmation.confirmationHash,
-          challengeId: proof.id,
-          challengeToken: proof.token,
-        });
-        setNotice(
-          confirmation.category === 'VENDOR'
-            ? 'Vendor payment approved and queued for direct Monnify transfer.'
-            : 'GMD-approved funds credited once to staff wallets. Staff can withdraw anytime.'
-        );
+
       }
     });
   }
@@ -956,6 +952,7 @@ export default function FundingView({
                       >
                         <div>
                           <strong style={{ color: '#1e293b' }}>{item.employeeName}</strong>
+                          {p.sourceType === 'REQUEST_BATCH' && <div className="text-xs text-slate-600">{item.requestNumber} · {item.requestTitle} · {item.envelopeLabel}</div>}
                           <span style={{ color: '#64748b', fontSize: '10px', marginLeft: 4 }}>
                             ({item.employeeNumber}) · {item.organizationName}
                           </span>
@@ -1026,16 +1023,34 @@ export default function FundingView({
                   onChange={(e) => {
                     setSourceType(e.target.value);
                     setSourceId('');
+                    setBatchRequestIds([]);
                     setMapping({});
                   }}
                   style={{ width: '100%', padding: '6px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 11, background: '#fff' }}
                 >
                   <option value="REQUEST">Staff Request / Project / Allowance</option>
+                  <option value="REQUEST_BATCH">Multiple staff requisitions</option>
                   <option value="PAYROLL_BATCH">Whole Salary Net Batch</option>
                 </select>
               </div>
 
-              <div>
+              {sourceType === 'REQUEST_BATCH' ? (
+                <fieldset className="space-y-2 rounded-md border border-slate-200 p-3">
+                  <legend className="px-1 text-xs font-semibold">Select 2–25 staff requisitions</legend>
+                  <div className="max-h-56 space-y-2 overflow-auto">
+                    {eligibleBatchRequests.length === 0 && <p className="text-xs text-slate-600">No staff requisitions are eligible.</p>}
+                    {eligibleBatchRequests.map((request: any) => {
+                      const checked = batchRequestIds.includes(request.id);
+                      return <label key={request.id} className="flex items-start gap-2 text-xs">
+                        <input type="checkbox" checked={checked} disabled={busy || (!checked && batchRequestIds.length >= 25)}
+                          onChange={() => setBatchRequestIds(ids => checked ? ids.filter(id => id !== request.id) : [...ids, request.id])} />
+                        <span>{request.requestNumber} · {request.title} · {request.requester?.legalName} · {walletMoney(request.amountMinor)}</span>
+                      </label>;
+                    })}
+                  </div>
+                  <p className="text-xs font-semibold">{selectedBatchRequests.length} selected · {walletMoney(batchTotal.toString())}</p>
+                </fieldset>
+              ) : (              <div>
                 <label style={{ fontSize: '10px', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: 4 }}>Approved Source</label>
                 <select
                   value={sourceId}
@@ -1054,7 +1069,8 @@ export default function FundingView({
                     </option>
                   ))}
                 </select>
-              </div>
+              </div>)}
+
             </div>
 
             {releaseOrganizations.length > 0 && (
@@ -1091,15 +1107,17 @@ export default function FundingView({
             <button
               disabled={
                 busy ||
-                !sourceId ||
+                (sourceType === 'REQUEST_BATCH' ? selectedBatchRequests.length < 2 || selectedBatchRequests.length !== batchRequestIds.length : !sourceId) ||
                 !releaseOrganizations.length ||
                 releaseOrganizations.some((o) => !mapping[o])
               }
               onClick={() =>
                 run(async () => {
-                  await api('releases', { sourceType, sourceId, envelopesByOrganization: mapping });
+                  await api('releases', { sourceType, sourceId, envelopesByOrganization: mapping,
+                    ...(sourceType === 'REQUEST_BATCH' ? { requestIds: batchRequestIds } : {}) });
                   setNotice('Release preview staged. Awaiting designated GMD approval.');
                   setSourceId('');
+                  setBatchRequestIds([]);
                   setMapping({});
                 })
               }
@@ -1746,6 +1764,7 @@ export default function FundingView({
                     <div>
                       <strong style={{ color: '#17253d' }}>{i.employeeName}</strong>
                       <span style={{ fontSize: 10, color: '#64748b', marginLeft: 4 }}>({i.employeeNumber}) · {i.organizationName}</span>
+                      {confirmation.sourceType === 'REQUEST_BATCH' && <div className="text-xs text-slate-600">{i.requestNumber} · {i.requestTitle} · {i.envelopeLabel}</div>}
                     </div>
                     <strong style={{ fontFamily: 'monospace', color: '#475569' }}>{walletMoney(i.amountMinor)}</strong>
                   </div>
@@ -1765,7 +1784,7 @@ export default function FundingView({
               </div>
             )}
 
-            <div>
+            {confirmation.operation ? <div>
               <label style={{ fontSize: 11, fontWeight: 700, color: effectiveBrandColor, display: 'block', marginBottom: 4 }}>Enter Your Current Password to Authorize *</label>
               <input
                 autoFocus
@@ -1776,24 +1795,32 @@ export default function FundingView({
                 onChange={(e) => setPassword(e.target.value)}
                 style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: `1px solid ${effectiveBrandColor}40`, fontSize: 12, background: '#fff', boxSizing: 'border-box', fontFamily: 'monospace' }}
               />
-            </div>
+            </div> : <WalletReleaseAuthorization key={confirmation.id}
+              payload={{ id: confirmation.id, confirmationHash: confirmation.confirmationHash }}
+              onBusy={setBusy}
+              onApproved={async () => {
+                setConfirmation(null);
+                setNotice(confirmation.category === 'VENDOR' ? 'Vendor payment approved and queued.' : 'Staff wallets credited.');
+                await load();
+              }} />}
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, borderTop: '1px solid #f1f5f9', paddingTop: 12 }}>
               <button
                 type="button"
+                disabled={busy}
                 onClick={() => { setConfirmation(null); setPassword(''); }}
                 style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid #cbd5e1', background: '#fff', color: '#475569', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
               >
                 Cancel
               </button>
-              <button
+              {confirmation.operation && <button
                 type="button"
                 disabled={busy || !password || (confirmation.operation === 'ACKNOWLEDGE_ISSUE' && (confirmation.note || '').trim().length < 10)}
                 onClick={handleConfirmAction}
                 style={{ padding: '6px 14px', borderRadius: 6, border: 0, background: effectiveBrandColor, color: '#fff', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}
               >
                 {busy ? 'Authenticating…' : 'Authorize Release →'}
-              </button>
+              </button>}
             </div>
           </div>
         </div>

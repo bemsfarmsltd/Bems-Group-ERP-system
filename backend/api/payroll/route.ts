@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { getAuthenticatedEmployee, getHrAuthorizationScope, hasAnyRole } from '@/lib/auth';
 import { createHash } from 'node:crypto';
 import { evaluatePaydayRadar } from '@/lib/payroll-radar';
+import { fundingState } from '@/lib/wallet/core';
 
 export const dynamic = 'force-dynamic';
 
@@ -313,6 +314,11 @@ export async function GET(req: NextRequest) {
     const subsidiaries = subsidiaryIds.length ? await prisma.organization.findMany({ where: { id: { in: subsidiaryIds } }, select: { id: true, legalName: true } }) : [];
     const subsidiaryNames = new Map(subsidiaries.map(subsidiary => [subsidiary.id, subsidiary.legalName]));
 
+    const verifiedBankRows = await prisma.$queryRaw<Array<{ employeeId: string; accountNumber: string }>>`
+      SELECT "employeeId", "accountNumber" FROM "WalletBankAccount" WHERE "active" = true
+    `.catch(() => []);
+    const verifiedBankMap = new Map(verifiedBankRows.map((b) => [b.employeeId, b.accountNumber]));
+
     const safeItems = scopedBatchItems.map(item => {
       const attStats = attendanceDeductionByEmployee.get(item.employee.id) || { countLate: 0, countAbsent: 0, totalPercent: 0 };
       // Pro-rated daily rate (grossMinor / 22 work days in average month)
@@ -371,6 +377,8 @@ export async function GET(req: NextRequest) {
         bankName: item.employee.salaryBankName || item.employee.bankName || 'GTBank',
         accountNumber: item.employee.salaryAccountNumber || item.employee.accountNumber || '—',
         accountName: item.employee.salaryAccountName || item.employee.accountName || item.employee.legalName,
+        bankVerified: verifiedBankMap.has(item.employee.id),
+        bankLastFour: verifiedBankMap.get(item.employee.id)?.slice(-4) || null,
         primarySubsidiary: item.employee.assignments[0]?.subsidiary?.legalName || 'BEMS Group',
         allocations: item.allocations.map(a => {
           const amount = Number(a.allocableCostMinor);
@@ -411,6 +419,37 @@ export async function GET(req: NextRequest) {
           select: { id: true, legalName: true, role: true },
         })
       : null;
+
+    let monnifyCoverage: {
+      configured: boolean;
+      availableMinor: number;
+      freeMinor: number;
+      availableFormatted: string;
+      freeFormatted: string;
+      covered: boolean;
+      shortfallMinor: number;
+      shortfallFormatted: string;
+      observedAt: string;
+    } | null = null;
+    try {
+      const state = await fundingState(prisma, false);
+      const freeNum = Number(state.freeMinor);
+      const availNum = Number(state.availableMinor);
+      const shortfall = Math.max(0, totalNet - freeNum);
+      monnifyCoverage = {
+        configured: state.configured,
+        availableMinor: availNum,
+        freeMinor: freeNum,
+        availableFormatted: formatNaira(availNum),
+        freeFormatted: formatNaira(freeNum),
+        covered: freeNum >= totalNet,
+        shortfallMinor: shortfall,
+        shortfallFormatted: formatNaira(shortfall),
+        observedAt: state.observedAt.toISOString(),
+      };
+    } catch {
+      monnifyCoverage = null;
+    }
 
     return NextResponse.json({
       period: {
@@ -470,6 +509,7 @@ export async function GET(req: NextRequest) {
       items: safeItems,
       availablePeriods,
       radar,
+      monnifyCoverage,
       permissions: {
         canApprove: hasAnyRole(actor, ['SYSTEM_ADMIN', 'SUPER_ADMIN', 'GMD']),
         canRecordPayments: hasAnyRole(actor, ['SYSTEM_ADMIN', 'SUPER_ADMIN', 'GMD']) || batch.disbursementAssigneeId === actor.id

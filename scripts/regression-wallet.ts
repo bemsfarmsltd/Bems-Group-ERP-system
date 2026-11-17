@@ -1,7 +1,9 @@
 import {backedFeeReserve} from '../src/lib/wallet/fees';
 import {runVendorRegressions} from './regression-wallet-vendor';
 import {hashPassword} from '../src/lib/auth';
-import {issueWalletChallenge} from '../src/lib/wallet/security';
+import {issueWalletChallenge,verifyWalletReleaseOtp} from '../src/lib/wallet/security';
+import {approvalOtpRequired,otpPolicyKey,releaseOtpDigest} from '../src/lib/wallet/approval-security';
+import {setFundApprovalPolicy} from '../src/lib/gmd-access';
 import {resetRateLimit} from '../src/lib/rate-limiter';
 import {runWalletExecutionRegressions} from './regression-wallet-execution';
 import assert from 'node:assert/strict';
@@ -30,6 +32,11 @@ async function main() {
   const other = await prisma.employee.create({ data: { employeeNumber: 'WO-' + suffix, legalName: 'Other Staff', workEmail: 'wo-' + suffix + '@example.invalid', passwordHash, role: 'STAFF', status: 'ACTIVE', approvalStatus: 'APPROVED' } });
   process.env.BEMS_FINANCIAL_GMD_ID = gmd.id;
   const org = await prisma.organization.create({ data: { type: 'SUBSIDIARY', code: 'W-' + suffix, legalName: 'Wallet test subsidiary' } });
+  const pin = '14285769';
+  const pinHash = await hashPassword(pin);
+  await prisma.$executeRaw`INSERT INTO "WalletApprovalCredential" ("employeeId","pinHash") VALUES (${gmd.id},${pinHash}),(${admin.id},${pinHash})`;
+  assert.equal(await approvalOtpRequired(prisma), true, 'OTP is enabled by default.');
+  await prisma.workspaceSetting.create({ data: { organizationId: org.id, key: otpPolicyKey, value: 'false', updatedById: gmd.id } });
   await prisma.$executeRaw`INSERT INTO "WalletFundingPool" ("id","environment","sourceAccount","availableMinor","feeReserveMinor","observedAt","observationId","paused") VALUES ('MONNIFY_NGN','sandbox','9999999999',1000000,10000,now(),${suffix},false)`;
   assert.equal(providerAmountMinor('1234.56'), BigInt(123456));
   assert.throws(() => providerAmountMinor('1.001'));
@@ -50,14 +57,14 @@ async function main() {
   assert.equal((await allocate(key)).id, envelope.id);
   await assert.rejects(createFundedEnvelope(staff, { organizationId: org.id, label: 'Unauthorized', amountMinor: '1', idempotencyKey: suffix }));
   console.log('PASS budget idempotency and staff authorization are enforced');
-  const secureApprove=async(p:any)=>{await resetRateLimit('wallet-password:'+gmd.id);const proof=await issueWalletChallenge(gmd,{purpose:'RELEASE',payload:{id:p.id,confirmationHash:p.confirmationHash},password,sessionHash:'isolated-session'});return approveWalletRelease(gmd,p.id,p.confirmationHash,{...proof,sessionHash:'isolated-session'});};
+  const secureApprove=async(p:any)=>{await resetRateLimit('wallet-password:'+gmd.id);const proof=await issueWalletChallenge(gmd,{purpose:'RELEASE',payload:{id:p.id,confirmationHash:p.confirmationHash},pin,sessionHash:'isolated-session'});return approveWalletRelease(gmd,p.id,p.confirmationHash,{...proof,sessionHash:'isolated-session'});};
   const createRequest = (name: string, amount = BigInt(400000)) => prisma.expenditureRequest.create({ data: { requestNumber: name + suffix, groupId: org.id, subsidiaryId: org.id, requestedById: staff.id, amountMinor: amount, title: name, justification: 'Wallet isolated regression', deliverable: 'Evidence', neededBy: new Date(), category: 'OFFICE_EXPENSE' } });
   const first = await createRequest('FIRST');
   const second = await createRequest('SECOND');
   const stage = (sourceId: string) => stageWalletRelease(admin, { sourceType: 'REQUEST', sourceId, envelopeId: envelope.id });
   const [p1,p2] = await Promise.all([stage(first.id),stage(second.id)]);
-  await assert.rejects(approveWalletRelease(admin, p1.id, p1.confirmationHash), /Only an authorized financial approver/);
-  await assert.rejects(approveWalletRelease(staff, p1.id, p1.confirmationHash), /Only an authorized financial approver/);
+  await assert.rejects(approveWalletRelease(admin, p1.id, p1.confirmationHash), {code:'GMD_REQUIRED'});
+  await assert.rejects(approveWalletRelease(staff, p1.id, p1.confirmationHash), {code:'GMD_REQUIRED'});
   await assert.rejects(approveWalletRelease(gmd, p1.id, '0'.repeat(64)), /exact stored preview/);
   assert.equal((await readOwnWallet(staff)).availableMinor, '0');
   console.log('PASS direct non-GMD approval and forged preview cannot create wallet funds');
@@ -107,18 +114,59 @@ async function main() {
   await runVendorRegressions({admin,gmd,staff,other,org,envelope,secureApprove,password});
   process.env.BEMS_SUPER_ADMIN_GMD_ACCESS='true';
   await prisma.$executeRaw`UPDATE "WalletFundingPool" SET "observedAt"=now(),"paused"=false WHERE "id"='MONNIFY_NGN'`;
+  await setFundApprovalPolicy(prisma, org.id, gmd.id, admin.id);
   const adminSource=await createRequest('TEMP-ADMIN',BigInt(10000));
   const adminProposal=await stageWalletRelease(admin,{sourceType:'REQUEST',sourceId:adminSource.id,envelopeId:envelope.id});
   await assert.rejects(approveWalletRelease(admin,adminProposal.id,adminProposal.confirmationHash),{code:'TRANSACTION_AUTH_REQUIRED'});
-  const adminProof=await issueWalletChallenge(admin,{purpose:'RELEASE',payload:{id:adminProposal.id,confirmationHash:adminProposal.confirmationHash},password,sessionHash:'temporary-admin-session'});
+  const adminProof=await issueWalletChallenge(admin,{purpose:'RELEASE',payload:{id:adminProposal.id,confirmationHash:adminProposal.confirmationHash},pin,sessionHash:'temporary-admin-session'});
+  const otp = '602911';
+  await prisma.$executeRaw`UPDATE "WalletChallenge" SET "otpDigest"=${releaseOtpDigest(adminProof.id, otp)} WHERE "id"=${adminProof.id}`;
+  await assert.rejects(approveWalletRelease(admin,adminProposal.id,adminProposal.confirmationHash,{...adminProof,sessionHash:'temporary-admin-session'}),{code:'APPROVAL_OTP_REQUIRED'});
+  await assert.rejects(verifyWalletReleaseOtp(admin,{...adminProof,sessionHash:'temporary-admin-session'},'604000'),{code:'APPROVAL_OTP_INVALID'});
+  await verifyWalletReleaseOtp(admin,{...adminProof,sessionHash:'temporary-admin-session'},otp);
   await approveWalletRelease(admin,adminProposal.id,adminProposal.confirmationHash,{...adminProof,sessionHash:'temporary-admin-session'});
   const approved=await prisma.$queryRaw<any[]>`SELECT "approvedById" FROM "WalletReleaseProposal" WHERE "id"=${adminProposal.id}`;
   assert.equal(approved[0].approvedById,admin.id);
   const recorded=await prisma.auditEvent.findFirstOrThrow({where:{correlationId:adminProposal.id,targetType:'WALLET_CREDIT'}});
   assert.equal(recorded.actorRole,'SUPER_ADMIN','Temporary approval must never impersonate GMD in the audit.');
+  const batchEnvelope = await createFundedEnvelope(gmd, {
+    organizationId: org.id, label: 'Requisition batch test', amountMinor: '30000', idempotencyKey: randomUUID(),
+  });
+  const stageBatch = (requestIds: string[]) => stageWalletRelease(gmd, {
+    sourceType: 'REQUEST_BATCH', sourceId: '', requestIds, envelopesByOrganization: { [org.id]: batchEnvelope.id },
+  });
+  const [batchFirst, batchSecond, oversized] = await Promise.all([
+    createRequest('BATCH-FIRST', BigInt(10000)),
+    createRequest('BATCH-SECOND', BigInt(10000)),
+    createRequest('BATCH-OVERSIZE', BigInt(30000)),
+  ]);
+  await assert.rejects(stageBatch([batchFirst.id, batchFirst.id]), { code: 'INVALID_REQUEST_BATCH' });
+  const underfundedBatch = await stageBatch([batchFirst.id, oversized.id]);
+  await assert.rejects(secureApprove(underfundedBatch), { code: 'BUDGET_EXCEEDED' });
+  assert.equal(await prisma.walletCreditLot.count({ where: { requestId: { in: [batchFirst.id, oversized.id] } } }), 0);
+  const staleBatch = await stageBatch([batchFirst.id, batchSecond.id]);
+  await prisma.expenditureRequest.update({ where: { id: batchSecond.id }, data: { amountMinor: BigInt(11000) } });
+  await assert.rejects(secureApprove(staleBatch), { code: 'SOURCE_CHANGED' });
+  const batch = await stageBatch([batchFirst.id, batchSecond.id]);
+  const batchResult = await secureApprove(batch);
+  assert.equal('creditCount' in batchResult && batchResult.creditCount, 2);
+  assert.equal(await prisma.walletCreditLot.count({ where: { proposalId: batch.id } }), 2);
+  assert.equal(await prisma.auditEvent.count({ where: { correlationId: batch.id, targetType: 'WALLET_CREDIT' } }), 2);
+  assert.equal((await approveWalletRelease(gmd, batch.id, batch.confirmationHash)).alreadyExecuted, true);
+  console.log('PASS staff requisition batches use one approval, reject stale or underfunded batches, and post each request exactly once');
+  const lockProposal = await stage((await createRequest('PIN-LOCK', BigInt(10000))).id);
+  const lockPayload = { id: lockProposal.id, confirmationHash: lockProposal.confirmationHash };
+  const priorProof = await issueWalletChallenge(gmd, { purpose: 'RELEASE', payload: lockPayload, pin, sessionHash: 'lock-session' });
+  const failed = await Promise.allSettled(Array.from({ length: 3 }, (_, attempt) =>
+    issueWalletChallenge(gmd, { purpose: 'RELEASE', payload: lockPayload, pin: '99998888', sessionHash: 'lock-session-' + attempt })));
+  assert.equal(failed.filter(result => result.status === 'rejected' && result.reason.code === 'APPROVAL_PIN_INVALID').length, 2);
+  assert.equal(failed.filter(result => result.status === 'rejected' && result.reason.code === 'APPROVAL_PIN_LOCKED').length, 1);
+  await assert.rejects(approveWalletRelease(gmd, lockProposal.id, lockProposal.confirmationHash, { ...priorProof, sessionHash: 'lock-session' }), { code: 'CHALLENGE_INVALID' });
+  await assert.rejects(issueWalletChallenge(gmd, { purpose: 'RELEASE', payload: lockPayload, pin, sessionHash: 'lock-session' }), { code: 'APPROVAL_PIN_LOCKED' });
+  console.log('PASS three PIN failures across sessions lock approvals and invalidate outstanding challenges');
   process.env.BEMS_SUPER_ADMIN_GMD_ACCESS='false';
-  await assert.rejects(issueWalletChallenge(admin,{purpose:'RELEASE',payload:{id:adminProposal.id,confirmationHash:adminProposal.confirmationHash},password,sessionHash:'temporary-admin-session'}),{code:'GMD_REQUIRED'});
-  console.log('PASS temporary Super Admin approval requires exact password proof, records the real approver and is revoked centrally');
+  await assert.rejects(issueWalletChallenge(admin,{purpose:'RELEASE',payload:{id:adminProposal.id,confirmationHash:adminProposal.confirmationHash},pin,sessionHash:'temporary-admin-session'}),{code:'GMD_REQUIRED'});
+  console.log('PASS temporary Super Admin approval requires its own PIN and transaction-bound OTP proof, records the real approver and is revoked centrally');
   process.env.BEMS_WALLET_ENABLED='false';
   try {
     const own=await readOwnWallet(staff);assert.equal(own.walletMode,false);assert.equal(own.withdrawalsEnabled,false);

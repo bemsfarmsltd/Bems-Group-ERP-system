@@ -230,6 +230,8 @@ const gmdNavGroups = [
       ['Wallets & funded budgets', '◈'],
       ['Recurring commitments', '◌'],
       ['Hybrid payroll', '⌁'],
+      ['Accountability (72h)', '⏱'],
+      ['Intercompany notes', '⇄'],
       ['Receipt archive', '▣'],
     ]
   },
@@ -3610,7 +3612,7 @@ function AppWorkspace({user,onSignOut,onAddBusiness,onEditBusiness,businesses:ra
     if(target==='Transfer verification') return <TransferVerificationModule business={current} setNotice={setNotice} onNavigate={(p)=>window.location.href=p}/>;
     if(target==='Treasury accounts') return <TreasuryAccountsView businessName={current.name} userName={safeUser.fullName} scope={activeScope} businessId={current.id} businessCode={(current as any).code} onNavigate={setActive} onSelectBusiness={selectBusiness}/>;
     if(target==='Receipt archive') return <LiveReceiptArchiveModule scope={activeScope} setNotice={setNotice}/>;
-    if(target==='Accountability closure') return <LiveAccountabilityModule setNotice={setNotice}/>;
+    if(target==='Accountability closure'||target==='Accountability (72h)') return <LiveAccountabilityModule setNotice={setNotice}/>;
     if(target==='Proof & deliverables') return <LiveProofDeliverablesModule setNotice={setNotice}/>;
     if(target==='Follow-up tasks') return <LiveFollowUpTasksModule setNotice={setNotice}/>;
     if(target==='Closure clearances') return <ClosureClearancesModule business={current} setNotice={setNotice}/>;

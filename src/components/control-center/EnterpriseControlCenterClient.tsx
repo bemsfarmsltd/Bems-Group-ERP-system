@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { PeopleAccessWorkspaceModule } from '@/components/dashboard/gmd/PeopleAccessWorkspaceModule';
 import { AiAccessControlPanel } from '@/components/control-center/AiAccessControlPanel';
+import { WalletApprovalSecurityCard } from '@/components/control-center/WalletApprovalSecurityCard';
 import { FundApprovalPolicyCard } from '@/components/control-center/FundApprovalPolicyCard';
 import { SubsidiaryPortfolioView } from '@/components/dashboard/gmd/SubsidiaryPortfolioView';
 import { hasCategoryAccess } from '@/lib/admin-permissions';
@@ -41,6 +42,7 @@ type ControlSection =
   | 'overview'
   | 'onboarding'
   | 'ai_control'
+  | 'wallet_approval'
   | 'notifications'
   | 'data_retention'
   | 'mobile_apps'
@@ -50,6 +52,7 @@ type ControlSection =
 const NAV_ITEMS: Array<{ id: ControlSection; label: string; subtitle: string; icon: any }> = [
   { id: 'overview', label: 'Command Overview', subtitle: 'Cross-module health & quick jump', icon: Activity },
   { id: 'onboarding', label: 'Admin Onboarding', subtitle: 'GMD & Super Admin invitations', icon: UserPlus },
+  { id: 'wallet_approval', label: 'Wallet Approvals', subtitle: 'Approvers, PIN recovery and email OTP', icon: ShieldCheck },
   { id: 'ai_control', label: 'AI Access Control', subtitle: '2-layer AI policy & governance', icon: Bot },
   { id: 'notifications', label: 'Notifications', subtitle: 'WhatsApp, Slack & alert channels', icon: Bell },
   { id: 'data_retention', label: 'Data & Retention', subtitle: 'Audit archival & data retention', icon: Database },
@@ -58,8 +61,8 @@ const NAV_ITEMS: Array<{ id: ControlSection; label: string; subtitle: string; ic
   { id: 'audit_trail', label: 'System Audit Log', subtitle: 'Cross-module security & audit trail', icon: ShieldCheck },
 ];
 
-export default function EnterpriseControlCenterClient() {
-  const [section, setSection] = useState<ControlSection>('overview');
+export default function EnterpriseControlCenterClient({ openWalletApprovals = false }: { openWalletApprovals?: boolean }) {
+  const [section, setSection] = useState<ControlSection>(openWalletApprovals ? 'wallet_approval' : 'overview');
   const [collapsed, setCollapsed] = useState(true);
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<any>(null);
@@ -287,7 +290,7 @@ export default function EnterpriseControlCenterClient() {
         <nav aria-label="Control Center navigation">
           <div className="nav-group">
             <p>CONTROL CENTER</p>
-            {visibleNavItems.filter((item) => ['overview', 'onboarding', 'ai_control'].includes(item.id)).map((item) => {
+            {visibleNavItems.filter((item) => ['overview', 'onboarding', 'wallet_approval', 'ai_control'].includes(item.id)).map((item) => {
               const Icon = item.icon;
               const active = section === item.id;
               return (
@@ -308,7 +311,7 @@ export default function EnterpriseControlCenterClient() {
 
           <div className="nav-group">
             <p>PLATFORM &amp; GOVERNANCE</p>
-            {visibleNavItems.filter((item) => !['overview', 'onboarding', 'ai_control'].includes(item.id)).map((item) => {
+            {visibleNavItems.filter((item) => !['overview', 'onboarding', 'wallet_approval', 'ai_control'].includes(item.id)).map((item) => {
               const Icon = item.icon;
               const active = section === item.id;
               return (
@@ -557,12 +560,14 @@ export default function EnterpriseControlCenterClient() {
             />
           )}
 
-          {section === 'ai_control' && (
+          {section === 'wallet_approval' && (
             <>
               <FundApprovalPolicyCard setNotice={(msg) => setNotice(msg)} />
-              <AiAccessControlPanel setNotice={(msg) => setNotice(msg)} />
+              <WalletApprovalSecurityCard setNotice={(msg) => setNotice(msg)} />
             </>
           )}
+
+          {section === 'ai_control' && <AiAccessControlPanel setNotice={setNotice} />}
 
           {section === 'notifications' && (
             <LiveWorkspaceSettingsModule

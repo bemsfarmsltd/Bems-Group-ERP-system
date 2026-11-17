@@ -14,7 +14,7 @@ export async function controlWalletPool(actor:WalletActor,operation:string,proof
       const [queued]=await tx.$queryRaw<any[]>`SELECT count(*)::integer AS "count" FROM "WalletWithdrawal" WHERE "status" IN ('SUBMITTING','PENDING','UNKNOWN','SUCCEEDED','FAILED') AND "nextAttemptAt"<=now()`;
       if(queued.count)throw new WalletError('FUNDING_RECONCILIATION_REQUIRED','Run the transfer reconciliation worker before restoring processing.',409);
       if(!s.fresh||!s.configured||s.freeMinor<BigInt(0)||issues.count)throw new WalletError('FUNDING_RECONCILIATION_REQUIRED','Fresh matching funding and resolved reconciliation exceptions are required.',409);
-      if(process.env.BEMS_WALLET_OPENING_RECONCILED==='false')throw new WalletError('OPENING_RECONCILIATION_REQUIRED','Complete the reviewed opening reconciliation.',409);
+      if((process.env.MONNIFY_ENVIRONMENT || process.env.MONNIFY_ENV || 'live') === 'live' && process.env.BEMS_WALLET_OPENING_RECONCILED !== 'true')throw new WalletError('OPENING_RECONCILIATION_REQUIRED','Complete the reviewed opening reconciliation.',409);
     }else if(operation!=='PAUSE')throw new WalletError('INVALID_OPERATION','Choose PAUSE or ACTIVATE.');
     await tx.$executeRaw`UPDATE "WalletFundingPool" SET "paused"=${operation==='PAUSE'},"version"="version"+1 WHERE "id"='MONNIFY_NGN'`;
     return {operation,paused:operation==='PAUSE'};

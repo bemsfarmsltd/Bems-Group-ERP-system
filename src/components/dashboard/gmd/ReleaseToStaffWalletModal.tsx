@@ -2,17 +2,14 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
+import { WalletReleaseAuthorization } from '@/components/wallet/WalletReleaseAuthorization';
 import {
   Wallet,
   CheckCircle2,
   AlertCircle,
-  Lock,
-  Eye,
-  EyeOff,
   Copy,
   Check,
   Building2,
-  User,
   ArrowRight,
   X,
   ShieldCheck,
@@ -32,6 +29,14 @@ export interface StaffWalletReleaseData {
   brandColor?: string;
 }
 
+type ReleasePreview = {
+  id: string;
+  sourceId: string;
+  confirmationHash: string;
+  amountMinor: string;
+  items: [{ employeeName: string; employeeNumber: string; envelopeLabel: string; title: string }];
+};
+
 interface ReleaseToStaffWalletModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -45,8 +50,7 @@ export const ReleaseToStaffWalletModal: React.FC<ReleaseToStaffWalletModalProps>
   onSuccess,
   data,
 }) => {
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
+  const [preview, setPreview] = useState<ReleasePreview | null>(null);
   const [note, setNote] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -57,8 +61,14 @@ export const ReleaseToStaffWalletModal: React.FC<ReleaseToStaffWalletModalProps>
 
   if (!isOpen || !data) return null;
 
-  const walletNumber = `WLT-${data.staffNumber || 'STAFF'}`;
-  const themeColor = data.brandColor || '#059669';
+  const reviewed = preview?.sourceId === data.requestId ? preview : null;
+  const beneficiary = reviewed?.items[0];
+  const staffNumber = beneficiary?.employeeNumber ?? data.staffNumber;
+  const staffName = beneficiary?.employeeName ?? data.staffName;
+  const walletNumber = `WLT-${staffNumber}`;
+  const amountFormatted = reviewed
+    ? new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN' }).format(Number(reviewed.amountMinor) / 100)
+    : data.amountFormatted;
 
   const handleCopyWalletNumber = () => {
     navigator.clipboard.writeText(walletNumber);
@@ -68,51 +78,48 @@ export const ReleaseToStaffWalletModal: React.FC<ReleaseToStaffWalletModalProps>
 
   const handleAuthorizeRelease = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!password) {
-      setError('Please enter your GMD password to authorize release.');
-      return;
-    }
-
     try {
       setSubmitting(true);
       setError(null);
       setErrorCode(null);
       setAllocateUrl(null);
 
-      const res = await fetch('/api/wallet/releases/approve-request', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          requestId: data.requestId,
-          password,
-          note: note.trim() || undefined,
-        }),
-      });
-
-      const resJson = await res.json();
-      if (!res.ok) {
-        setErrorCode(resJson.code || null);
-        setAllocateUrl(resJson.allocateUrl || null);
-        throw new Error(resJson.error || 'Failed to authorize wallet release.');
+      if (!reviewed) {
+        const res = await fetch('/api/wallet/releases/approve-request', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'PREPARE', requestId: data.requestId }),
+        });
+        const result = await res.json();
+        if (!res.ok) {
+          setErrorCode(result.code ?? null);
+          if (result.code === 'NO_BUDGET_ENVELOPE') setAllocateUrl('/wallet/funding');
+          throw new Error(result.error || 'Failed to prepare the wallet release.');
+        }
+        setPreview(result);
+        return;
       }
 
-      setSuccessReceipt(resJson);
-    } catch (err: any) {
-      setError(err?.message || 'Authorization failed. Check your password and try again.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Wallet release could not be prepared.');
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleFinish = () => {
-    setPassword('');
+  const close = () => {
+    setPreview(null);
     setNote('');
     setError(null);
     setErrorCode(null);
     setAllocateUrl(null);
     setSuccessReceipt(null);
-    onSuccess();
     onClose();
+  };
+
+  const handleFinish = () => {
+    onSuccess();
+    close();
   };
 
   return (
@@ -132,16 +139,17 @@ export const ReleaseToStaffWalletModal: React.FC<ReleaseToStaffWalletModalProps>
               <h3 className="text-base font-bold text-slate-900 tracking-tight flex items-center gap-2">
                 Release to Staff Wallet
                 <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-200">
-                  GMD Authorization
+                  Financial Approval
                 </span>
               </h3>
               <p className="text-xs text-slate-500 font-medium">
-                Requisition {data.requestNumber} · {data.title}
+                Requisition {data.requestNumber} · {beneficiary?.title ?? data.title}
               </p>
             </div>
           </div>
           <button
-            onClick={onClose}
+            onClick={successReceipt ? handleFinish : close}
+            disabled={submitting}
             className="text-slate-400 hover:text-slate-700 p-1.5 rounded-lg hover:bg-slate-100 transition-colors"
             title="Close"
           >
@@ -231,7 +239,7 @@ export const ReleaseToStaffWalletModal: React.FC<ReleaseToStaffWalletModalProps>
                       <div>
                         <Link
                           href={allocateUrl}
-                          onClick={onClose}
+                          onClick={close}
                           className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#ea580c] hover:bg-orange-600 text-white font-bold rounded-lg text-[11px] shadow-sm transition-all"
                         >
                           Allocate Funded Budget →
@@ -250,14 +258,14 @@ export const ReleaseToStaffWalletModal: React.FC<ReleaseToStaffWalletModalProps>
                   Amount to Credit Staff Wallet
                 </span>
                 <div className="text-2xl font-black text-emerald-950 tracking-tight mt-0.5">
-                  {data.amountFormatted}
+                  {amountFormatted}
                 </div>
               </div>
               <div className="text-right">
-                <span className="text-[10px] font-semibold text-slate-500 block">Subsidiary Source</span>
+                <span className="text-[10px] font-semibold text-slate-500 block">Funding Source</span>
                 <span className="text-xs font-bold text-slate-800 flex items-center gap-1 justify-end mt-0.5">
                   <Building2 className="w-3 h-3 text-slate-400" />
-                  {data.subsidiaryName}
+                  {beneficiary?.envelopeLabel ?? data.subsidiaryName}
                 </span>
               </div>
             </div>
@@ -269,17 +277,17 @@ export const ReleaseToStaffWalletModal: React.FC<ReleaseToStaffWalletModalProps>
                   Beneficiary Staff Member
                 </span>
                 <span className="text-[10px] font-mono font-semibold text-slate-500">
-                  ID: {data.staffNumber}
+                  ID: {staffNumber}
                 </span>
               </div>
 
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
                   <div className="w-8 h-8 rounded-full bg-slate-200 border border-slate-300 flex items-center justify-center font-bold text-slate-700 text-xs">
-                    {data.staffName.charAt(0)}
+                    {staffName.charAt(0)}
                   </div>
                   <div>
-                    <h5 className="text-xs font-bold text-slate-900 leading-tight">{data.staffName}</h5>
+                    <h5 className="text-xs font-bold text-slate-900 leading-tight">{staffName}</h5>
                     <span className="text-[10px] text-slate-500">
                       {data.staffRole || 'Staff Member'} · {data.subsidiaryName}
                     </span>
@@ -323,6 +331,7 @@ export const ReleaseToStaffWalletModal: React.FC<ReleaseToStaffWalletModalProps>
               </span>
             </div>
 
+            {reviewed && <>
             {/* Executive Directive Note (Optional) */}
             <div>
               <label className="block text-[11px] font-semibold text-slate-700 mb-1">
@@ -331,61 +340,48 @@ export const ReleaseToStaffWalletModal: React.FC<ReleaseToStaffWalletModalProps>
               <input
                 type="text"
                 placeholder="e.g., Authorized within Q4 operational plan."
+                maxLength={1000}
+                disabled={submitting}
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
                 className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-xl focus:outline-none focus:border-emerald-500 text-slate-800 transition"
               />
             </div>
 
-            {/* GMD Password Verification */}
-            <div>
-              <label className="block text-[11px] font-bold text-slate-900 mb-1 flex items-center gap-1.5">
-                <Lock className="w-3.5 h-3.5 text-emerald-700" />
-                Enter Current GMD Password to Authorize Release *
-              </label>
-              <div className="relative">
-                <input
-                  autoFocus
-                  type={showPassword ? 'text' : 'password'}
-                  autoComplete="current-password"
-                  placeholder="Enter your executive password…"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full px-3 py-2.5 pr-10 text-xs bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:border-emerald-600 focus:bg-white text-slate-900 font-mono transition"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600"
-                >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-            </div>
+            <WalletReleaseAuthorization key={reviewed.id}
+              payload={{ id: reviewed.id, confirmationHash: reviewed.confirmationHash, note: note.trim() || undefined }}
+              onBusy={setSubmitting}
+              onStale={() => {
+                setPreview(null);
+                setError('Review a fresh release preview before trying again.');
+              }}
+              onApproved={result => {
+                if (result.status !== 'WALLET_CREDITED') throw new Error('The wallet credit could not be confirmed.');
+                setSuccessReceipt({
+                  amountFormatted, requestNumber: data.requestNumber, staff: { name: staffName, walletNumber },
+                  subsidiary: { name: data.subsidiaryName, envelopeLabel: beneficiary?.envelopeLabel },
+                });
+              }} />
+            </>}
 
             {/* Action Buttons */}
             <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-200">
               <button
                 type="button"
-                onClick={onClose}
+                onClick={close}
+                disabled={submitting}
                 className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 rounded-xl hover:bg-slate-100 transition"
               >
                 Cancel
               </button>
-              <button
+              {!reviewed && <button
                 type="submit"
-                disabled={submitting || !password}
+                disabled={submitting}
                 className="inline-flex items-center gap-1.5 px-5 py-2.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {submitting ? (
-                  'Authenticating & Crediting…'
-                ) : (
-                  <>
-                    Authorize &amp; Credit Staff Wallet
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </>
-                )}
-              </button>
+                {submitting ? 'Processing…' : 'Review release'}
+                {!submitting && <ArrowRight className="w-3.5 h-3.5" />}
+              </button>}
             </div>
           </form>
         )}

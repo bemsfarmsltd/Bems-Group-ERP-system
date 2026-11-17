@@ -5,7 +5,7 @@ import EnterpriseControlCenterClient from '@/components/control-center/Enterpris
 export const dynamic = 'force-dynamic';
 export const metadata = { title: 'BEMS ERP | Control Center' };
 
-export default async function ControlCenterPage() {
+export default async function ControlCenterPage({ searchParams }: { searchParams: Promise<{ section?: string }> }) {
   const actor = await getSsrActor();
 
   if (!actor) {
@@ -16,6 +16,6 @@ export default async function ControlCenterPage() {
     redirect('/');
   }
 
-  return <EnterpriseControlCenterClient />;
+  return <EnterpriseControlCenterClient openWalletApprovals={(await searchParams).section === 'wallet-approval'} />;
 }
 

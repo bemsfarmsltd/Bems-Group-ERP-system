@@ -47,6 +47,8 @@ interface PayrollItem {
   bankName?: string;
   accountNumber?: string;
   accountName?: string;
+  bankVerified?: boolean;
+  bankLastFour?: string | null;
   primarySubsidiary?: string;
   isOfflineStaff?: boolean;
   isNewStaff?: boolean;
@@ -151,6 +153,17 @@ interface PayrollBatchData {
   items: PayrollItem[];
   availablePeriods?: PayrollPeriodOption[];
   radar?: PaydayRadarInfo | null;
+  monnifyCoverage?: {
+    configured: boolean;
+    availableMinor: number;
+    freeMinor: number;
+    availableFormatted: string;
+    freeFormatted: string;
+    covered: boolean;
+    shortfallMinor: number;
+    shortfallFormatted: string;
+    observedAt: string;
+  } | null;
   permissions: { canApprove: boolean; canRecordPayments: boolean };
 }
 
@@ -207,12 +220,6 @@ export function PayrollSignOffView({
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState<string | null>(null);
   const [signOffModalOpen, setSignOffModalOpen] = useState(false);
-  const [signOffPassword, setSignOffPassword] = useState('');
-  const [signOffError, setSignOffError] = useState<string | null>(null);
-  const [comments, setComments] = useState('');
-  const [approving, setApproving] = useState(false);
-  const [assignees, setAssignees] = useState<Array<{ id: string; legalName: string; role: string }>>([]);
-  const [selectedAssigneeId, setSelectedAssigneeId] = useState('');
   const [paymentItem, setPaymentItem] = useState<PayrollItem | null>(null);
   const [recordingPayment, setRecordingPayment] = useState(false);
   const [staffPayments, setStaffPayments] = useState<Array<{ id: string; amountFormatted: string; periodName: string; bankName: string; reference: string; paidAt: string; status: string; receipt: { fileName: string; url: string } | null; confirmation: { decision: string; note: string | null; confirmedAt: string } | null }> | null>(null);
@@ -545,49 +552,6 @@ export function PayrollSignOffView({
     fetchPayroll();
   }, []);
 
-  const handleApprovePayroll = async () => {
-    if (!data?.batch?.id) return;
-    if (!signOffPassword.trim()) {
-      setSignOffError('Please enter your GMD executive password to authorize salary disbursement to staff BEMS Wallets.');
-      return;
-    }
-    try {
-      setApproving(true);
-      setSignOffError(null);
-      const res = await fetch('/api/payroll', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          batchId: data.batch?.id,
-          disbursementAssigneeId: selectedAssigneeId || undefined,
-          password: signOffPassword.trim(),
-          disburseToWallets: true,
-          comments: comments.trim() || `${monthName} approved and credited to staff BEMS Wallets.`,
-        }),
-      });
-      const result = await res.json();
-      if (!res.ok) {
-        setSignOffError(result.error || 'Failed to approve and disburse payroll batch.');
-        return;
-      }
-      setNotice(`✓ ${result.message || `${monthName} approved and credited to all staff BEMS Wallets.`}`);
-      setSignOffModalOpen(false);
-      setSignOffPassword('');
-      setSignOffError(null);
-      if (result.nextPeriod?.year && result.nextPeriod?.month) {
-        setSelectedPeriodKey(`${result.nextPeriod.year}-${result.nextPeriod.month}`);
-        await fetchPayroll(result.nextPeriod.year, result.nextPeriod.month);
-      } else {
-        await fetchPayroll(data?.period?.year, data?.period?.month);
-      }
-    } catch (e: any) {
-      setSignOffError('Network error approving payroll batch.');
-    } finally {
-      setApproving(false);
-    }
-  };
-
   const handleRecordPayment = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!data?.batch?.id || !paymentItem) return;
@@ -779,17 +743,7 @@ export function PayrollSignOffView({
 
           {!isHrMode && data?.batch?.status === 'SUBMITTED' && data?.permissions?.canApprove ? (
             <button
-              onClick={async () => {
-                setSignOffModalOpen(true);
-                try {
-                  const response = await fetch('/api/payroll/assignees', { credentials: 'include', cache: 'no-store' });
-                  const result = await response.json();
-                  if (response.ok) {
-                    setAssignees(result.employees || []);
-                    setSelectedAssigneeId(result.current?.id || '');
-                  } else setNotice(result.error || 'Could not load payment assignees.');
-                } catch { setNotice('Could not load payment assignees.'); }
-              }}
+              onClick={() => setSignOffModalOpen(true)}
               style={{
                 padding: '6px 12px',
                 borderRadius: '6px',
@@ -1063,7 +1017,7 @@ export function PayrollSignOffView({
           display: 'flex',
           flexDirection: 'column',
           justifyContent: 'space-between',
-          height: '75px',
+          minHeight: '75px',
           boxSizing: 'border-box'
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1076,7 +1030,44 @@ export function PayrollSignOffView({
             <div style={{ fontSize: '18px', fontWeight: 700, color: '#059669', lineHeight: 1.1 }}>
               {data?.batch?.totalNetFormatted || '—'}
             </div>
-            <div style={{ fontSize: '9px', color: '#64748b', marginTop: '2px' }}>Amount due to employees</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', marginTop: '4px' }}>
+              <span style={{ fontSize: '9px', color: '#64748b' }}>Amount due to employees</span>
+              {data?.monnifyCoverage && (
+                <span
+                  title={`Monnify wallet available: ${data.monnifyCoverage.availableFormatted} | Free (unreserved): ${data.monnifyCoverage.freeFormatted}`}
+                  style={{
+                    fontSize: '8.5px',
+                    fontWeight: 700,
+                    padding: '1px 6px',
+                    borderRadius: '4px',
+                    background: !data.monnifyCoverage.configured
+                      ? '#f1f5f9'
+                      : data.monnifyCoverage.covered
+                        ? '#ecfdf5'
+                        : '#fef2f2',
+                    color: !data.monnifyCoverage.configured
+                      ? '#475569'
+                      : data.monnifyCoverage.covered
+                        ? '#047857'
+                        : '#b91c1c',
+                    border: `1px solid ${
+                      !data.monnifyCoverage.configured
+                        ? '#cbd5e1'
+                        : data.monnifyCoverage.covered
+                          ? '#a7f3d0'
+                          : '#fecaca'
+                    }`,
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {!data.monnifyCoverage.configured
+                    ? 'Monnify not configured'
+                    : data.monnifyCoverage.covered
+                      ? `✓ Monnify Covered (${data.monnifyCoverage.freeFormatted})`
+                      : `⚠ Shortfall ${data.monnifyCoverage.shortfallFormatted}`}
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
@@ -1124,9 +1115,27 @@ export function PayrollSignOffView({
               Allocation recorded for this batch
             </h4>
           </div>
-          <span style={{ fontSize: '9px', fontWeight: 700, color: 'var(--brand-primary, #0d8a70)', background: 'var(--brand-tint, rgba(13, 138, 112, 0.1))', padding: '3px 8px', borderRadius: '4px' }}>
-            {data?.batch?.costAllocation?.totalAllocatedFormatted || 'No allocation recorded'}
-          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '9px', fontWeight: 700, color: 'var(--brand-primary, #0d8a70)', background: 'var(--brand-tint, rgba(13, 138, 112, 0.1))', padding: '3px 8px', borderRadius: '4px' }}>
+              {data?.batch?.costAllocation?.totalAllocatedFormatted || 'No allocation recorded'}
+            </span>
+            <a
+              href="/finance?tab=Intercompany+notes"
+              style={{
+                fontSize: '9px',
+                fontWeight: 700,
+                color: '#ea580c',
+                background: '#fff7ed',
+                border: '1px solid #fed7aa',
+                padding: '3px 8px',
+                borderRadius: '4px',
+                textDecoration: 'none',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              View Intercompany Notes →
+            </a>
+          </div>
         </div>
 
         {data?.batch?.costAllocation?.allocations?.length ? <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 20px', fontSize: '10px', color: '#334155', marginTop: '10px' }}>
@@ -1400,6 +1409,37 @@ export function PayrollSignOffView({
                           {(item.salaryDeltaMinor || 0) > 0 ? '↑' : '↓'} {item.salaryDeltaFormatted}
                         </span>
                       )}
+                      {item.bankVerified ? (
+                        <span
+                          title={`Verified bank account${item.bankName ? ` (${item.bankName})` : ''}`}
+                          style={{
+                            fontSize: 8.5,
+                            fontWeight: 700,
+                            padding: '1px 5px',
+                            borderRadius: 4,
+                            background: '#ecfdf5',
+                            color: '#047857',
+                            border: '1px solid #a7f3d0',
+                          }}
+                        >
+                          ✓ Bank {item.bankLastFour ? `••••${item.bankLastFour}` : 'Verified'}
+                        </span>
+                      ) : (
+                        <span
+                          title="No active verified bank account on file"
+                          style={{
+                            fontSize: 8.5,
+                            fontWeight: 700,
+                            padding: '1px 5px',
+                            borderRadius: 4,
+                            background: '#fffbeb',
+                            color: '#b45309',
+                            border: '1px solid #fde68a',
+                          }}
+                        >
+                          ⚠ Bank Unverified
+                        </span>
+                      )}
                     </div>
                     <div style={{ fontSize: '9px', color: '#64748b', marginTop: '1px' }}>
                       {item.role} · {item.email}
@@ -1438,6 +1478,32 @@ export function PayrollSignOffView({
                       {item.paymentReceiptName && item.paymentReceiptUrl && <> · <a href={item.paymentReceiptUrl} onClick={event => event.stopPropagation()} style={{ color: '#ea580c' }}>Receipt</a></>}
                     </span>
                   )}
+
+                  <button
+                    type="button"
+                    title="Download PDF payslip"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      window.open(`/api/payroll/items/${encodeURIComponent(item.id)}/payslip`, '_blank', 'noopener,noreferrer');
+                    }}
+                    style={{
+                      padding: '5px 8px',
+                      borderRadius: '6px',
+                      border: '1px solid #cbd5e1',
+                      background: '#f8fafc',
+                      color: '#0f172a',
+                      fontSize: '9px',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 3,
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    <Download size={10} style={{ color: '#475569' }} />
+                    <span>Payslip</span>
+                  </button>
 
                   {data?.permissions?.canApprove && (
                     <button
@@ -1544,8 +1610,6 @@ export function PayrollSignOffView({
               <button
                 onClick={() => {
                   setSignOffModalOpen(false);
-                  setSignOffPassword('');
-                  setSignOffError(null);
                 }}
                 style={{ border: 0, background: 'none', color: '#64748b', cursor: 'pointer' }}
               >
@@ -1598,76 +1662,15 @@ export function PayrollSignOffView({
                 </div>
               )}
 
-              {/* GMD Password Verification Input */}
-              <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '8px', padding: '10px 12px' }}>
-                <label style={{ fontSize: '10.5px', fontWeight: 800, color: '#9a3412', display: 'block', marginBottom: '5px' }}>
-                  🔒 Enter GMD Executive Password to Authorize Disbursement
-                </label>
-                <input
-                  type="password"
-                  placeholder="Enter your GMD password..."
-                  value={signOffPassword}
-                  onChange={(e) => {
-                    setSignOffPassword(e.target.value);
-                    if (signOffError) setSignOffError(null);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !approving) {
-                      e.preventDefault();
-                      handleApprovePayroll();
-                    }
-                  }}
-                  autoFocus
-                  style={{
-                    width: '100%',
-                    padding: '8px 10px',
-                    borderRadius: '6px',
-                    border: '1px solid #fdba74',
-                    background: '#fff',
-                    fontSize: '12px',
-                    color: '#0f172a',
-                    boxSizing: 'border-box'
-                  }}
-                />
-                <div style={{ fontSize: '9.5px', color: '#c2410c', marginTop: '4px', lineHeight: 1.4 }}>
-                  All {data?.items?.length || 0} staff members will immediately see their net salary in their <strong>BEMS Wallet</strong> and receive both <strong>mobile app push notifications</strong> and <strong>email alerts</strong> to withdraw.
-                </div>
-              </div>
-
-              <div>
-                <label style={{ fontSize: '10px', fontWeight: 700, color: '#334155', display: 'block', marginBottom: '4px' }}>
-                  Executive Approval Notes (Optional)
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Monthly salary approved and credited to BEMS Wallets."
-                  value={comments}
-                  onChange={(e) => setComments(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '7px 9px',
-                    borderRadius: '6px',
-                    border: '1px solid #cbd5e1',
-                    fontSize: '11px',
-                    color: '#0f172a',
-                    boxSizing: 'border-box'
-                  }}
-                />
-              </div>
-
-              {signOffError && (
-                <div style={{ padding: '8px 10px', borderRadius: '7px', background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', fontSize: '11px', fontWeight: 700 }}>
-                  ⚠️ {signOffError}
-                </div>
-              )}
+              <p style={{ fontSize: '11px', color: '#475569' }}>
+                Continue to Wallet Funding to select the funded subsidiary budgets and approve this batch.
+              </p>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '4px' }}>
                 <button
                   type="button"
                   onClick={() => {
                     setSignOffModalOpen(false);
-                    setSignOffPassword('');
-                    setSignOffError(null);
                   }}
                   style={{
                     padding: '7px 14px',
@@ -1682,24 +1685,12 @@ export function PayrollSignOffView({
                 >
                   Cancel
                 </button>
-                <button
-                  type="button"
-                  disabled={approving}
-                  onClick={handleApprovePayroll}
-                  style={{
-                    padding: '7px 16px',
-                    borderRadius: '6px',
-                    border: '1px solid #059669',
-                    background: 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
-                    color: '#fff',
-                    fontSize: '11px',
-                    fontWeight: 800,
-                    cursor: approving ? 'not-allowed' : 'pointer',
-                    boxShadow: '0 4px 12px rgba(5, 150, 105, 0.25)',
-                  }}
+                <a
+                  href={`/wallet/funding?payrollBatch=${encodeURIComponent(data?.batch?.id || '')}`}
+                  className="rounded-md bg-emerald-700 px-4 py-2 text-xs font-bold text-white"
                 >
-                  {approving ? 'Disbursing to Wallets…' : 'Authorize & Credit Staff Wallets ✍️'}
-                </button>
+                  Continue to Wallet Funding
+                </a>
               </div>
             </div>
           </div>

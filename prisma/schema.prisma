@@ -120,6 +120,7 @@ model Employee {
   approvalStatus String   @default("APPROVED") // PENDING_APPROVAL | APPROVED | REJECTED
   passwordHash   String?
   securityPinHash String?
+  walletApprovalCredential WalletApprovalCredential?
   avatarUrl      String?
   
   // Enhanced Enterprise Dossier
@@ -1286,6 +1287,15 @@ model WalletBankAccount {
   @@unique([employeeId, fingerprint])
 }
 
+model WalletApprovalCredential {
+  employeeId String @id
+  pinHash String
+  failedAttempts Int @default(0)
+  lockedAt DateTime? @db.Timestamptz(6)
+  recoveryUntil DateTime? @db.Timestamptz(6)
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
 model WalletChallenge {
   id String @id
   actorId String
@@ -1296,6 +1306,10 @@ model WalletChallenge {
   credentialHash String
   expiresAt DateTime @db.Timestamptz(6)
   usedAt DateTime? @db.Timestamptz(6)
+  approvalPinHash String?
+  otpDigest String?
+  otpVerifiedAt DateTime? @db.Timestamptz(6)
+  otpAttempts Int @default(0)
   @@index([expiresAt], map: "WalletChallenge_expiry")
 }
 

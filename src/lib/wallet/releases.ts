@@ -10,8 +10,8 @@ import { consumeWalletChallenge, SecurityProof } from './security';
 import { accountabilityDeadline } from '@/lib/services/accountability-deadline';
 import { sendApprovalDecisionEmail } from '@/lib/email';
 type Item={sourceType:string;sourceId:string;employeeId:string|null;vendorId?:string;bankSnapshot?:any;organizationId:string;amountMinor:bigint;category:string;employeeName:string;employeeNumber:string;title:string;sourceKey:string};
-type Input={sourceType:string;sourceId:string;envelopeId?:string;envelopesByOrganization?:Record<string,string>};
-type Context={allowedOrganizationIds?:string[];conversationId?:string|null;workspaceId?:string|null};
+type Input={sourceType:string;sourceId:string;requestIds?:unknown;envelopeId?:string;envelopesByOrganization?:Record<string,string>};
+type Context={staffRequestOnly?:boolean;allowedOrganizationIds?:string[];conversationId?:string|null;workspaceId?:string|null};
 async function sourceItems(tx:Prisma.TransactionClient,type:string,id:string):Promise<{items:Item[];sourceHash:string}> {
   if (type==='REQUEST') {
     const source=await tx.expenditureRequest.findUnique({where:{id},include:{requester:true,vendor:true,invoices:{orderBy:{createdAt:'desc'}},goodsReceipts:{orderBy:{receivedAt:'desc'}},disbursements:{select:{id:true}}}});
@@ -51,53 +51,107 @@ async function sourceItems(tx:Prisma.TransactionClient,type:string,id:string):Pr
   if (net!==batch.totalNetMinor) throw new WalletError('PAYROLL_TOTAL_MISMATCH','Batch net total does not equal its employee items.');
   return {items,sourceHash:hash({...batch,items:batch.items.map(i=>({...i,employee:{id:i.employee.id,role:i.employee.role,status:i.employee.status,approvalStatus:i.employee.approvalStatus,legalName:i.employee.legalName,workEmail:i.employee.workEmail,employeeNumber:i.employee.employeeNumber}}))})};
 }
+function normalizeBatchRequestIds(input: unknown): string[] {
+  if (!Array.isArray(input) || input.length < 2 || input.length > 25 ||
+    input.some(id => typeof id !== 'string' || !id.trim() || id !== id.trim() || id.length > 128) ||
+    new Set(input).size !== input.length) {
+    throw new WalletError('INVALID_REQUEST_BATCH', 'Select between 2 and 25 distinct staff requisitions.', 400);
+  }
+  return [...input].sort();
+}
+
+function requestBatchConfirmation(id: string, sourceHash: string, expiresAt: Date, items: { id: string; sourceId: string; envelopeId: string }[]) {
+  const allocations = items.map(({ id, sourceId, envelopeId }) => ({ id, sourceId, envelopeId }))
+    .sort((first, second) => first.sourceId.localeCompare(second.sourceId));
+  return hash({ id, sourceHash, expiresAt, allocations });
+}
+
+async function batchRequestItems(tx: Prisma.TransactionClient, ids: string[]) {
+  const items: Item[] = [];
+  const snapshots: string[] = [];
+  for (const id of ids) {
+    const source = await sourceItems(tx, 'REQUEST', id);
+    if (source.items[0].vendorId) {
+      throw new WalletError('VENDOR_BATCH_UNSUPPORTED', 'Use the individual verified payment flow for vendor requisitions.', 409);
+    }
+    items.push(...source.items);
+    snapshots.push(source.sourceHash);
+  }
+  return { items, sourceHash: hash({ ids, snapshots }) };
+}
+
 export async function stageWalletRelease(actor:WalletActor,input:Input,context:Context={}) {
+  const batchIds = input.sourceType === 'REQUEST_BATCH' ? normalizeBatchRequestIds(input.requestIds) : null;
   await prisma.$transaction(tx=>liveWalletActor(tx,actor));
   if(!['GMD','SUPER_ADMIN','SYSTEM_ADMIN'].includes(actor.role))throw new WalletError('NOT_PERMITTED','Executive preparation authority is required.',403);
   if(input.sourceType==='REQUEST'){
     const request=await prisma.expenditureRequest.findUnique({where:{id:input.sourceId},select:{vendorId:true,subsidiaryId:true}});
     if(request&&context.allowedOrganizationIds&&!context.allowedOrganizationIds.includes(request.subsidiaryId))throw new WalletError('WORKSPACE_FORBIDDEN','Payment is outside the signed workspace.',403);
+    if(request?.vendorId && context.staffRequestOnly)throw new WalletError('SOURCE_NOT_ELIGIBLE','Use the verified vendor payment flow.',409);
     if(request?.vendorId)await verifiedVendorDestination(request.vendorId);
   }
   return walletTransaction(async tx=>{
     await liveWalletActor(tx,actor);
     if(!['GMD','SUPER_ADMIN','SYSTEM_ADMIN'].includes(actor.role))throw new WalletError('NOT_PERMITTED','Executive preparation authority is required.',403);
-    const source=await sourceItems(tx,input.sourceType,input.sourceId),id=randomUUID(),expiresAt=new Date(Date.now()+600000);
+    const id=randomUUID(),expiresAt=new Date(Date.now()+600000);
+    const sourceId = batchIds ? id : input.sourceId;
+    const source = batchIds ? await batchRequestItems(tx, batchIds) : await sourceItems(tx, input.sourceType, sourceId);
     const items=[];
     for(const item of source.items) {
       if(context.allowedOrganizationIds && !context.allowedOrganizationIds.includes(item.organizationId))throw new WalletError('WORKSPACE_FORBIDDEN','The payment is outside the signed workspace.',403);
+      if(context.staffRequestOnly && (item.vendorId || item.employeeId===actor.id))throw new WalletError('SOURCE_NOT_ELIGIBLE','Choose an eligible staff requisition.',409);
       const employee=item.employeeId?await tx.employee.findUnique({where:{id:item.employeeId}}):null;
       if(!item.vendorId&&(!employee || employee.role!=='STAFF'||employee.approvalStatus!=='APPROVED'||!['ACTIVE','ON_LEAVE'].includes(employee.status)))throw new WalletError('INVALID_BENEFICIARY','All recipients must be approved staff with portal access.');
       const envelopeId=input.envelopesByOrganization?.[item.organizationId]||input.envelopeId;
-      const [envelope]=await tx.$queryRaw<any[]>`SELECT * FROM "WalletBudgetEnvelope" WHERE "id"=${envelopeId||''} AND "status"='ACTIVE'`;
+      const [envelope]=context.staffRequestOnly
+        ? await tx.$queryRaw<any[]>`SELECT * FROM "WalletBudgetEnvelope" WHERE "organizationId"=${item.organizationId} AND "status"='ACTIVE' ORDER BY "remainingMinor" DESC,"createdAt","id" LIMIT 1`
+        : await tx.$queryRaw<any[]>`SELECT * FROM "WalletBudgetEnvelope" WHERE "id"=${envelopeId||''} AND "status"='ACTIVE'`;
+      if(context.staffRequestOnly && !envelope)throw new WalletError('NO_BUDGET_ENVELOPE','Allocate a funded subsidiary budget in Wallet Funding before releasing this requisition.',409);
       if(!envelope || envelope.organizationId!==item.organizationId)throw new WalletError('BUDGET_SCOPE_MISMATCH','Select one funded budget for each source subsidiary.');
-      items.push({...item,id:randomUUID(),envelopeId:envelope.id});
+      items.push({...item,id:randomUUID(),envelopeId:envelope.id,envelopeLabel:envelope.label});
     }
-    const amount=items.reduce((n,i)=>n+i.amountMinor,BigInt(0)),confirmationHash=hash({version:2,id,type:input.sourceType,sourceId:input.sourceId,items,sourceHash:source.sourceHash,expiresAt});
-    await tx.$executeRaw`INSERT INTO "WalletReleaseProposal" ("id","createdById","sourceType","sourceId","amountMinor","category","sourceHash","confirmationHash","expiresAt","conversationId","workspaceId") VALUES (${id},${actor.id},${input.sourceType},${input.sourceId},${amount},${input.sourceType==='PAYROLL_BATCH'?'SALARY':items[0].category},${source.sourceHash},${confirmationHash},${expiresAt},${context.conversationId||null},${context.workspaceId||null})`;
+    const amount=items.reduce((n,i)=>n+i.amountMinor,BigInt(0)),confirmationHash=batchIds ? requestBatchConfirmation(id, source.sourceHash, expiresAt, items) : hash({version:2,id,type:input.sourceType,sourceId,items,sourceHash:source.sourceHash,expiresAt});
+    await tx.$executeRaw`INSERT INTO "WalletReleaseProposal" ("id","createdById","sourceType","sourceId","amountMinor","category","sourceHash","confirmationHash","expiresAt","conversationId","workspaceId") VALUES (${id},${actor.id},${input.sourceType},${sourceId},${amount},${batchIds?'REQUEST_BATCH':input.sourceType==='PAYROLL_BATCH'?'SALARY':items[0].category},${source.sourceHash},${confirmationHash},${expiresAt},${context.conversationId||null},${context.workspaceId||null})`;
     for(const i of items)await tx.$executeRaw`INSERT INTO "WalletReleaseItem" ("id","proposalId","sourceType","sourceId","employeeId","organizationId","envelopeId","amountMinor","category","vendorId","bankSnapshot") VALUES (${i.id},${id},${i.sourceType},${i.sourceId},${i.employeeId},${i.organizationId},${i.envelopeId},${i.amountMinor},${i.category},${i.vendorId||null},${i.bankSnapshot?JSON.stringify(i.bankSnapshot):null})`;
-    return walletJson({id,confirmationHash,expiresAt,sourceType:input.sourceType,sourceId:input.sourceId,amountMinor:amount,currency:'NGN',items,requiredApprover:financialApproverLabel(),conversationId:context.conversationId||null,message:'Preview only. An authorized financial approver must securely confirm this exact release.'});
+    return walletJson({id,confirmationHash,expiresAt,sourceType:input.sourceType,sourceId,amountMinor:amount,currency:'NGN',items,requiredApprover:financialApproverLabel(),conversationId:context.conversationId||null,message:'Preview only. An authorized financial approver must securely confirm this exact release.'});
   });
 }
-export async function approveWalletRelease(actor:WalletActor,id:string,confirmationHash:string,proof?:SecurityProof) {
+export async function approveWalletRelease(actor:WalletActor,id:string,confirmationHash:string,proof?:SecurityProof,note?:string) {
   requireCommitments();
   if(!(await canActorApproveFunds(actor)))throw new WalletError('GMD_REQUIRED','Only the designated GMD can release funds (unless explicitly permitted in Control Center).',403);
   await (await import('./monnify-balance')).ensureWalletFundingFresh(actor);
-  return walletTransaction(async tx=>{
+  const approvals: Parameters<typeof sendApprovalDecisionEmail>[0][] = [];
+  const result = await walletTransaction(async tx=>{
     await liveWalletActor(tx,actor,true);
     const [p]=await tx.$queryRaw<any[]>`SELECT * FROM "WalletReleaseProposal" WHERE "id"=${id} FOR UPDATE`;
     if(!p)throw new WalletError('NOT_FOUND','Release proposal not found.',404);
     if(!/^[a-f0-9]{64}$/.test(String(confirmationHash))||!timingSafeEqual(Buffer.from(p.confirmationHash),Buffer.from(confirmationHash)))throw new WalletError('HASH_MISMATCH','Approve the exact stored preview.',409);
+    if(p.status==='EXECUTED' && p.approvedById!==actor.id)throw new WalletError('ALREADY_RELEASED','This release was already executed.',409);
     if(p.status==='EXECUTED'){const[w]=await tx.$queryRaw<any[]>`SELECT "status","reference" FROM "WalletWithdrawal" WHERE "proposalId"=${p.id} AND "targetType"='VENDOR'`;return {id:p.id,status:w?.status||'WALLET_CREDITED',reference:w?.reference,alreadyExecuted:true};}
     if(p.status!=='PENDING'||p.expiresAt<=new Date())throw new WalletError('PROPOSAL_EXPIRED','Prepare a fresh preview.',409);
-    await consumeWalletChallenge(tx,actor,'RELEASE',{id,confirmationHash},proof);
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${'target:'+p.sourceId},0))`;
-    if(p.sourceType==='REQUEST')await tx.$queryRaw`SELECT "id" FROM "ExpenditureRequest" WHERE "id"=${p.sourceId} FOR UPDATE`;
-    else {await tx.$queryRaw`SELECT "id" FROM "PayrollBatch" WHERE "id"=${p.sourceId} FOR UPDATE`;await tx.$queryRaw`SELECT "id" FROM "PayrollItem" WHERE "batchId"=${p.sourceId} ORDER BY "id" FOR UPDATE`;}
-    const source=await sourceItems(tx,p.sourceType,p.sourceId);
-    if(source.sourceHash!==p.sourceHash)throw new WalletError('SOURCE_CHANGED','The source changed. Prepare a fresh preview.',409);
+    await consumeWalletChallenge(tx,actor,'RELEASE',{id,confirmationHash,note},proof);
     const items=await tx.$queryRaw<any[]>`SELECT * FROM "WalletReleaseItem" WHERE "proposalId"=${id} ORDER BY "envelopeId","id"`;
-    if(!items.length||hash(items.map(i=>[i.sourceType,i.sourceId,i.employeeId,i.organizationId,i.amountMinor]).sort())!==hash(source.items.map(i=>[i.sourceType,i.sourceId,i.employeeId,i.organizationId,i.amountMinor]).sort()))throw new WalletError('SOURCE_CHANGED','The payment allocation changed.',409);
+    const requestIds = p.sourceType === 'REQUEST_BATCH' ? normalizeBatchRequestIds(items.map(item => item.sourceId))
+      : p.sourceType === 'REQUEST' ? [p.sourceId as string] : [];
+    if (requestIds.length) {
+      for (const requestId of requestIds) {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${'target:'+requestId},0))`;
+      }
+      await tx.$queryRaw`SELECT "id" FROM "ExpenditureRequest" WHERE "id" IN (${Prisma.join(requestIds)}) ORDER BY "id" FOR UPDATE`;
+    } else {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${'target:'+p.sourceId},0))`;
+      await tx.$queryRaw`SELECT "id" FROM "PayrollBatch" WHERE "id"=${p.sourceId} FOR UPDATE`;
+      await tx.$queryRaw`SELECT "id" FROM "PayrollItem" WHERE "batchId"=${p.sourceId} ORDER BY "id" FOR UPDATE`;
+    }
+    const source = p.sourceType === 'REQUEST_BATCH' ? await batchRequestItems(tx, requestIds) : await sourceItems(tx,p.sourceType,p.sourceId);
+    if(source.sourceHash!==p.sourceHash)throw new WalletError('SOURCE_CHANGED','The source changed. Prepare a fresh preview.',409);
+    if (p.sourceType === 'REQUEST_BATCH' && requestBatchConfirmation(id, source.sourceHash, p.expiresAt, items) !== p.confirmationHash) {
+      throw new WalletError('SOURCE_CHANGED', 'The batch funding allocation changed. Prepare a fresh preview.', 409);
+    }
+    const storedItems=items.map(i=>[i.sourceType,i.sourceId,i.employeeId,i.organizationId,i.amountMinor,i.category,i.vendorId,i.bankSnapshot]).sort();
+    const expectedItems=source.items.map(i=>[i.sourceType,i.sourceId,i.employeeId,i.organizationId,i.amountMinor,i.category,i.vendorId??null,i.bankSnapshot?JSON.stringify(i.bankSnapshot):null]).sort();
+    if(!items.length||items.reduce((total,i)=>total+i.amountMinor,BigInt(0))!==p.amountMinor||hash(storedItems)!==hash(expectedItems))throw new WalletError('SOURCE_CHANGED','The payment allocation changed.',409);
+    if(source.items.some(i=>i.employeeId===actor.id))throw new WalletError('SELF_APPROVAL','You cannot release money to your own wallet.',403);
     for(const key of new Set(source.items.map(i=>i.sourceKey))) {
       const [paid]=await tx.$queryRaw<any[]>`SELECT "key" FROM "WalletPaidSource" WHERE "key"=${key}`;
       if(paid){
@@ -132,18 +186,18 @@ export async function approveWalletRelease(actor:WalletActor,id:string,confirmat
       }
       const creditId=randomUUID();
       await tx.$executeRaw`INSERT INTO "WalletCreditLot" ("id","proposalId","releaseItemId","sourceType","sourceId","employeeId","organizationId","category","amountMinor","availableMinor","requestId","payrollItemId") VALUES (${creditId},${id},${i.id},${i.sourceType},${i.sourceId},${i.employeeId},${i.organizationId},${i.category},${i.amountMinor},${i.amountMinor},${i.sourceType==='REQUEST'?i.sourceId:null},${i.sourceType==='PAYROLL_ITEM'?i.sourceId:null})`;
-      await journal(tx,actor.id,'WALLET_CREDITED',i.id,'ENVELOPE:'+i.envelopeId,'STAFF:'+i.employeeId+':'+i.category,i.amountMinor);
+      await journal(tx,actor.id,'WALLET_CREDITED',i.id,'ENVELOPE:'+i.envelopeId,'STAFF:'+i.employeeId,i.amountMinor);
       const org=await tx.organization.findUniqueOrThrow({where:{id:i.organizationId}});
-      await tx.auditEvent.create({data:{actorId:actor.id,actorName:actor.legalName,actorRole:actor.role,groupId:org.parentGroupId||org.id,subsidiaryId:org.id,targetType:'WALLET_CREDIT',targetId:creditId,action:'GMD_WALLET_RELEASED',correlationId:id,metadata:JSON.stringify({approvalAuthority:actor.role,temporarySuperAdminAccess:actor.role!=='GMD',amountMinor:i.amountMinor.toString(),sourceId:i.sourceId,envelopeId:i.envelopeId,confirmationHash})}});
+      await tx.auditEvent.create({data:{actorId:actor.id,actorName:actor.legalName,actorRole:actor.role,groupId:org.parentGroupId||org.id,subsidiaryId:org.id,targetType:'WALLET_CREDIT',targetId:creditId,action:'GMD_WALLET_RELEASED',correlationId:id,metadata:JSON.stringify({approvalAuthority:actor.role,temporarySuperAdminAccess:actor.role!=='GMD',amountMinor:i.amountMinor.toString(),sourceId:i.sourceId,envelopeId:i.envelopeId,confirmationHash,note})}});
       await tx.systemNotification.create({data:{employeeId:i.employeeId,kind:'WALLET_CREDITED',title:'Approved funds added to your wallet',body:'An authorized executive approved your payment. View the source and available funds in your wallet.',linkUrl:'/wallet'}});
     }
-    if(p.sourceType==='REQUEST') {
-      const request=await tx.expenditureRequest.findUniqueOrThrow({where:{id:p.sourceId},include:{requester:true}});
-      const isVendor=Boolean(items[0].vendorId);
-      await tx.expenditureRequest.update({where:{id:p.sourceId},data:{approvalStatus:'APPROVED',paymentStatus:isVendor?'MONNIFY_PENDING':'WALLET_CREDITED',accountabilityStatus:request.requestType==='REIMBURSEMENT'?'NOT_REQUIRED':isVendor?'PENDING':'AWAITING_WITHDRAWAL',requestVersion:{increment:1}}});
-      await tx.approvalStep.updateMany({where:{requestId:p.sourceId,status:'PENDING'},data:{status:'APPROVED',approverId:actor.id,approverName:actor.legalName,decidedAt:new Date()}});
+    for (const requestId of requestIds) {
+      const request=await tx.expenditureRequest.findUniqueOrThrow({where:{id:requestId},include:{requester:true}});
+      const isVendor=Boolean(request.vendorId);
+      await tx.expenditureRequest.update({where:{id:requestId},data:{approvalStatus:'APPROVED',paymentStatus:isVendor?'MONNIFY_PENDING':'WALLET_CREDITED',accountabilityStatus:request.requestType==='REIMBURSEMENT'?'NOT_REQUIRED':isVendor?'PENDING':'AWAITING_WITHDRAWAL',requestVersion:{increment:1}}});
+      await tx.approvalStep.updateMany({where:{requestId:requestId,status:'PENDING'},data:{status:'APPROVED',approverId:actor.id,approverName:actor.legalName,decisionReason:note || undefined,decidedAt:new Date()}});
       if(request.requester?.workEmail) {
-        sendApprovalDecisionEmail({
+        approvals.push({
           to: request.requester.workEmail,
           recipientName: request.requester.legalName,
           decision: 'APPROVED',
@@ -152,13 +206,18 @@ export async function approveWalletRelease(actor:WalletActor,id:string,confirmat
           requestNumber: request.requestNumber,
           title: request.title,
           amountMinor: Number(request.amountMinor),
-          reason: 'Authorized and released to staff internal wallet.',
-        }).catch((err) => console.error('[Wallet Release Email Error]', err));
+          reason: note || 'Authorized and released to staff internal wallet.',
+        });
       }
-    } else {
+    }
+    if (p.sourceType === 'PAYROLL_BATCH') {
       await tx.payrollBatch.update({where:{id:p.sourceId},data:{status:'WALLET_CREDITED',approvedAt:new Date(),snapshotHash:p.sourceHash}});
       await tx.payrollItem.updateMany({where:{batchId:p.sourceId},data:{status:'WALLET_CREDITED'}});
     }
     return {id,status:items[0].vendorId?'MONNIFY_PENDING':'WALLET_CREDITED',amountMinor:p.amountMinor.toString(),creditCount:items.length,alreadyExecuted:false};
   });
+  for (const approval of approvals) {
+    void sendApprovalDecisionEmail(approval).catch(err => console.error('[Wallet Release Email Error]', err));
+  }
+  return result;
 }

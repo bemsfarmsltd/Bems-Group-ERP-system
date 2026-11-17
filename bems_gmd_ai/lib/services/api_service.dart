@@ -23,10 +23,28 @@ class ApiService {
     return data;
   }
 
-  static Future<void> approveWalletRelease(String id, String confirmationHash, String password) async {
-    // Financial mutations use the active host once. Network uncertainty is
-    // resolved by reloading the stored proposal, never host-failover resubmission.
-    final proof = await walletRequest('challenges', {'purpose':'RELEASE','payload':{'id':id,'confirmationHash':confirmationHash},'password':password});
+  static Future<Map<String, dynamic>> requestWalletApproval(
+      String id, String confirmationHash, String pin) {
+    return walletRequest('challenges', {
+      'purpose': 'RELEASE',
+      'payload': {'id': id, 'confirmationHash': confirmationHash},
+      'pin': pin,
+    });
+  }
+
+  static Future<void> verifyWalletApprovalOtp(
+      Map<String, dynamic> proof, String otp) async {
+    await walletRequest('challenges', {
+      'action': 'VERIFY_RELEASE_OTP',
+      'id': proof['id'],
+      'token': proof['token'],
+      'otp': otp,
+    });
+  }
+
+  static Future<void> approveWalletRelease(String id, String confirmationHash,
+      Map<String, dynamic> proof) async {
+    // Submit once on the active host. Refresh the proposal after network uncertainty.
     final response = await http.post(Uri.parse('$baseUrl/api/wallet/releases/${Uri.encodeComponent(id)}/approve'), headers: authHeaders, body: jsonEncode({'confirmationHash': confirmationHash,'challengeId':proof['id'],'challengeToken':proof['token']})).timeout(const Duration(seconds: 20));
     if (response.statusCode != 200) {
       final data = jsonDecode(response.body) as Map<String, dynamic>;

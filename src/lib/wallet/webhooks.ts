@@ -1,5 +1,6 @@
 import { createHmac,randomUUID,timingSafeEqual } from 'node:crypto';
 import { WalletError, hash, walletTransaction } from './core';
+import { hasAuthorizedTransfer } from './transfer-authorization';
 export async function receiveMonnifyEvent(raw:string,signature:string|null) {
   if(Buffer.byteLength(raw)>65536)throw new WalletError('PAYLOAD_TOO_LARGE','Webhook exceeds the accepted size.',413);
   const secret=process.env.MONNIFY_SECRET_KEY;
@@ -37,10 +38,15 @@ export async function validateMonnifyIntent(body:any,signature:string|null,times
   return walletTransaction(async tx=>{
     const [w]=await tx.$queryRaw<any[]>`SELECT * FROM "WalletWithdrawal" WHERE "reference"=${reference}`;
     const curEnv = process.env.MONNIFY_ENVIRONMENT || process.env.MONNIFY_ENV || 'live';
-    if(!w||!['SUBMITTING','PENDING','UNKNOWN'].includes(w.status)||w.environment!==curEnv||w.sourceAccount!==body.data.sourceAccountNumber||w.bankCode!==body.data.destinationBankCode||w.accountNumber!==body.data.destinationAccountNumber||body.data.currency!=='NGN')return {decision:'REJECT'};
+    if(!w||!w.submittedAt||!['SUBMITTING','PENDING','UNKNOWN'].includes(w.status)||w.environment!==curEnv||w.sourceAccount!==body.data.sourceAccountNumber||w.bankCode!==body.data.destinationBankCode||w.accountNumber!==body.data.destinationAccountNumber||body.data.currency!=='NGN')return {decision:'REJECT'};
     const {providerAmountMinor}=await import('./monnify-balance');
     if(providerAmountMinor(body.data.amount)!==w.amountMinor)return {decision:'REJECT'};
-    const [s]=await tx.$queryRaw<any[]>`SELECT count(*)::integer AS "count" FROM "WalletWithdrawalAllocation" a JOIN "WalletCreditLot" c ON c."id"=a."creditLotId" JOIN "WalletReleaseProposal" p ON p."id"=c."proposalId" WHERE a."withdrawalId"=${w.id} AND (p."status"<>'EXECUTED' OR p."approvedById" IS NULL OR c."employeeId"<>${w.employeeId})`;
-    return {decision:s.count===0?'APPROVE':'REJECT'};
+    const [pool] = await tx.$queryRaw<Array<{ paused: boolean; sourceAccount: string; environment: string }>>`
+      SELECT "paused","sourceAccount","environment" FROM "WalletFundingPool" WHERE "id"='MONNIFY_NGN'
+    `;
+    if (!pool || pool.paused || pool.sourceAccount !== w.sourceAccount || pool.environment !== w.environment) {
+      return { decision: 'REJECT' };
+    }
+    return { decision: await hasAuthorizedTransfer(tx, w) ? 'APPROVE' : 'REJECT' };
   });
 }

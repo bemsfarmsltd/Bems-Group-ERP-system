@@ -1,8 +1,37 @@
 import {prisma} from '@/lib/prisma';
+import type { Prisma } from '@prisma/client';
 import {WalletActor,WalletError,liveWalletActor,walletJson,walletTransaction,fundingState} from './core';
 import {listMonnifyTransfers} from './provider';
 import {refreshMonnifyFunding} from './monnify-balance';
 import {recordWalletIssue} from './withdrawals';
+export async function reconcileInternalWalletLedger(tx: Prisma.TransactionClient) {
+  // Historical category-specific staff entries roll into the staff control account.
+  const differences = await tx.$queryRaw<Array<{ accountKey: string; posted: bigint; projected: bigint }>>`
+    WITH posted AS (
+      SELECT CASE WHEN "accountKey" LIKE 'STAFF:%' THEN 'STAFF:' || split_part("accountKey", ':', 2)
+                  ELSE "accountKey" END AS "accountKey", sum("amountMinor")::bigint AS amount
+      FROM "WalletJournalEntry"
+      WHERE "accountKey" LIKE 'STAFF:%' OR "accountKey" LIKE 'HELD:%' OR "accountKey" LIKE 'VENDOR_HELD:%'
+      GROUP BY 1
+    ), projected AS (
+      SELECT 'STAFF:' || "employeeId" AS "accountKey", sum("availableMinor")::bigint AS amount
+      FROM "WalletCreditLot" GROUP BY "employeeId"
+      UNION ALL
+      SELECT CASE WHEN "targetType" = 'VENDOR' THEN 'VENDOR_HELD:' ELSE 'HELD:' END || "id", "amountMinor"
+      FROM "WalletWithdrawal" WHERE "status" IN ('HELD', 'SUBMITTING', 'PENDING', 'UNKNOWN')
+    )
+    SELECT "accountKey", COALESCE(posted.amount,0)::bigint AS posted, COALESCE(projected.amount,0)::bigint AS projected
+    FROM posted FULL JOIN projected USING ("accountKey")
+    WHERE COALESCE(posted.amount,0) <> COALESCE(projected.amount,0)
+    ORDER BY "accountKey"
+  `;
+  for (const row of differences) {
+    await recordWalletIssue(tx, 'LEDGER_PROJECTION_MISMATCH',
+      'Posted balance ' + row.posted + ' differs from projected balance ' + row.projected + ' kobo.', row.accountKey);
+  }
+  return differences;
+}
+
 export async function reconcileWalletFunding(actor:WalletActor){
  await walletTransaction(async tx=>{await liveWalletActor(tx,actor);if(!['GMD','SUPER_ADMIN','SYSTEM_ADMIN'].includes(actor.role))throw new WalletError('NOT_PERMITTED','Executive reconciliation access is required.',403);await tx.$executeRaw`UPDATE "WalletFundingPool" SET "paused"=true WHERE "id"='MONNIFY_NGN'`;});
  const cutoff=Date.parse(process.env.BEMS_WALLET_CUTOVER_AT || '2026-11-08T00:00:00.000Z');
@@ -24,8 +53,9 @@ export async function reconcileWalletFunding(actor:WalletActor){
  }
  await refreshMonnifyFunding(actor);
  return walletTransaction(async tx=>{
+  const ledgerDifferences = await reconcileInternalWalletLedger(tx);
   for(const reference of unmatched)await recordWalletIssue(tx,'UNMATCHED_PROVIDER_TRANSFER','A post-cutover provider transfer has no internal approved withdrawal intent.',reference);
   const [issues]=await tx.$queryRaw<any[]>`SELECT count(*)::integer AS "count" FROM "WalletReconciliationIssue" WHERE "resolvedAt" IS NULL`;
-  return walletJson({scanned,historyComplete:last,unmatchedReferences:unmatched,unresolvedIssues:issues.count,funding:await fundingState(tx),message:last?'Provider history queued for authenticated transaction reconciliation.':'History page limit reached. Increase the configured page bound and rerun; this is not a complete reconciliation.'});
+  return walletJson({scanned,historyComplete:last,ledgerDifferenceCount:ledgerDifferences.length,unmatchedReferences:unmatched,unresolvedIssues:issues.count,funding:await fundingState(tx),message:last?'Provider history queued for authenticated transaction reconciliation.':'History page limit reached. Increase the configured page bound and rerun; this is not a complete reconciliation.'});
  });
 }

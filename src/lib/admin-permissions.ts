@@ -127,6 +127,14 @@ export const ADMIN_PERMISSION_CATALOG: PermissionModuleDef[] = [
         ],
       },
       {
+        key: 'Accounting',
+        label: 'Accounting',
+        actions: [
+          { key: 'view_accounting', label: 'View accounting and financial reports' },
+          { key: 'manage_accounting', label: 'Manage accounting records' },
+        ],
+      },
+      {
         key: 'Receipt archive',
         label: 'Receipt Archive',
         actions: [

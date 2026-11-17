@@ -1,12 +1,13 @@
 import {accountabilityDeadline} from '@/lib/services/accountability-deadline';
 import { randomUUID } from 'node:crypto';
-import { WalletError, fundingState, journal, requireCommitments, walletTransaction } from './core';
+import { WalletError, fundingState, journal, requireCommitments, requireWallet, walletTransaction } from './core';
 import { queryMonnifyTransfer, submitMonnifyTransfer, TransferEvidence, TransferIntent, MonnifySubmissionRejected } from './provider';
 import { recordWalletIssue } from './withdrawals';
+import { hasAuthorizedTransfer } from './transfer-authorization';
 export type WalletTransferProvider={submit:(intent:TransferIntent)=>Promise<unknown>;query:(reference:string)=>Promise<TransferEvidence>};
 const realProvider:WalletTransferProvider={submit:submitMonnifyTransfer,query:queryMonnifyTransfer};
 export async function processWalletTransfer(provider:WalletTransferProvider=realProvider) {
-  requireCommitments();
+  requireWallet();
   if(process.env.BEMS_WALLET_TRANSFERS_ENABLED==='false')throw new WalletError('WITHDRAWALS_NOT_ACTIVATED','Transfer worker is disabled.',503);
   const {prisma}=await import('@/lib/prisma');
   const [next]=await prisma.$queryRaw<any[]>`SELECT "employeeId","status" FROM "WalletWithdrawal" WHERE "status" IN ('HELD','SUBMITTING','PENDING','UNKNOWN','SUCCEEDED','FAILED') AND "nextAttemptAt"<=now() AND ("leaseUntil" IS NULL OR "leaseUntil"<now()) ORDER BY CASE WHEN "status"='HELD' THEN 1 ELSE 0 END,"nextAttemptAt" LIMIT 1`;
@@ -19,12 +20,11 @@ export async function processWalletTransfer(provider:WalletTransferProvider=real
     if(w.environment!==curEnv||(curSource && w.sourceAccount!==curSource)){await recordWalletIssue(tx,'SOURCE_MISMATCH','A queued transfer belongs to a different source or environment.',w.reference);return null;}
     const submit=w.status==='HELD'&&!w.submittedAt;
     if(submit) {
+      requireCommitments();
       await fundingState(tx,true);
-      const owner=await tx.employee.findUnique({where:{id:w.employeeId}});
-      const vendorIntent=w.targetType==='VENDOR';
-      const [authorization]=vendorIntent?await tx.$queryRaw<any[]>`SELECT "status" FROM "WalletReleaseProposal" WHERE "id"=${w.proposalId}`:[];
-      if(vendorIntent?authorization?.status!=='EXECUTED':!owner||owner.approvalStatus!=='APPROVED'||!['ACTIVE','ON_LEAVE'].includes(owner.status)||owner.role!=='STAFF'){
-        await tx.$executeRaw`UPDATE "WalletWithdrawal" SET "nextAttemptAt"=now()+interval '1 hour',"lastError"='OWNER_REQUIRES_REVIEW' WHERE "id"=${w.id}`;
+      if (!(await hasAuthorizedTransfer(tx, w))) {
+        await recordWalletIssue(tx, 'TRANSFER_AUTHORIZATION_MISMATCH', 'The queued transfer no longer matches a valid approval, wallet hold or verified destination.', w.reference);
+        await tx.$executeRaw`UPDATE "WalletWithdrawal" SET "nextAttemptAt"=now()+interval '1 hour',"lastError"='TRANSFER_AUTHORIZATION_MISMATCH' WHERE "id"=${w.id}`;
         return null;
       }
     }

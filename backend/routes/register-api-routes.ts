@@ -3,6 +3,7 @@
 import type { FastifyInstance } from 'fastify';
 import { mountNextRoute, type NextRouteModule } from '../next-route-adapter';
 
+import * as financeAccountingRoute from "../api/finance/accounting/route";
 import * as route_0 from "../api/accountability/close/route";
 import * as route_1 from "../api/accountability/evidence/[attachmentId]/route";
 import * as route_2 from "../api/accountability/evidence/route";
@@ -99,6 +100,7 @@ import * as route_92 from "../api/businesses/[businessId]/templates/route";
 import * as route_93 from "../api/control-center/admin-onboarding/route";
 import * as route_94 from "../api/control-center/admin-profiles/route";
 import * as route_95 from "../api/control-center/ai-access/route";
+import * as walletApprovalSecurityRoute from "../api/control-center/wallet-approval-security/route";
 import * as route_96 from "../api/control-center/fund-approval-policy/route";
 import * as route_97 from "../api/control-center/route";
 import * as route_98 from "../api/cron/morning-digest/route";
@@ -144,6 +146,7 @@ import * as route_137 from "../api/organizations/[organizationId]/route";
 import * as route_138 from "../api/organizations/route";
 import * as route_139 from "../api/payroll/assignees/route";
 import * as route_140 from "../api/payroll/items/[itemId]/route";
+import * as route_payroll_payslip from "../api/payroll/items/[itemId]/payslip/route";
 import * as route_141 from "../api/payroll/my-payments/route";
 import * as route_142 from "../api/payroll/prepare/route";
 import * as route_143 from "../api/payroll/record/route";
@@ -323,6 +326,7 @@ export function registerAllNextApiRoutes(app: FastifyInstance): void {
   mountNextRoute(app, "/api/control-center/admin-onboarding", route_93 as unknown as NextRouteModule);
   mountNextRoute(app, "/api/control-center/admin-profiles", route_94 as unknown as NextRouteModule);
   mountNextRoute(app, "/api/control-center/ai-access", route_95 as unknown as NextRouteModule);
+  mountNextRoute(app, "/api/control-center/wallet-approval-security", walletApprovalSecurityRoute as unknown as NextRouteModule);
   mountNextRoute(app, "/api/control-center/fund-approval-policy", route_96 as unknown as NextRouteModule);
   mountNextRoute(app, "/api/control-center", route_97 as unknown as NextRouteModule);
   mountNextRoute(app, "/api/cron/morning-digest", route_98 as unknown as NextRouteModule);
@@ -367,6 +371,7 @@ export function registerAllNextApiRoutes(app: FastifyInstance): void {
   mountNextRoute(app, "/api/organizations/[organizationId]", route_137 as unknown as NextRouteModule);
   mountNextRoute(app, "/api/organizations", route_138 as unknown as NextRouteModule);
   mountNextRoute(app, "/api/payroll/assignees", route_139 as unknown as NextRouteModule);
+  mountNextRoute(app, "/api/payroll/items/[itemId]/payslip", route_payroll_payslip as unknown as NextRouteModule);
   mountNextRoute(app, "/api/payroll/items/[itemId]", route_140 as unknown as NextRouteModule);
   mountNextRoute(app, "/api/payroll/my-payments", route_141 as unknown as NextRouteModule);
   mountNextRoute(app, "/api/payroll/prepare", route_142 as unknown as NextRouteModule);
@@ -431,6 +436,7 @@ export function registerAllNextApiRoutes(app: FastifyInstance): void {
   mountNextRoute(app, "/api/wallet/envelopes/[id]", route_201 as unknown as NextRouteModule);
   mountNextRoute(app, "/api/wallet/envelopes", route_202 as unknown as NextRouteModule);
   mountNextRoute(app, "/api/wallet/funding/refresh", route_203 as unknown as NextRouteModule);
+  mountNextRoute(app, "/api/finance/accounting", financeAccountingRoute as unknown as NextRouteModule);
   mountNextRoute(app, "/api/wallet/funding", route_204 as unknown as NextRouteModule);
   mountNextRoute(app, "/api/wallet/issues/[id]/ack", route_205 as unknown as NextRouteModule);
   mountNextRoute(app, "/api/wallet/me", route_206 as unknown as NextRouteModule);

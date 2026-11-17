@@ -53,9 +53,10 @@ export async function refreshMonnifyFunding(actor: WalletActor, forOwnWithdrawal
       const requiredFees=await requiredFeeReserve(tx);
       const commitments=await fundingCommitments(tx);
       const feeReserve=backedFeeReserve(amount,commitments.envelopeMinor+commitments.liabilityMinor,BigInt(reserve),requiredFees);
-      await tx.$executeRaw`INSERT INTO "WalletBalanceObservation" ("id","environment","sourceAccount","availableMinor","observedAt") VALUES (${randomUUID()},${environment!},${sourceAccount},${amount},${observedAt})`;
+      const observationId = randomUUID();
+      await tx.$executeRaw`INSERT INTO "WalletBalanceObservation" ("id","environment","sourceAccount","availableMinor","observedAt") VALUES (${observationId},${environment!},${sourceAccount},${amount},${observedAt})`;
       await tx.$executeRaw`INSERT INTO "WalletFundingPool" ("id","environment","sourceAccount","availableMinor","feeReserveMinor","observedAt","observationId","paused")
-        VALUES ('MONNIFY_NGN',${environment!},${sourceAccount},${amount},${feeReserve},${observedAt},${randomUUID()},true)
+        VALUES ('MONNIFY_NGN',${environment!},${sourceAccount},${amount},${feeReserve},${observedAt},${observationId},true)
         ON CONFLICT ("id") DO UPDATE SET "availableMinor" = EXCLUDED."availableMinor", "feeReserveMinor" = EXCLUDED."feeReserveMinor", "observedAt" = EXCLUDED."observedAt", "observationId" = EXCLUDED."observationId", "version" = "WalletFundingPool"."version" + 1`;
     }
     return walletJson(await fundingState(tx));

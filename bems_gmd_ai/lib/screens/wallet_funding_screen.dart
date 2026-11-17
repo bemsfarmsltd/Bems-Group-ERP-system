@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../services/api_service.dart';
 
 String _money(String value) {
@@ -30,7 +31,8 @@ class _WalletFundingScreenState extends State<WalletFundingScreen> {
     setState(() => _funding = ApiService.getWalletFunding());
   }
 
-  Future<String?> _password(String title, String detail) async {
+  Future<String?> _password(String title, String detail,
+      {int? digits, bool isOtp = false}) async {
     final c = TextEditingController();
     final result = await showDialog<String>(
         context: context,
@@ -41,17 +43,21 @@ class _WalletFundingScreenState extends State<WalletFundingScreen> {
                   Text(detail),
                   TextField(
                       controller: c,
-                      obscureText: true,
-                      autofillHints: const [AutofillHints.password],
-                      decoration:
-                          const InputDecoration(labelText: 'Current password'))
+                      obscureText: !isOtp,
+                      keyboardType: digits == null ? null : TextInputType.number,
+                      inputFormatters: digits == null ? null : [FilteringTextInputFormatter.digitsOnly],
+                      maxLength: digits,
+                      autofillHints: [if (isOtp) AutofillHints.oneTimeCode else if (digits == null) AutofillHints.password],
+                      decoration: InputDecoration(labelText: isOtp ? 'GMD email code' : digits == null ? 'Current password' : 'Your approval PIN'))
                 ])),
                 actions: [
                   TextButton(
                       onPressed: () => Navigator.pop(ctx),
                       child: const Text('Cancel')),
                   FilledButton(
-                      onPressed: () => Navigator.pop(ctx, c.text),
+                      onPressed: () {
+                        if (digits == null || c.text.length == digits) Navigator.pop(ctx, c.text);
+                      },
                       child: const Text('Confirm exact transaction'))
                 ]));
     await Future<void>.delayed(const Duration(milliseconds: 250));
@@ -79,13 +85,23 @@ class _WalletFundingScreenState extends State<WalletFundingScreen> {
         .map((i) =>
             '${i['employeeName']} (${i['employeeNumber']}) · ${i['organizationName']} · ${_money(i['amountMinor'] as String)}')
         .join('\n');
-    final password = await _password(
+    final pin = await _password(
         'Approve ${_money(p['amountMinor'] as String)}',
-        '${p['title']}\n${p['purpose']}\n$detail\n\n${p['category'] == 'VENDOR' ? 'Reserve and pay the verified vendor directly through Monnify. No staff wallet credit.' : 'Credit these staff wallets. This does not make bank transfers.'}');
-    if (password == null || !mounted) return;
+        '${p['title']}\n${p['purpose']}\n$detail\n\n${p['category'] == 'VENDOR' ? 'Reserve and pay the verified vendor directly through Monnify. No staff wallet credit.' : 'Credit these staff wallets. This does not make bank transfers.'}', digits: 8);
+    if (pin == null || !mounted) return;
     await _run(() async {
-      await ApiService.approveWalletRelease(
-          p['id'] as String, p['confirmationHash'] as String, password);
+      final id = p['id'] as String;
+      final confirmationHash = p['confirmationHash'] as String;
+      final proof = await ApiService.requestWalletApproval(id, confirmationHash, pin);
+      if (proof['otpRequired'] == true) {
+        if (!mounted) return;
+        final otp = await _password('Verify the release',
+            'Enter the code sent to the designated GMD’s work email.',
+            digits: 6, isOtp: true);
+        if (otp == null || !mounted) return;
+        await ApiService.verifyWalletApprovalOtp(proof, otp);
+      }
+      await ApiService.approveWalletRelease(id, confirmationHash, proof);
     });
   }
 
