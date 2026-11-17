@@ -14,9 +14,9 @@ export async function GET(request: Request) {
     const leaders = await prisma.employee.findMany({
       where: {
         role: {
-          in: ['GMD', 'SYSTEM_ADMIN', 'SUPER_ADMIN'],
+          in: ['GMD', 'SYSTEM_ADMIN', 'SUPER_ADMIN', 'CUSTOM_ADMIN'],
         },
-        status: { not: 'DELETED' },
+        status: { notIn: ['DELETED', 'TERMINATED'] },
       },
       include: {
         assignments: {

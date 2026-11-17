@@ -50,7 +50,7 @@ export async function GET(request: Request) {
         include: { organization: { select: { id: true, legalName: true, code: true } } },
       }),
       prisma.employee.findMany({
-        where: { role: { in: EXEC_ROLES }, status: { not: 'DELETED' } },
+        where: { role: { in: [...EXEC_ROLES, 'CUSTOM_ADMIN'] }, status: { notIn: ['DELETED', 'TERMINATED'] } },
         orderBy: [{ role: 'asc' }, { legalName: 'asc' }],
         select: {
           id: true,
