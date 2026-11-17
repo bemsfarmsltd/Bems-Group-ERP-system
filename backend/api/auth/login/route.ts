@@ -29,9 +29,10 @@ export async function POST(request: Request) {
       );
     }
 
-    const employee = await prisma.employee.findUnique({
+    const candidates = await prisma.employee.findMany({
       where: { workEmail: email },
       include: {
+        customAdminProfile: true,
         assignments: {
           where: { status: 'ACTIVE' },
           orderBy: [{ isPrimary: 'desc' }, { startsOn: 'desc' }],
@@ -48,7 +49,14 @@ export async function POST(request: Request) {
         },
       },
     });
-    if (!employee || !(await verifyPassword(password, employee.passwordHash))) {
+    let employee: (typeof candidates)[number] | null = null;
+    for (const candidate of candidates) {
+      if (await verifyPassword(password, candidate.passwordHash)) {
+        employee = candidate;
+        break;
+      }
+    }
+    if (!employee) {
       return NextResponse.json({ error: 'Email or password is incorrect.' }, { status: 401 });
     }
 

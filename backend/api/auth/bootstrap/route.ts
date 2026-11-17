@@ -146,7 +146,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Initial Executive / Super Admin setup has already been completed.' }, { status: 409 });
       }
 
-      if (await prisma.employee.findUnique({ where: { workEmail: email }, select: { id: true } })) {
+      if (await prisma.employee.findFirst({ where: { workEmail: email }, select: { id: true } })) {
         return NextResponse.json({ error: 'An account already exists for this email.' }, { status: 409 });
       }
 

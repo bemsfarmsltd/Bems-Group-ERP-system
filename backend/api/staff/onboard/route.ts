@@ -81,8 +81,8 @@ export async function POST(request: Request) {
       );
     }
 
-    const existing = await prisma.employee.findUnique({
-      where: { workEmail },
+    const existing = await prisma.employee.findFirst({
+      where: { workEmail, role: 'STAFF' },
       select: { id: true, legalName: true },
     });
 

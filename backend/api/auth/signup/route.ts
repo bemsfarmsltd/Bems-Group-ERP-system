@@ -238,8 +238,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Please provide the residential address of your Next of Kin.' }, { status: 400 });
     }
 
-    if (await prisma.employee.findUnique({ where: { workEmail: email }, select: { id: true } })) {
-      return NextResponse.json({ error: 'An employee account already exists for this email address.' }, { status: 409 });
+    if (await prisma.employee.findFirst({ where: { workEmail: email, role: 'STAFF' }, select: { id: true } })) {
+      return NextResponse.json({ error: 'A staff account already exists for this email address.' }, { status: 409 });
     }
 
     // Automatically generate persistent enterprise Unique Identity Number

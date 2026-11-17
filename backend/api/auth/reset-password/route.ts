@@ -43,13 +43,19 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'New password must be at least 10 characters long.' }, { status: 400 });
     }
 
-    const [employee, tokenRecord] = await Promise.all([
-      prisma.employee.findUnique({ where: { workEmail: email } }),
+    const requestedRole = typeof body.role === 'string' ? body.role.trim().toUpperCase() : '';
+    const [candidates, tokenRecord] = await Promise.all([
+      prisma.employee.findMany({ where: { workEmail: email } }),
       prisma.emailVerificationToken.findFirst({
         where: { email },
         orderBy: { createdAt: 'desc' },
       }),
     ]);
+    const employee =
+      (requestedRole ? candidates.find((c) => c.role.toUpperCase() === requestedRole) : null) ||
+      candidates.find((c) => c.role === 'STAFF') ||
+      candidates[0] ||
+      null;
 
     if (
       !employee ||

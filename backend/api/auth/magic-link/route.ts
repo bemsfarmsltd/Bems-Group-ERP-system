@@ -37,7 +37,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const employee = await prisma.employee.findUnique({
+    const employee = await prisma.employee.findFirst({
       where: { workEmail: email },
     });
 

@@ -113,9 +113,9 @@ model Employee {
   id             String   @id @default(uuid())
   employeeNumber String   @unique
   legalName      String
-  workEmail      String   @unique
+  workEmail      String
   phone          String?
-  role           String   // SYSTEM_ADMIN (Super admin) | GMD (The Group Managing Director) | STAFF (Staff)
+  role           String   // SYSTEM_ADMIN (Super admin) | CUSTOM_ADMIN (Custom Admin) | GMD (The Group Managing Director) | STAFF (Staff)
   status         String   @default("ACTIVE") // ACTIVE | ON_LEAVE | TERMINATED
   approvalStatus String   @default("APPROVED") // PENDING_APPROVAL | APPROVED | REJECTED
   passwordHash   String?
@@ -232,6 +232,9 @@ model Employee {
   workItemSubscriptions  ProjectWorkItemSubscription[]
   projectStatusUpdates   ProjectStatusUpdate[]
   projectActivityLogs    ProjectActivityLog[]
+
+  @@unique([workEmail, role])
+  @@index([workEmail])
 }
 
 model SalaryChangeProposal {

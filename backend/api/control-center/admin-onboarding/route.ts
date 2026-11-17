@@ -146,7 +146,7 @@ export async function POST(request: NextRequest) {
 
     if (mode === 'PROMOTE_STAFF') {
       const existing = await prisma.employee.findFirst({
-        where: { workEmail: { equals: workEmail, mode: 'insensitive' } },
+        where: { workEmail: { equals: workEmail, mode: 'insensitive' }, role: 'STAFF' },
         include: {
           assignments: { where: { status: 'ACTIVE' }, take: 1 },
         },
@@ -155,12 +155,6 @@ export async function POST(request: NextRequest) {
         return NextResponse.json(
           { error: `No existing staff account found with email "${workEmail}".` },
           { status: 404 }
-        );
-      }
-      if (existing.role === 'GMD') {
-        return NextResponse.json(
-          { error: 'The active Group Managing Director (GMD) cannot be downgraded into a custom admin profile.' },
-          { status: 400 }
         );
       }
       normalizedRole = profileId ? 'CUSTOM_ADMIN' : 'SYSTEM_ADMIN';
@@ -192,13 +186,16 @@ export async function POST(request: NextRequest) {
       } else {
         normalizedRole = 'SYSTEM_ADMIN';
       }
-      const existingEmployee = await prisma.employee.findFirst({
-        where: { workEmail: { equals: workEmail, mode: 'insensitive' } },
+      const existingAdmin = await prisma.employee.findFirst({
+        where: {
+          workEmail: { equals: workEmail, mode: 'insensitive' },
+          role: { not: 'STAFF' },
+        },
       });
-      if (existingEmployee) {
+      if (existingAdmin) {
         return NextResponse.json(
           {
-            error: `An account with "${workEmail}" already exists (${existingEmployee.legalName}). Select them under "Existing Staff" instead.`,
+            error: `An admin account (${existingAdmin.role}) already exists for "${workEmail}" (${existingAdmin.legalName}).`,
           },
           { status: 409 }
         );

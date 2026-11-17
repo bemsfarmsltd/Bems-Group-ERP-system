@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { NextResponse } from 'next/server';
-import { createEmployeeSession, hashPassword, publicEmployee } from '@/lib/auth';
+import { createEmployeeSession, hashPassword, publicEmployee, verifyPassword } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import {
   assertSingleActiveGmd,
@@ -68,17 +68,36 @@ export async function POST(request: Request) {
       );
     }
 
-    // 2. Check if an existing staff account is being elevated via their same email
-    const existing = await prisma.employee.findUnique({
+    // 2. Check existing accounts on this email (never overwrite a STAFF row when creating an Admin account)
+    const accountsForEmail = await prisma.employee.findMany({
       where: { workEmail: invitation.workEmail },
-      select: { id: true, role: true },
+      select: { id: true, role: true, passwordHash: true },
     });
 
-    if (existing && existing.role === 'GMD' && invitation.role !== 'GMD') {
+    const existingGmd = accountsForEmail.find((a) => a.role === 'GMD');
+    if (existingGmd && invitation.role !== 'GMD') {
       return NextResponse.json(
         { error: `An active GMD account already exists for ${invitation.workEmail}.` },
         { status: 409 }
       );
+    }
+
+    const existing =
+      invitation.role === 'STAFF'
+        ? accountsForEmail.find((a) => a.role === 'STAFF') || null
+        : accountsForEmail.find((a) => a.role !== 'STAFF') || null;
+
+    for (const sibling of accountsForEmail) {
+      if (existing && sibling.id === existing.id) continue;
+      if (sibling.passwordHash && (await verifyPassword(password, sibling.passwordHash))) {
+        return NextResponse.json(
+          {
+            error:
+              'Your Admin password must be different from your Staff password so the system can distinguish which portal to open.',
+          },
+          { status: 400 }
+        );
+      }
     }
 
     // 3. Single GMD enforcement

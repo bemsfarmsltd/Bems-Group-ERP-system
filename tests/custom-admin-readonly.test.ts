@@ -8,7 +8,7 @@ import {
   hasModuleAccess,
   isReadOnlyCustomAdmin,
 } from '@/lib/admin-permissions';
-import { hasAnyRole, type AuthenticatedEmployee } from '@/lib/auth';
+import { hashPassword, hasAnyRole, verifyPassword, type AuthenticatedEmployee } from '@/lib/auth';
 import { evaluateReadOnlyGuard } from '../backend/next-route-adapter';
 
 function makeCustomAdmin(permissions = createMonnifyComplianceReadOnlyPermissions()): AuthenticatedEmployee {
@@ -118,5 +118,31 @@ describe('CUSTOM_ADMIN role isolation & global read-only enforcement', () => {
       headers: { cookie: 'bems_session=fake-token' },
     });
     expect(await evaluateReadOnlyGuard('POST', '/api/budgets', postReq, async () => writableActor)).toBeNull();
+  });
+
+  it('distinguishes dual Staff and Admin accounts sharing the same email by their separate passwords', async () => {
+    const staffHash = await hashPassword('StaffSecret#2026');
+    const adminHash = await hashPassword('AdminSecret#2026');
+    const candidates = [
+      { id: 'emp_staff', workEmail: 'shared@bemsgroup.com', role: 'STAFF', passwordHash: staffHash },
+      { id: 'emp_admin', workEmail: 'shared@bemsgroup.com', role: 'SYSTEM_ADMIN', passwordHash: adminHash },
+    ];
+
+    const matchByPassword = async (pw: string) => {
+      for (const c of candidates) {
+        if (await verifyPassword(pw, c.passwordHash)) return c;
+      }
+      return null;
+    };
+
+    const staffMatch = await matchByPassword('StaffSecret#2026');
+    expect(staffMatch?.id).toBe('emp_staff');
+    expect(staffMatch?.role).toBe('STAFF');
+
+    const adminMatch = await matchByPassword('AdminSecret#2026');
+    expect(adminMatch?.id).toBe('emp_admin');
+    expect(adminMatch?.role).toBe('SYSTEM_ADMIN');
+
+    expect(await matchByPassword('WrongPassword')).toBeNull();
   });
 });

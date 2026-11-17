@@ -192,7 +192,7 @@ export async function POST(req: Request) {
 
       let hiredEmployeeId = applicant.hiredEmployeeId;
       if (stage === 'HIRED' && !hiredEmployeeId) {
-        const existingEmp = await prisma.employee.findUnique({ where: { workEmail: applicant.email } });
+        const existingEmp = await prisma.employee.findFirst({ where: { workEmail: applicant.email, role: 'STAFF' } });
         if (existingEmp) {
           hiredEmployeeId = existingEmp.id;
         } else {

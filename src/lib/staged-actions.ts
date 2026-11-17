@@ -3172,9 +3172,9 @@ export async function executeBusinessCommand(tx: Prisma.TransactionClient, input
         }
 
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(workEmail || ''))) throw new Error('A valid work email is required.');
-        const existingEmp = await tx.employee.findUnique({ where: { workEmail } });
+        const existingEmp = await tx.employee.findFirst({ where: { workEmail, role } });
         if (existingEmp) {
-          throw new Error(`An active account already exists for ${workEmail} (${existingEmp.legalName}).`);
+          throw new Error(`An active ${role} account already exists for ${workEmail} (${existingEmp.legalName}).`);
         }
 
         const subsidiary = await tx.organization.findUnique({
@@ -4390,7 +4390,9 @@ export async function executeBusinessCommand(tx: Prisma.TransactionClient, input
             const cleanEmail = materialPayload.workEmail.trim().toLowerCase();
             if (cleanEmail !== targetEmployee.workEmail) {
               if(walletEnabled())throw new Error('Wallet-owner recovery email changes require a verified owner recovery process; administrative email reassignment is disabled.');
-              const dup = await tx.employee.findUnique({ where: { workEmail: cleanEmail } });
+              const dup = await tx.employee.findFirst({
+                where: { workEmail: cleanEmail, role: targetEmployee.role },
+              });
               if (dup && dup.id !== employeeId) {
                 throw new Error(`Another account already uses ${cleanEmail}.`);
               }
