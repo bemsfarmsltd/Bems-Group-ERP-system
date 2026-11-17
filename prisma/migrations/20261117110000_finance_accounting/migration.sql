@@ -17,7 +17,7 @@ CREATE INDEX ON "FinanceJournal" ("organizationId","date");
 CREATE TABLE "FinanceJournalLine" (
   "id" TEXT PRIMARY KEY, "organizationId" TEXT NOT NULL, "journalId" TEXT NOT NULL, "accountId" TEXT NOT NULL,
   "amountMinor" BIGINT NOT NULL CHECK ("amountMinor"<>0),
-  "departmentId" TEXT REFERENCES "Department"("id"), "projectId" TEXT REFERENCES "Project"("id"),
+  "departmentId" TEXT REFERENCES "Department"("id"), "projectId" TEXT,
   FOREIGN KEY ("organizationId","journalId") REFERENCES "FinanceJournal"("organizationId","id"),
   FOREIGN KEY ("organizationId","accountId") REFERENCES "FinanceAccount"("organizationId","id")
 );

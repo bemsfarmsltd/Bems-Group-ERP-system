@@ -14,7 +14,7 @@ export const dynamic = 'force-dynamic';
 const category = 'Accounting';
 
 async function authorizedScope(actor: AuthenticatedEmployee, scope: string | null) {
-  if (!hasCategoryAccess(actor.role, actor.customAdminPermissions, 'finance', category)) invalid('Accounting access is required.', 403);
+  if (!hasCategoryAccess(actor.role, actor.customAdminPermissions, 'finance', category) || (!hasActionPermission(actor.role, actor.customAdminPermissions, 'finance', category, 'view_accounting') && !hasActionPermission(actor.role, actor.customAdminPermissions, 'finance', category, 'manage_accounting'))) invalid('Accounting access is required.', 403);
   const requested = await resolveAuthorizedOrganizationScope(actor, scope);
   const granted = getAllowedSubsidiariesForModule(actor.role, actor.customAdminPermissions, 'finance');
   const organizations = await prisma.organization.findMany({
@@ -22,8 +22,11 @@ async function authorizedScope(actor: AuthenticatedEmployee, scope: string | nul
     select: { id: true, legalName: true, type: true, parentGroupId: true }, orderBy: { legalName: 'asc' },
   });
   if (!organizations.length) invalid('No authorized NGN accounting entity is available.', 403);
-  return { organizations, canConsolidate: requested.isGroup && organizations.length === requested.organizationIds.length
-    && organizations.filter(org => org.type === 'GROUP').length === 1 };
+  const groups = organizations.filter(org => org.type === 'GROUP' && org.parentGroupId === null);
+  const group = groups.length === 1 ? groups[0] : null;
+  return { organizations, canConsolidate: Boolean(group && requested.isGroup
+    && organizations.length === requested.organizationIds.length
+    && organizations.every(org => org.id === group.id || org.parentGroupId === group.id)) };
 }
 
 export async function GET(request: Request) {
@@ -43,7 +46,7 @@ export async function GET(request: Request) {
   });
 }
 
-const postingActions = new Set(['POST_JOURNAL','REVERSE_JOURNAL','RECORD_OPEN_ITEM','SETTLE_OPEN_ITEM','REGISTER_ASSET','DEPRECIATE_ASSET','DISPOSE_ASSET']);
+const postingActions = new Set(['POST_JOURNAL','POST_SOURCE','REVERSE_JOURNAL','RECORD_OPEN_ITEM','SETTLE_OPEN_ITEM','REGISTER_ASSET','DEPRECIATE_ASSET','DISPOSE_ASSET']);
 export async function POST(request: Request) {
   return walletHttp(request, async actor => {
     const body = await request.json().catch(() => null);

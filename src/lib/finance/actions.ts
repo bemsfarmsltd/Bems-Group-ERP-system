@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { account, assertOpen, assetDate, dateField, field, invalid, moneyMinor, postJournal, type FinanceTx } from './ledger';
 
+import { postingSources } from './sources';
+
 type Body = Record<string, unknown>;
 type Context = { tx: FinanceTx; organizationId: string; actorId: string; body: Body; isGroup: boolean };
 type OpenItem = { id: string; kind: string; party: string; remainingMinor: bigint; controlAccountId: string; issuedOn: string };
@@ -95,7 +97,7 @@ async function matchStatement({ tx, organizationId, body }: Context) {
     SELECT s."id", s."date"::text AS "date", j."date"::text AS "ledgerDate" FROM "FinanceStatementLine" s
     JOIN "FinanceJournalLine" l ON l."id"=${field(body.lineId, 'ledger entry')}
       AND l."organizationId"=s."organizationId" AND l."accountId"=s."accountId" AND l."amountMinor"=s."amountMinor"
-    JOIN "FinanceJournal" j ON j."id"=l."journalId" AND NOT j."groupOnly"
+    JOIN "FinanceJournal" j ON j."id"=l."journalId" AND NOT j."groupOnly" AND j."source"<>'OPENING'
     WHERE s."organizationId"=${organizationId} AND s."id"=${field(body.statementId, 'statement line')}
       AND s."matchedLineId" IS NULL AND NOT EXISTS (SELECT 1 FROM "FinanceStatementLine" existing WHERE existing."matchedLineId"=l."id")
   `;
@@ -105,19 +107,105 @@ async function matchStatement({ tx, organizationId, body }: Context) {
   return line.id;
 }
 
+async function unmatchStatement({ tx, organizationId, body }: Context) {
+  const [match] = await tx.$queryRaw<{ id: string; date: string; ledgerDate: string }[]>`
+    SELECT s."id",s."date"::text AS "date",j."date"::text AS "ledgerDate"
+    FROM "FinanceStatementLine" s JOIN "FinanceJournalLine" l ON l."id"=s."matchedLineId"
+    JOIN "FinanceJournal" j ON j."id"=l."journalId"
+    WHERE s."id"=${field(body.statementId, 'statement line')} AND s."organizationId"=${organizationId}
+  `;
+  if (!match) invalid('Choose a matched statement transaction.');
+  await assertOpen(tx, organizationId, match.date < match.ledgerDate ? match.date : match.ledgerDate);
+  await tx.$executeRaw`UPDATE "FinanceStatementLine" SET "matchedLineId"=NULL,"matchedAt"=NULL WHERE "id"=${match.id}`;
+  return match.id;
+}
+
+async function assignReconciliation({ tx, organizationId, body }: Context) {
+  const targetType = field(body.targetType, 'reconciliation record type');
+  const targetId = field(body.targetId, 'reconciliation record');
+  const ownerId = field(body.ownerId, 'finance officer');
+  const owner = await tx.employee.findFirst({
+    where: { id: ownerId, role: { in: ['GMD','SUPER_ADMIN','SYSTEM_ADMIN'] }, status: 'ACTIVE', approvalStatus: 'APPROVED' },
+    select: { id: true },
+  });
+  if (!owner) invalid('Choose an active finance officer.');
+  const records = targetType === 'STATEMENT' ? await tx.$queryRaw<{ id: string }[]>`
+    SELECT "id" FROM "FinanceStatementLine"
+    WHERE "id"=${targetId} AND "organizationId"=${organizationId} AND "matchedLineId" IS NULL
+  ` : targetType === 'LEDGER' ? await tx.$queryRaw<{ id: string }[]>`
+    SELECT l."id" FROM "FinanceJournalLine" l JOIN "FinanceAccount" a ON a."id"=l."accountId" AND a."cash"
+    JOIN "FinanceJournal" j ON j."id"=l."journalId" AND NOT j."groupOnly" AND j."source"<>'OPENING'
+    WHERE l."id"=${targetId} AND l."organizationId"=${organizationId}
+      AND NOT EXISTS (SELECT 1 FROM "FinanceStatementLine" s WHERE s."matchedLineId"=l."id")
+  ` : [];
+  if (!records.length) invalid('Select an unresolved reconciliation record.');
+  await tx.$executeRaw`
+    INSERT INTO "FinanceReconciliationAssignment" ("organizationId","targetType","targetId","ownerId")
+    VALUES (${organizationId},${targetType},${targetId},${ownerId})
+    ON CONFLICT ("organizationId","targetType","targetId") DO UPDATE SET "ownerId"=EXCLUDED."ownerId"
+  `;
+  return targetId;
+}
+
+async function recordStatementBalance({ tx, organizationId, body }: Context) {
+  const bank = await account(tx, organizationId, body.accountId);
+  if (!bank.cash) invalid('Choose a bank or cash account.');
+  const month = dateField(field(body.month, 'period', 7) + '-01', 'period');
+  await assertOpen(tx, organizationId, month);
+  const opening = moneyMinor(body.opening, { signed: true, zero: true });
+  const closing = moneyMinor(body.closing, { signed: true, zero: true });
+  await tx.$executeRaw`
+    INSERT INTO "FinanceStatementBalance" ("organizationId","accountId","month","openingMinor","closingMinor","reference")
+    VALUES (${organizationId},${bank.id},${month}::date,${opening},${closing},${field(body.reference, 'statement reference')})
+    ON CONFLICT ("accountId","month") DO UPDATE SET "openingMinor"=EXCLUDED."openingMinor","closingMinor"=EXCLUDED."closingMinor","reference"=EXCLUDED."reference"
+  `;
+  return bank.id + ':' + month;
+}
+
 async function closePeriod({ tx, organizationId, actorId, body }: Context) {
   const month = dateField(field(body.month, 'period', 7) + '-01', 'period');
   await assertOpen(tx, organizationId, month);
+  if (month >= new Date().toISOString().slice(0, 7) + '-01') invalid('Close a month after it ends.');
   if (body.reviewed !== true) invalid('Confirm review of accruals, open invoices, assets and reconciliation.');
   const [pending] = await tx.$queryRaw<{ unmatched: boolean }[]>`
     SELECT EXISTS (SELECT 1 FROM "FinanceStatementLine"
       WHERE "organizationId"=${organizationId} AND "date"<${month}::date+interval '1 month' AND "matchedLineId" IS NULL)
       OR EXISTS (SELECT 1 FROM "FinanceJournalLine" l JOIN "FinanceJournal" j ON j."id"=l."journalId"
       JOIN "FinanceAccount" a ON a."id"=l."accountId" AND a."cash"
-      WHERE l."organizationId"=${organizationId} AND NOT j."groupOnly" AND j."date"<${month}::date+interval '1 month'
+      WHERE l."organizationId"=${organizationId} AND NOT j."groupOnly" AND j."source"<>'OPENING' AND j."date"<${month}::date+interval '1 month'
       AND NOT EXISTS (SELECT 1 FROM "FinanceStatementLine" s WHERE s."matchedLineId"=l."id")) AS unmatched
   `;
   if (pending.unmatched) invalid('Reconcile outstanding cash entries and statement lines before closing the period.', 409);
+  const balances = await tx.$queryRaw<{ name: string }[]>`
+    WITH balances AS (
+      SELECT a."id",a."name",
+        COALESCE(sum(l."amountMinor") FILTER (WHERE j."date"<${month}::date OR j."source"='OPENING'),0) AS opening,
+        COALESCE(sum(l."amountMinor") FILTER (WHERE j."id" IS NOT NULL),0) AS closing,
+        count(j."id") AS entries
+      FROM "FinanceAccount" a LEFT JOIN "FinanceJournalLine" l ON l."accountId"=a."id"
+      LEFT JOIN "FinanceJournal" j ON j."id"=l."journalId" AND j."date"<${month}::date+interval '1 month' AND NOT j."groupOnly"
+      WHERE a."organizationId"=${organizationId} AND a."cash"
+      GROUP BY a."id"
+    ), statement AS (
+      SELECT "accountId",COALESCE(sum("amountMinor"),0) AS movement, count(*) AS entries
+      FROM "FinanceStatementLine"
+      WHERE "organizationId"=${organizationId} AND "date">=${month}::date AND "date"<${month}::date+interval '1 month'
+      GROUP BY "accountId"
+    )
+    SELECT b."name" FROM balances b LEFT JOIN statement st ON st."accountId"=b."id"
+    LEFT JOIN "FinanceStatementBalance" s ON s."accountId"=b."id" AND s."month"=${month}::date
+    WHERE (b.entries>0 OR COALESCE(st.entries,0)>0 OR s."accountId" IS NOT NULL) AND (
+      s."accountId" IS NULL OR s."openingMinor"<>b.opening OR s."closingMinor"<>b.closing OR
+      s."openingMinor"+COALESCE(st.movement,0)<>s."closingMinor"
+    )
+  `;
+  if (balances.length) invalid('Statement opening and closing balances do not reconcile for ' + balances.map(row => row.name).join(', ') + '.', 409);
+  const assets = await tx.$queryRaw<Asset[]>`
+    SELECT *, "acquiredOn"::text AS "acquiredOn" FROM "FinanceAsset"
+    WHERE "organizationId"=${organizationId} AND "disposedOn" IS NULL AND "postedMonths"<"months"
+  `;
+  if (assets.some(asset => asset.acquiredOn.slice(0,7) <= month.slice(0,7) &&
+      assetDate(asset.acquiredOn,asset.postedMonths).slice(0,7) <= month.slice(0,7))) invalid('Post depreciation due through this period before closing.', 409);
   await tx.$executeRaw`
     INSERT INTO "FinancePeriodClose" ("organizationId","month","actorId","note")
     VALUES (${organizationId},${month}::date,${actorId},${field(body.note, 'close review note', 1000)})
@@ -210,21 +298,46 @@ export async function executeFinanceAction(context: Context, action: string): Pr
     }
     case 'POST_JOURNAL': {
       const groupOnly = body.groupOnly === true;
+      const opening = body.opening === true;
+      const postingDate = dateField(body.date, 'posting date');
+      if (opening) {
+        const [existing] = await tx.$queryRaw<{ id: string }[]>`SELECT "id" FROM "FinanceJournal" WHERE "organizationId"=${organizationId} LIMIT 1`;
+        if (existing || groupOnly || !postingDate.endsWith('-01')) invalid('Post opening balances as the entity’s first journal on the first day of a month.');
+      }
       if (groupOnly && !isGroup) invalid('Group eliminations must be posted in the holding entity.');
       const input = body.lines;
       if (!Array.isArray(input) || input.length < 2 || input.length > 100) invalid('Enter two to 100 journal lines.');
       const lines = [];
       for (const line of input) {
         const ledgerAccount = await account(tx, organizationId, line?.accountId);
+        if (opening && ['REVENUE','EXPENSE'].includes(ledgerAccount.kind)) invalid('Opening balances use balance-sheet accounts.');
         if (groupOnly && ledgerAccount.cash) invalid('Use non-cash accounts for consolidation eliminations.');
         const departmentId = line.departmentId ? field(line.departmentId, 'department') : null;
         const projectId = line.projectId ? field(line.projectId, 'project') : null;
         if (departmentId && !await tx.department.findFirst({ where: { id: departmentId, organizationId }, select: { id: true } })) invalid('Invalid department for this entity.');
-        if (projectId && !await tx.project.findFirst({ where: { id: projectId, organizationId, ...(departmentId ? { departmentId } : {}) }, select: { id: true } })) invalid('Invalid project for this entity and department.');
+        if (projectId) {
+          const [schema] = await tx.$queryRaw<{ available: boolean }[]>`SELECT to_regclass('"Project"') IS NOT NULL AS available`;
+          if (!schema.available || !await tx.project.findFirst({ where: { id: projectId, organizationId, ...(departmentId ? { departmentId } : {}) }, select: { id: true } })) {
+            invalid('Invalid project for this entity and department.');
+          }
+        }
         lines.push({ accountId: ledgerAccount.id, amount: moneyMinor(line.amount, { signed: true }), departmentId, projectId });
       }
-      return postJournal(tx, { organizationId, actorId, date: dateField(body.date, 'posting date'), memo: field(body.memo, 'journal explanation', 1000),
-        source: groupOnly ? 'ELIMINATION' : 'MANUAL', reference: field(body.reference, 'journal reference'), groupOnly, lines });
+      return postJournal(tx, { organizationId, actorId, date: postingDate, memo: field(body.memo, 'journal explanation', 1000),
+        source: groupOnly ? 'ELIMINATION' : opening ? 'OPENING' : 'MANUAL', reference: field(body.reference, 'journal reference'), groupOnly, lines });
+    }
+    case 'POST_SOURCE': {
+      const id = field(body.sourceId, 'source transaction');
+      const kind = field(body.kind, 'source type');
+      const [source] = await postingSources(tx, organizationId, { id, kind });
+      if (!source) invalid('This source is unavailable or was already posted.', 409);
+      const debit = await account(tx, organizationId, body.debitAccountId);
+      const credit = await account(tx, organizationId, body.creditAccountId);
+      if (debit.id === credit.id) invalid('Select distinct debit and credit accounts.');
+      if (kind === 'WALLET_CREDIT' && (debit.cash || credit.cash)) invalid('An internal wallet credit does not itself move cash.');
+      if (kind === 'RECORDED_PAYMENT' && !credit.cash) invalid('Credit the cash account used for the recorded payment.');
+      return postJournal(tx, { organizationId, actorId, date: source.date, memo: source.reference + ' · ' + source.name,
+        source: kind, reference: id, lines: [{ accountId: debit.id, amount: source.amountMinor }, { accountId: credit.id, amount: -source.amountMinor }] });
     }
     case 'REVERSE_JOURNAL': {
       const originalId = field(body.journalId, 'journal');
@@ -245,6 +358,9 @@ export async function executeFinanceAction(context: Context, action: string): Pr
     case 'SETTLE_OPEN_ITEM': return settleOpenItem(context);
     case 'IMPORT_STATEMENT': return importStatement(context);
     case 'MATCH_STATEMENT': return matchStatement(context);
+    case 'UNMATCH_STATEMENT': return unmatchStatement(context);
+    case 'ASSIGN_RECONCILIATION': return assignReconciliation(context);
+    case 'STATEMENT_BALANCE': return recordStatementBalance(context);
     case 'CLOSE_PERIOD': return closePeriod(context);
     case 'ADD_CASH_PLAN': {
       const id = randomUUID();

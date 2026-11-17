@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import {useGmdAccess} from '@/components/ai/useGmdAccess';
 import FundingView from '@/components/wallet/FundingView';
+import { AccountingWorkspace } from '@/components/finance/AccountingWorkspace';
 import WalletView from '@/components/wallet/WalletView';
 import WalletDashboardSummary from '@/components/wallet/WalletDashboardSummary';
 import { GOVERNANCE_TEMPLATES } from '@/lib/governance-templates';
@@ -27,7 +28,7 @@ import ExecutiveBriefingClient from "../briefing/ExecutiveBriefingClient";
 import { RequestDossierModal, type RequestDossier } from "@/components/requests/RequestDossierModal";
 import { RequestChatModal } from "@/components/requests/RequestChatModal";
 import { StaffAdminChatModal } from "@/components/chat/StaffAdminChatModal";
-import { getAllowedSubsidiariesForModule, hasCategoryAccess } from "@/lib/admin-permissions";
+import { getAllowedSubsidiariesForModule, hasCategoryAccess, type CustomAdminPermissionsMap } from "@/lib/admin-permissions";
 import {
   AccountabilityModule as LiveAccountabilityModule,
   AnalyticsBIPage as LiveAnalyticsBIPage,
@@ -142,7 +143,7 @@ type Business = {
   budget?: number;
 };
 
-type AuthUser = { id: string; email: string; fullName: string; phone: string; emailVerified: boolean; role: string; name?: string; avatarUrl?: string };
+type AuthUser = { id: string; email: string; fullName: string; phone: string; emailVerified: boolean; role: string; name?: string; avatarUrl?: string; customAdminPermissions?: CustomAdminPermissionsMap | null };
 
 const defaultBemsBusinesses: Business[] = [
   {
@@ -234,6 +235,10 @@ const gmdNavGroups = [
       ['Intercompany notes', '⇄'],
       ['Receipt archive', '▣'],
     ]
+  },
+  {
+    label: 'ACCOUNTING',
+    items: [['Accounting', '▤']],
   },
 ];
 
@@ -3303,6 +3308,9 @@ function AppWorkspace({user,onSignOut,onAddBusiness,onEditBusiness,businesses:ra
       'chat': 'AI Copilot & Chat',
     };
     const target = navAliases[active] || active;
+    if (target === 'Accounting' && hasCategoryAccess(safeUser.role, safeUser.customAdminPermissions, 'finance', 'Accounting')) {
+      return <AccountingWorkspace key={activeScope} scope={activeScope} />;
+    }
     if (target === 'Wallets & funded budgets' && ['GMD', 'SUPER_ADMIN', 'SYSTEM_ADMIN'].includes(safeUser.role)) {
       return (
         <FundingView

@@ -63,15 +63,16 @@ const card: CSSProperties = { background: '#fff', border: '1px solid #dce5f1', b
 const input: CSSProperties = { width: '100%', padding: '10px 12px', border: '1px solid #cbd5e1', borderRadius: 8, background: '#fff', color: '#14213d' };
 const primary: CSSProperties = { padding: '9px 15px', border: '1px solid var(--brand-primary, #0d8a70)', borderRadius: 8, background: 'var(--brand-gradient, var(--brand-primary, #0d8a70))', color: '#fff', fontWeight: 700, cursor: 'pointer', boxShadow: '0 2px 8px var(--brand-shadow-color, rgba(0, 0, 0, 0.15))' };
 const secondary: CSSProperties = { padding: '8px 13px', border: '1px solid #cbd5e1', borderRadius: 8, background: '#fff', color: '#334155', fontWeight: 650, cursor: 'pointer' };
+export const financeWorkspaceStyles = { card, input, primary, secondary };
 const fmt = (minor: number | bigint | null | undefined) => new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 }).format(Number(minor || 0) / 100);
 const date = (value?: string | Date | null) => value ? new Date(value).toLocaleDateString('en-NG', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
 const errorText = (error: unknown) => error instanceof Error ? error.message : 'Something went wrong.';
 
-function PageHeading({ eyebrow, title, description, action }: { eyebrow: string; title: string; description: string; action?: ReactNode }) {
+export function PageHeading({ eyebrow, title, description, action }: { eyebrow: string; title: string; description: string; action?: ReactNode }) {
   return <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}><div><div style={{ color: '#8292aa', fontSize: 11, fontWeight: 800, letterSpacing: '.16em', textTransform: 'uppercase' }}>{eyebrow}</div><h1 style={{ margin: '7px 0', color: '#101e3b', fontSize: 28, letterSpacing: '-.04em' }}>{title}</h1><p style={{ margin: 0, color: '#73839d', fontSize: 14 }}>{description}</p></div>{action}</header>;
 }
 
-function StateMessage({ value, retry }: { value: string; retry?: () => void }) {
+export function StateMessage({ value, retry }: { value: string; retry?: () => void }) {
   return <div style={{ ...card, margin: '14px 0', color: '#a33b31', background: '#fff8f6' }}>{value}{retry && <button style={{ ...secondary, marginLeft: 12 }} onClick={retry}>Try again</button>}</div>;
 }
 
