@@ -77,7 +77,7 @@ class StaffApiService {
     return data;
   }
 
-  static const String primaryBaseUrl = 'https://bemserp.work';
+  static const String primaryBaseUrl = 'https://api.bemserp.work';
   static const String fallbackBaseUrl = 'https://pink-horse-318730.hostingersite.com';
   static String _activeBaseUrl = primaryBaseUrl;
 

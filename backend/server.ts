@@ -71,7 +71,9 @@ export async function buildBackendServer() {
       });
     } catch (err) {
       captureServerError(err, { route: '/health' });
-      return reply.status(503).send({ ok: false, service: 'bems-erp-backend', database: 'disconnected' });
+      const msg = err instanceof Error ? err.message : String(err);
+      const safeMsg = msg.replace(/postgres(ql)?:\/\/[^@\s]+@/gi, 'postgresql://***@').slice(0, 220);
+      return reply.status(503).send({ ok: false, service: 'bems-erp-backend', database: 'disconnected', detail: safeMsg });
     }
   });
 

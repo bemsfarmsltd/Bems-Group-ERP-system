@@ -16,6 +16,22 @@ const nextConfig: NextConfig = {
     unoptimized: true,
   },
   async rewrites() {
+    const apiBase = (process.env.NEXT_PUBLIC_API_URL || '').trim().replace(/\/+$/, '');
+    if (apiBase) {
+      return {
+        beforeFiles: [
+          { source: '/staff-app', destination: '/staff-app/index.html' },
+          { source: '/gmd-app', destination: '/gmd-app/index.html' },
+          { source: '/uploads/:path*', destination: `${apiBase}/uploads/:path*` },
+          { source: '/secure-uploads/:path*', destination: `${apiBase}/secure-uploads/:path*` },
+          { source: '/download/staff-app.apk', destination: `${apiBase}/download/staff-app.apk` },
+          { source: '/download/gmd-app.apk', destination: `${apiBase}/download/gmd-app.apk` },
+          { source: '/api/:path*', destination: `${apiBase}/api/:path*` },
+        ],
+        afterFiles: [],
+        fallback: [],
+      };
+    }
     return { beforeFiles: [
       { source: '/uploads/:path*', destination: '/secure-uploads/:path*' },
       { source: '/staff-app', destination: '/staff-app/index.html' },
