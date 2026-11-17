@@ -664,7 +664,7 @@ export default function ProjectWorkspaceClient() {
           <nav aria-label="Project navigation">
             {NAV_GROUPS.map((group) => {
               const items = group.items.filter((item) =>
-                !['GMD', 'SUPER_ADMIN', 'SYSTEM_ADMIN'].includes(actorRoleUpper) ||
+                !['GMD', 'SUPER_ADMIN', 'SYSTEM_ADMIN', 'CUSTOM_ADMIN'].includes(actorRoleUpper) ||
                 hasCategoryAccess(actorRoleUpper, data?.actor?.customAdminPermissions, 'projects', item.id)
               );
               if (items.length === 0) return null;

@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/prisma';
-import { getAuthenticatedEmployee, hasAnyRole } from '@/lib/auth';
+import { getAuthenticatedEmployee, hasAnyRole, hasEmployeePermission } from '@/lib/auth';
 import { loadAuthorizedExecutiveBriefing } from '@/lib/services/briefing-read';
 import { requestIdentifierWhere, toSystemRequestId } from '@/lib/request-id';
 import { resolveOrganizationBranding } from '@/lib/subsidiary-branding';
@@ -106,7 +106,10 @@ export async function loadSsrPageData(
   }
 
   if (page === 'briefing') {
-    if (!hasAnyRole(actor, ['SYSTEM_ADMIN', 'SUPER_ADMIN', 'GMD'])) {
+    const canViewBriefing =
+      hasAnyRole(actor, ['SYSTEM_ADMIN', 'SUPER_ADMIN', 'GMD']) ||
+      (hasAnyRole(actor, ['CUSTOM_ADMIN']) && hasEmployeePermission(actor, 'finance', 'Executive briefing', 'view_briefing'));
+    if (!canViewBriefing) {
       return { status: 403, body: { error: 'Forbidden' } };
     }
     const briefing = await loadAuthorizedExecutiveBriefing(actor);
@@ -251,7 +254,13 @@ export async function loadSsrPageData(
     if (!request) return { status: 404, body: { error: 'Not found' } };
     const isParticipant =
       request.requestedById === actor.id || request.approvalSteps.some((step) => step.approverId === actor.id);
-    if (!isParticipant && actor.role !== 'GMD' && actor.role !== 'SYSTEM_ADMIN') {
+    const canInspectRequest =
+      isParticipant ||
+      actor.role === 'GMD' ||
+      actor.role === 'SYSTEM_ADMIN' ||
+      actor.role === 'SUPER_ADMIN' ||
+      (actor.role === 'CUSTOM_ADMIN' && hasEmployeePermission(actor, 'finance', 'Fund requests', 'view_requests'));
+    if (!canInspectRequest) {
       return { status: 403, body: { error: 'Forbidden' } };
     }
     const serializableRequest = safeJson(request) as Record<string, unknown>;

@@ -194,5 +194,6 @@ export const roleDashboardConfigs: Record<string, RoleDashboardConfig> = {
   },
 };
 
-// GMD and SYSTEM_ADMIN share the exact same executive command dashboard
+// GMD, SYSTEM_ADMIN, and CUSTOM_ADMIN share the executive command dashboard layout
 roleDashboardConfigs.SYSTEM_ADMIN = roleDashboardConfigs.GMD;
+roleDashboardConfigs.CUSTOM_ADMIN = roleDashboardConfigs.GMD;

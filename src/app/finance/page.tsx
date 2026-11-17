@@ -173,7 +173,7 @@ function formatDisplayName(fullName?: string): string {
 }
 
 
-type SystemRole = 'GMD' | 'SYSTEM_ADMIN' | 'SUPER_ADMIN' | 'STAFF';
+type SystemRole = 'GMD' | 'SYSTEM_ADMIN' | 'SUPER_ADMIN' | 'CUSTOM_ADMIN' | 'STAFF';
 
 interface RoleProfile {
   role: SystemRole;
@@ -187,6 +187,7 @@ const roleProfiles: Record<string, RoleProfile> = {
   GMD: { role: 'GMD', title: 'The Group Managing Director', badge: 'Executive Governance', platform: 'Executive Command Center', avatarColor: '#ea580c' },
   SYSTEM_ADMIN: { role: 'SYSTEM_ADMIN', title: 'Super admin', badge: 'Super Executive', platform: 'Executive Command Center', avatarColor: '#ea580c' },
   SUPER_ADMIN: { role: 'SUPER_ADMIN', title: 'Super admin', badge: 'Super Executive', platform: 'Executive Command Center', avatarColor: '#ea580c' },
+  CUSTOM_ADMIN: { role: 'CUSTOM_ADMIN', title: 'Custom Admin', badge: 'Scoped Admin', platform: 'Executive Command Center', avatarColor: '#ea580c' },
   STAFF: { role: 'STAFF', title: 'Staff', badge: 'Staff Operations', platform: 'Staff Requisition & Accountability Portal', avatarColor: '#2563eb' },
 };
 
@@ -247,7 +248,7 @@ const gmdNavGroups = [
 ];
 
 function getRoleNavigation(role?: string) {
-  return role && ['GMD', 'SUPER_ADMIN', 'SYSTEM_ADMIN'].includes(role) ? gmdNavGroups : staffNavGroups;
+  return role && ['GMD', 'SUPER_ADMIN', 'SYSTEM_ADMIN', 'CUSTOM_ADMIN'].includes(role) ? gmdNavGroups : staffNavGroups;
 }
 
 function AuthGate({ onAuthed }: { onAuthed: (user: AuthUser) => void }) {
@@ -3084,7 +3085,11 @@ function AppWorkspace({user,onSignOut,onAddBusiness,onEditBusiness,businesses:ra
   const activeShadeHex = `#${shadeR.toString(16).padStart(2, '0')}${shadeG.toString(16).padStart(2, '0')}${shadeB.toString(16).padStart(2, '0')}`;
 
   const isAiOnly = false;
-  const [currentRole, setCurrentRole] = useState<SystemRole>(['GMD', 'SUPER_ADMIN', 'SYSTEM_ADMIN', 'STAFF'].includes(safeUser.role) ? safeUser.role as SystemRole : 'STAFF');
+  const [currentRole, setCurrentRole] = useState<SystemRole>(
+    ['GMD', 'SUPER_ADMIN', 'SYSTEM_ADMIN', 'CUSTOM_ADMIN', 'STAFF'].includes(safeUser.role)
+      ? (safeUser.role as SystemRole)
+      : 'STAFF'
+  );
   const isStaff = (currentRole as string) === 'STAFF' || (safeUser.role as string) === 'STAFF';
   const [active, setActive] = useState<string>(() => {
     if (isAiOnly) return 'AI Copilot & Chat';
@@ -3318,7 +3323,11 @@ function AppWorkspace({user,onSignOut,onAddBusiness,onEditBusiness,businesses:ra
     if (target === 'Report studio' && (hasCategoryAccess(safeUser.role, safeUser.customAdminPermissions, 'finance', 'Overview') || ['GMD', 'SUPER_ADMIN', 'SYSTEM_ADMIN'].includes(safeUser.role))) {
       return <ReportStudioView key={activeScope} scope={activeScope} onSelectBusiness={selectBusiness} />;
     }
-    if (target === 'Wallets & funded budgets' && ['GMD', 'SUPER_ADMIN', 'SYSTEM_ADMIN'].includes(safeUser.role)) {
+    if (
+      target === 'Wallets & funded budgets' &&
+      (hasCategoryAccess(safeUser.role, safeUser.customAdminPermissions, 'finance', 'Wallets & funded budgets') ||
+        ['GMD', 'SUPER_ADMIN', 'SYSTEM_ADMIN'].includes(safeUser.role))
+    ) {
       return (
         <FundingView
           businessName={current.name}
@@ -3608,11 +3617,11 @@ function AppWorkspace({user,onSignOut,onAddBusiness,onEditBusiness,businesses:ra
     if(target==='HR Fund requests') return <FundRequestsModule business={current} setNotice={setNotice} onNavigate={(p)=>window.location.href=p}/>;
     if(target==='Executive briefing') return <ExecutiveBriefingModule business={current} setNotice={setNotice} onNavigate={(p)=>setActive(p)}/>;
     if(target==='Subsidiary portfolio') return <Businesses businesses={businesses} current={current} onSelect={selectBusiness} onAdd={onAddBusiness} onEdit={onEditBusiness}/>;
-    if(target==='Fund requests') return <FundRequestsModule business={current} setNotice={setNotice} onNavigate={(p)=>window.location.href=p} canCreate={currentRole !== 'GMD' && currentRole !== 'SYSTEM_ADMIN' && currentRole !== 'SUPER_ADMIN'}/>;
+    if(target==='Fund requests') return <FundRequestsModule business={current} setNotice={setNotice} onNavigate={(p)=>window.location.href=p} canCreate={currentRole !== 'GMD' && currentRole !== 'SYSTEM_ADMIN' && currentRole !== 'SUPER_ADMIN' && currentRole !== 'CUSTOM_ADMIN'}/>;
     if(target==='Approvals & payments'||target==='Approvals & Policy Hub'||target==='Approvals desk') return <FundFlowWorkspace businessName={current.name} userName={safeUser.fullName} scope={activeScope} businessId={current.id} businessCode={(current as any).code} onNavigate={setActive} onSelectBusiness={selectBusiness}/>;
     if(target==='New fund request') {
-      if (currentRole === 'GMD' || currentRole === 'SYSTEM_ADMIN' || currentRole === 'SUPER_ADMIN') {
-        setNotice('GMD and Super Admin accounts are executive governance roles and do not submit fund requests.');
+      if (currentRole === 'GMD' || currentRole === 'SYSTEM_ADMIN' || currentRole === 'SUPER_ADMIN' || currentRole === 'CUSTOM_ADMIN') {
+        setNotice('GMD and Admin accounts are governance roles and do not submit staff fund requests.');
         return null;
       }
       if (typeof window !== 'undefined') window.location.href = '/requests/new';

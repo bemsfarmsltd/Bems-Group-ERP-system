@@ -460,7 +460,7 @@ export default function HumanResourcesPortalPage() {
           <nav aria-label="HR navigation">
             {NAV_GROUPS.map((group) => {
               const items = group.items.filter((item) =>
-                !['GMD', 'SUPER_ADMIN', 'SYSTEM_ADMIN'].includes(actorRoleUpper) ||
+                !['GMD', 'SUPER_ADMIN', 'SYSTEM_ADMIN', 'CUSTOM_ADMIN'].includes(actorRoleUpper) ||
                 hasCategoryAccess(actorRoleUpper, (overview?.actor as any)?.customAdminPermissions, 'hr', item.id)
               );
               if (items.length === 0) return null;

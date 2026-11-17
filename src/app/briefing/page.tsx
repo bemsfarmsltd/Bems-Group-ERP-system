@@ -11,7 +11,7 @@ export default async function ExecutiveBriefingPage() {
   if (status === 401 || !data?.actor) {
     redirect('/?redirect=/briefing');
   }
-  if (!hasSsrAnyRole(data.actor, ['SYSTEM_ADMIN', 'SUPER_ADMIN', 'GMD'])) {
+  if (!hasSsrAnyRole(data.actor, ['SYSTEM_ADMIN', 'SUPER_ADMIN', 'CUSTOM_ADMIN', 'GMD'])) {
     redirect('/staff');
   }
   if (status === 403 || !data.briefing) {

@@ -12,7 +12,7 @@ export default async function ControlCenterPage({ searchParams }: { searchParams
     redirect('/?redirect=/control-center');
   }
 
-  if (!['GMD', 'SUPER_ADMIN', 'SYSTEM_ADMIN'].includes(String(actor.role).toUpperCase())) {
+  if (!['GMD', 'SUPER_ADMIN', 'SYSTEM_ADMIN', 'CUSTOM_ADMIN'].includes(String(actor.role).toUpperCase())) {
     redirect('/');
   }
 

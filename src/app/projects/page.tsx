@@ -13,7 +13,7 @@ export default async function ProjectsPage() {
   }
 
   // Separate Staff Execution Flow from Admin / Executive Command Center
-  if (!['GMD', 'SUPER_ADMIN', 'SYSTEM_ADMIN'].includes(String(actor.role).toUpperCase())) {
+  if (!['GMD', 'SUPER_ADMIN', 'SYSTEM_ADMIN', 'CUSTOM_ADMIN'].includes(String(actor.role).toUpperCase())) {
     redirect('/staff/projects');
   }
 

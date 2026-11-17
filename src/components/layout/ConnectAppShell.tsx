@@ -77,7 +77,7 @@ export function ConnectAppShell({ children, initialRole, initialSubId }: { child
           if (d?.user?.role) {
             const r = d.user.role;
             if (r === 'STAFF') setCurrentRole('Staff');
-            else if (r === 'SYSTEM_ADMIN' || r === 'SUPER_ADMIN') setCurrentRole('SystemAdmin');
+            else if (r === 'SYSTEM_ADMIN' || r === 'SUPER_ADMIN' || r === 'CUSTOM_ADMIN') setCurrentRole('SystemAdmin');
             else if (r === 'GMD') setCurrentRole('GMD');
             else setCurrentRole('Staff');
           }

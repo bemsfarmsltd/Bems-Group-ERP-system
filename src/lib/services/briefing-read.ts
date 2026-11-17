@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/prisma';
-import { AuthenticatedEmployee, hasAnyRole } from '@/lib/auth';
+import { AuthenticatedEmployee, hasAnyRole, hasEmployeePermission } from '@/lib/auth';
 import { resolveAuthorizedOrganizationScope } from '@/lib/organizations';
 import { toSystemRequestId } from '@/lib/request-id';
 
@@ -15,7 +15,10 @@ export async function loadAuthorizedExecutiveBriefing(
     };
   }
 
-  if (!hasAnyRole(actor, ['SYSTEM_ADMIN', 'SUPER_ADMIN', 'GMD'])) {
+  const canViewBriefing =
+    hasAnyRole(actor, ['SYSTEM_ADMIN', 'SUPER_ADMIN', 'GMD']) ||
+    (hasAnyRole(actor, ['CUSTOM_ADMIN']) && hasEmployeePermission(actor, 'finance', 'Executive briefing', 'view_briefing'));
+  if (!canViewBriefing) {
     return {
       authorized: false as const,
       status: 403 as const,

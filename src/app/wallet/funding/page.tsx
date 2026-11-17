@@ -10,7 +10,7 @@ export default async function FundingPage({ searchParams }: { searchParams: Prom
   if (!actor) {
     redirect('/?redirect=/wallet/funding');
   }
-  if (!['GMD', 'SUPER_ADMIN', 'SYSTEM_ADMIN'].includes(actor.role)) {
+  if (!['GMD', 'SUPER_ADMIN', 'SYSTEM_ADMIN', 'CUSTOM_ADMIN'].includes(actor.role)) {
     redirect('/finance');
   }
   const initialRole = actor.role === 'GMD' ? 'GMD' : 'SystemAdmin';
