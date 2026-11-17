@@ -23,6 +23,7 @@ const ALLOWED_INVITE_ROLES = [
 const ALLOWED_TOKEN_COMPLETION_ROLES = [
   'SYSTEM_ADMIN',
   'SUPER_ADMIN',
+  'CUSTOM_ADMIN',
   'GMD',
   'STAFF',
 ] as const;
