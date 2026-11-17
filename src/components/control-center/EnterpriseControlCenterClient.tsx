@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { PeopleAccessWorkspaceModule } from '@/components/dashboard/gmd/PeopleAccessWorkspaceModule';
 import { AiAccessControlPanel } from '@/components/control-center/AiAccessControlPanel';
+import { FundApprovalPolicyCard } from '@/components/control-center/FundApprovalPolicyCard';
 import { SubsidiaryPortfolioView } from '@/components/dashboard/gmd/SubsidiaryPortfolioView';
 import { hasCategoryAccess } from '@/lib/admin-permissions';
 import {
@@ -557,7 +558,10 @@ export default function EnterpriseControlCenterClient() {
           )}
 
           {section === 'ai_control' && (
-            <AiAccessControlPanel setNotice={(msg) => setNotice(msg)} />
+            <>
+              <FundApprovalPolicyCard setNotice={(msg) => setNotice(msg)} />
+              <AiAccessControlPanel setNotice={(msg) => setNotice(msg)} />
+            </>
           )}
 
           {section === 'notifications' && (

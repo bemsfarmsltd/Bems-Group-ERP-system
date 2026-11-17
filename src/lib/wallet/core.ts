@@ -1,5 +1,5 @@
 import {walletWorkerStatus} from './runtime-state';
-import { canApproveWalletRelease, financialApproverLabel } from '@/lib/gmd-access';
+import { canActorApproveFunds, canApproveWalletRelease, financialApproverLabel } from '@/lib/gmd-access';
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
@@ -31,15 +31,15 @@ function sameHash(a: string, b: string) {
   return /^[a-f0-9]{64}$/.test(a) && /^[a-f0-9]{64}$/.test(b) && timingSafeEqual(Buffer.from(a, 'hex'), Buffer.from(b, 'hex'));
 }
 type Tx = Prisma.TransactionClient;
-export async function liveWalletActor(tx: Tx, actor: WalletActor, gmdOnly = false) {
+export async function liveWalletActor(tx: Tx, actor: WalletActor, authority: boolean | 'GMD' = false) {
   const employee = await tx.employee.findUnique({ where: { id: actor.id } });
   if (!employee || employee.role !== actor.role || employee.approvalStatus !== 'APPROVED' ||
-      !(employee.status === 'ACTIVE' || (!gmdOnly && employee.role === 'STAFF' && employee.status === 'ON_LEAVE'))) {
+      !(employee.status === 'ACTIVE' || (!authority && employee.role === 'STAFF' && employee.status === 'ON_LEAVE'))) {
     throw new WalletError('ACCOUNT_NOT_AUTHORIZED', 'Your account is no longer authorized.', 403);
   }
   if (!['GMD', 'SUPER_ADMIN', 'SYSTEM_ADMIN', 'STAFF'].includes(employee.role)) throw new WalletError('ACCOUNT_NOT_AUTHORIZED', 'Account role is not supported.', 403);
-  if (gmdOnly && (!canApproveWalletRelease(employee))) {
-    throw new WalletError('GMD_REQUIRED', 'Only an authorized financial approver can release funds.', 403);
+  if (authority && !(authority === 'GMD' ? canApproveWalletRelease(employee) : await canActorApproveFunds(employee, tx))) {
+    throw new WalletError('GMD_REQUIRED', 'Only the designated GMD can release funds (unless explicitly permitted in Control Center).', 403);
   }
   return employee;
 }
@@ -189,6 +189,6 @@ export async function readFundingDashboard(actor: WalletActor) {
     const organizations = await tx.organization.findMany({ where: { status: 'ACTIVE', defaultCurrency: 'NGN' }, select: { id: true, code: true, legalName: true, type: true } });
     const staffWallets = await tx.$queryRaw<any[]>`SELECT e."id", e."legalName", e."employeeNumber", e."role", COALESCE(a."subsidiaryId", '') AS "subsidiaryId", COALESCE(o."legalName", 'Unassigned') AS "organizationName", COALESCE(sum(c."availableMinor"),0)::bigint AS "availableMinor", COALESCE(sum(c."heldMinor"),0)::bigint AS "heldMinor", COALESCE(sum(c."settledMinor"),0)::bigint AS "settledMinor" FROM "Employee" e LEFT JOIN "EmployeeAssignment" a ON a."employeeId"=e."id" AND a."status"='ACTIVE' AND a."isPrimary"=true LEFT JOIN "Organization" o ON o."id"=a."subsidiaryId" LEFT JOIN "WalletCreditLot" c ON c."employeeId"=e."id" WHERE e."role" = 'STAFF' AND e."approvalStatus"='APPROVED' AND e."status" IN ('ACTIVE','ON_LEAVE') GROUP BY e."id", e."legalName", e."employeeNumber", e."role", a."subsidiaryId", o."legalName" ORDER BY "availableMinor" DESC, e."legalName" ASC LIMIT 100`;
     const journals = await tx.$queryRaw<any[]>`SELECT j."id", j."kind", j."reference", j."createdAt", j."actorId", COALESCE(json_agg(json_build_object('id', je."id", 'accountKey', je."accountKey", 'amountMinor', je."amountMinor"::text)) FILTER (WHERE je."id" IS NOT NULL), '[]'::json) AS "entries" FROM "WalletJournal" j LEFT JOIN "WalletJournalEntry" je ON je."journalId"=j."id" GROUP BY j."id", j."kind", j."reference", j."createdAt", j."actorId" ORDER BY j."createdAt" DESC LIMIT 50`;
-    return walletJson({ walletMode:walletEnabled(), processing:walletWorkerStatus(), funding, envelopes, proposals, requests, organizations, vendors, transfers, payrollBatches, issues, staffWallets, journals, approvalLabel: financialApproverLabel(), canApprove: walletEnabled() && canApproveWalletRelease(actor) });
+    return walletJson({ walletMode:walletEnabled(), processing:walletWorkerStatus(), funding, envelopes, proposals, requests, organizations, vendors, transfers, payrollBatches, issues, staffWallets, journals, approvalLabel: financialApproverLabel(), canApprove: walletEnabled() && (await canActorApproveFunds(actor)) });
   }, { maxWait: 10000, timeout: 30000, isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
 }

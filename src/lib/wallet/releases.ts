@@ -1,4 +1,4 @@
-import { canApproveWalletRelease, financialApproverLabel } from '@/lib/gmd-access';
+import { canActorApproveFunds, financialApproverLabel } from '@/lib/gmd-access';
 import {requiredFeeReserve} from './fees';
 import {prisma} from '@/lib/prisma';
 import {verifiedVendorDestination} from './vendor-bank';
@@ -81,7 +81,7 @@ export async function stageWalletRelease(actor:WalletActor,input:Input,context:C
 }
 export async function approveWalletRelease(actor:WalletActor,id:string,confirmationHash:string,proof?:SecurityProof) {
   requireCommitments();
-  if(!canApproveWalletRelease(actor))throw new WalletError('GMD_REQUIRED','Only an authorized financial approver can release funds.',403);
+  if(!(await canActorApproveFunds(actor)))throw new WalletError('GMD_REQUIRED','Only the designated GMD can release funds (unless explicitly permitted in Control Center).',403);
   await (await import('./monnify-balance')).ensureWalletFundingFresh(actor);
   return walletTransaction(async tx=>{
     await liveWalletActor(tx,actor,true);

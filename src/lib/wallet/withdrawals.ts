@@ -9,7 +9,7 @@ export async function saveVerifiedWalletBank(actor:WalletActor,input:{accountNum
   const bank=await verifyMonnifyDestination(String(input.accountNumber),String(input.bankCode));
   return walletTransaction(async tx=>{
     const employee=await liveWalletActor(tx,actor);
-    if(employee.role!=='STAFF')throw new WalletError('OWNER_REQUIRED','Staff wallets can only be configured by their owner.',403);
+    if(employee.role!=='STAFF' || employee.status!=='ACTIVE')throw new WalletError('OWNER_REQUIRED','Only active staff owners can configure a withdrawal bank account.',403);
     if(normalizedName(bank.accountName)!==normalizedName(employee.legalName))throw new WalletError('ACCOUNT_NAME_MISMATCH','The bank account name must match your verified staff identity. Ask support to resolve your identity details before withdrawing.',409);
     const fingerprint=hash(bank); const id=randomUUID();
     await tx.$executeRaw`UPDATE "WalletBankAccount" SET "active"=false WHERE "employeeId"=${actor.id} AND "active"`;

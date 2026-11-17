@@ -36,17 +36,17 @@ export function challengePayload(purpose: string, input: any) {
   if (new Set(allocations.map((a: any) => a.creditLotId)).size !== allocations.length || allocations.reduce((n:bigint,a:any)=>n+BigInt(a.amountMinor),BigInt(0)) !== BigInt(amountMinor)) throw new WalletError('INVALID_WITHDRAWAL','Credit allocations must equal the withdrawal amount without duplicate lots.');
   return { amountMinor, bankAccountId: input.bankAccountId, idempotencyKey: input.idempotencyKey, creditAllocations: allocations };
 }
-export async function verifyWalletPassword(actor: WalletActor, password: unknown, gmdOnly = false) {
+export async function verifyWalletPassword(actor: WalletActor, password: unknown, authority: boolean | 'GMD' = false) {
   requireWallet();
   const rate = await checkRateLimit('wallet-password:'+actor.id,{windowMs:60000,maxAttempts:5});
   if (!rate.allowed) throw new WalletError('RATE_LIMITED','Too many security attempts. Try again shortly.',429);
-  const employee = await prisma.$transaction(tx=>liveWalletActor(tx,actor,gmdOnly));
+  const employee = await prisma.$transaction(tx=>liveWalletActor(tx,actor,authority));
   if (typeof password !== 'string' || password.length > 256 || !await verifyPassword(password,employee.passwordHash)) throw new WalletError('PASSWORD_REQUIRED','Your current account password is required to confirm this transaction.',403);
   return hash(employee.passwordHash);
 }
 export async function issueWalletChallenge(actor: WalletActor, input: {purpose:string;payload:unknown;password:unknown;sessionHash:string}) {
   const payload = challengePayload(input.purpose,input.payload);
-  const credentialHash = await verifyWalletPassword(actor,input.password,input.purpose === 'RELEASE' || (input.purpose === 'POOL_CONTROL' && (payload as any).operation !== 'PAUSE'));
+  const credentialHash = await verifyWalletPassword(actor,input.password,input.purpose === 'POOL_CONTROL' && (payload as any).operation !== 'PAUSE' ? 'GMD' : input.purpose === 'RELEASE');
   if(input.purpose==='POOL_CONTROL'&&!['GMD','SUPER_ADMIN','SYSTEM_ADMIN'].includes(actor.role))throw new WalletError('NOT_PERMITTED','Executive security authority is required.',403);
   const id=randomUUID(),token=randomBytes(32).toString('base64url'),expiresAt=new Date(Date.now()+120000);
   await prisma.$executeRaw`INSERT INTO "WalletChallenge" ("id","actorId","purpose","payloadHash","tokenHash","sessionHash","credentialHash","expiresAt") VALUES (${id},${actor.id},${input.purpose},${hash(payload)},${hash(token)},${input.sessionHash},${credentialHash},${expiresAt})`;
@@ -55,7 +55,7 @@ export async function issueWalletChallenge(actor: WalletActor, input: {purpose:s
 export async function consumeWalletChallenge(tx:Prisma.TransactionClient,actor:WalletActor,purpose:string,payload:unknown,proof?:SecurityProof) {
   if (!proof || typeof proof.token !== 'string') throw new WalletError('TRANSACTION_AUTH_REQUIRED','Confirm this exact transaction using your current password.',403);
   const [challenge]=await tx.$queryRaw<any[]>`SELECT * FROM "WalletChallenge" WHERE "id"=${proof.id} FOR UPDATE`;
-  const employee=await liveWalletActor(tx,actor,purpose === 'RELEASE' || (purpose === 'POOL_CONTROL' && (payload as any)?.operation !== 'PAUSE'));
+  const employee=await liveWalletActor(tx,actor,purpose === 'POOL_CONTROL' && (payload as any)?.operation !== 'PAUSE' ? 'GMD' : purpose === 'RELEASE');
   const tokenHash=hash(proof.token);
   if (!challenge || challenge.actorId!==actor.id || challenge.purpose!==purpose || challenge.usedAt || challenge.expiresAt<=new Date() || challenge.payloadHash!==hash(challengePayload(purpose,payload)) || challenge.sessionHash!==proof.sessionHash || challenge.credentialHash!==hash(employee.passwordHash) || challenge.tokenHash.length!==tokenHash.length || !timingSafeEqual(Buffer.from(tokenHash),Buffer.from(challenge.tokenHash))) throw new WalletError('CHALLENGE_INVALID','The transaction confirmation is invalid, expired or already used.',403);
   await tx.$executeRaw`UPDATE "WalletChallenge" SET "usedAt"=now() WHERE "id"=${proof.id}`;

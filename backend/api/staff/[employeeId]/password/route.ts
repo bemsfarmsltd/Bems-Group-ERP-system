@@ -7,6 +7,8 @@ import {
   invalidateSessionCache,
   verifyPassword,
 } from '@/lib/auth';
+import { walletEnabled } from '@/lib/wallet/core';
+import { canActorApproveFunds } from '@/lib/gmd-access';
 import { recordEmployeeAuditEvent } from '@/lib/employee-lifecycle';
 
 export const dynamic = 'force-dynamic';
@@ -22,7 +24,6 @@ export async function POST(
     }
 
     const { employeeId } = await params;
-    if(process.env.BEMS_WALLET_ENABLED==='true' && actor.id!==employeeId) return NextResponse.json({error:'Wallet-owner passwords cannot be reset by another administrator. Use owner-verified recovery.'},{status:403});
     const isOwner = actor.id === employeeId;
     const isExecutive = hasAnyRole(actor, ['GMD', 'SYSTEM_ADMIN', 'SUPER_ADMIN']);
 
@@ -45,6 +46,10 @@ export async function POST(
 
     if (!employee) {
       return NextResponse.json({ error: 'Staff member not found.' }, { status: 404 });
+    }
+
+    if (!isOwner && (walletEnabled() || process.env.BEMS_WALLET_ENABLED === 'true' || employee.role === 'GMD' || await canActorApproveFunds(employee))) {
+      return NextResponse.json({ error: 'Use the account owner’s verified password recovery process.' }, { status: 403 });
     }
 
     // Prevent non-Super Admin from resetting a Super Admin's password
@@ -78,7 +83,8 @@ export async function POST(
         data: { passwordHash: newHash },
       });
 
-      // Revoke sessions on password reset by another admin
+      // Invalidate any unused wallet challenges and revoke other sessions on password change
+      await tx.$executeRaw`UPDATE "WalletChallenge" SET "usedAt" = now() WHERE "actorId" = ${employeeId} AND "usedAt" IS NULL`;
       if (!isOwner) {
         await tx.authSession.deleteMany({
           where: { employeeId },

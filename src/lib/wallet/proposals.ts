@@ -1,4 +1,4 @@
-import { hasGmdFeatureAccess, canApproveWalletRelease, financialApproverLabel } from '@/lib/gmd-access';
+import { hasGmdFeatureAccess, canActorApproveFunds, financialApproverLabel } from '@/lib/gmd-access';
 import { prisma } from '@/lib/prisma';
 import { WalletActor,WalletError,liveWalletActor,requireWallet,walletJson } from './core';
 export async function walletProposal(actor:WalletActor,id:string,context?:{conversationId?:string|null;workspaceId?:string|null;allowedOrganizationIds?:string[]}){
@@ -11,6 +11,6 @@ export async function walletProposal(actor:WalletActor,id:string,context?:{conve
   if(context?.allowedOrganizationIds&&items.some(i=>!context.allowedOrganizationIds!.includes(i.organizationId)))throw new WalletError('WORKSPACE_FORBIDDEN','A payment allocation is outside the authorized workspace.',403);
   const source=p.sourceType==='REQUEST'?await tx.expenditureRequest.findUnique({where:{id:p.sourceId},select:{title:true,justification:true,requestNumber:true}}):null;
   const batch=p.sourceType==='PAYROLL_BATCH'?await tx.payrollBatch.findUnique({where:{id:p.sourceId},select:{period:{select:{year:true,month:true}}}}):null;
-  return walletJson({...p,title:source?.title||(batch?`Salary ${batch.period.year}-${batch.period.month}`:'Payment release'),purpose:source?.justification||'Approved net salary',requestNumber:source?.requestNumber,items,type:'wallet_release',approvalLabel:financialApproverLabel(),canApprove:canApproveWalletRelease(actor)});
+  return walletJson({...p,title:source?.title||(batch?`Salary ${batch.period.year}-${batch.period.month}`:'Payment release'),purpose:source?.justification||'Approved net salary',requestNumber:source?.requestNumber,items,type:'wallet_release',approvalLabel:financialApproverLabel(),canApprove:await canActorApproveFunds(actor,tx)});
  });
 }

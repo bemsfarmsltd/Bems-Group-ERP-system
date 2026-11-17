@@ -5,7 +5,7 @@ export async function controlWalletPool(actor:WalletActor,operation:string,proof
   requireCommitments();
   if(operation==='ACTIVATE')await(await import('./monnify-balance')).ensureWalletFundingFresh(actor);
   return walletTransaction(async tx=>{
-    await liveWalletActor(tx,actor,operation!=='PAUSE');
+    await liveWalletActor(tx,actor,operation==='PAUSE' ? false : 'GMD');
     if(!['GMD','SUPER_ADMIN','SYSTEM_ADMIN'].includes(actor.role))throw new WalletError('NOT_PERMITTED','Executive security authority is required.',403);
     await consumeWalletChallenge(tx,actor,'POOL_CONTROL',{operation},proof);
     if(operation==='ACTIVATE'){
@@ -52,7 +52,7 @@ export async function adjustFundedEnvelopeTx(tx:import('@prisma/client').Prisma.
 export async function acknowledgeWalletIssue(actor:WalletActor,input:{issueId:string;note:string},proof?:SecurityProof){
  await(await import('./monnify-balance')).ensureWalletFundingFresh(actor);
  return walletTransaction(async tx=>{
-  await liveWalletActor(tx,actor,true);
+  await liveWalletActor(tx,actor,'GMD');
   await consumeWalletChallenge(tx,actor,'POOL_CONTROL',{operation:'ACKNOWLEDGE_ISSUE',issueId:input.issueId,note:input.note},proof);
   const[i]=await tx.$queryRaw<any[]>`SELECT * FROM "WalletReconciliationIssue" WHERE "id"=${input.issueId} FOR UPDATE`;
   if(!i||i.resolvedAt)throw new WalletError('NOT_FOUND','Unresolved issue not found.',404);
