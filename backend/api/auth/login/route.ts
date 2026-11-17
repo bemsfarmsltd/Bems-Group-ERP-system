@@ -62,7 +62,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'This account is not active. Contact your System Admin.' }, { status: 403 });
     }
 
-    if (!['STAFF', 'GMD', 'SYSTEM_ADMIN', 'SUPER_ADMIN'].includes(employee.role)) return NextResponse.json({ error: 'This account has an unsupported role. Contact a Super Admin.' }, { status: 403 });
+    if (!['STAFF', 'GMD', 'SYSTEM_ADMIN', 'SUPER_ADMIN', 'CUSTOM_ADMIN'].includes(employee.role)) return NextResponse.json({ error: 'This account has an unsupported role. Contact a Super Admin.' }, { status: 403 });
     const session = await createEmployeeSession(employee.id);
     const primaryAssignment = employee.assignments?.[0];
     const branding = resolveOrganizationBranding(primaryAssignment?.subsidiary);
