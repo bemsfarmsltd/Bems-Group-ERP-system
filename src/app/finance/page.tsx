@@ -3385,7 +3385,7 @@ function AppWorkspace({user,onSignOut,onAddBusiness,onEditBusiness,businesses:ra
       if (target === 'Staff profiles') return <LiveStaffProfilesModule scope={activeScope} setNotice={setNotice} onNavigate={(p) => setActive(p)}/>;
       if (target === 'Analytics & BI') return <LiveAnalyticsBIPage/>;
       if (target === 'Intercompany notes' || target === 'Intercompany & Audit Hub') {
-        return <LiveWorkspaceSettingsModule businessName={current.name} setNotice={setNotice} initialSection="Intercompany & Governance"/>;
+        return <IntercompanyNotesView scope={activeScope}/>;
       }
       if (target === 'Settings' || target === 'Admin Settings') return <LiveWorkspaceSettingsModule businessName={current.name} setNotice={setNotice}/>;
       if (target === 'Mobile App Settings' || target === 'Mobile settings' || target === 'Mobile App Version Control') return <LiveWorkspaceSettingsModule businessName={current.name} setNotice={setNotice} initialSection="Mobile App Settings"/>;
