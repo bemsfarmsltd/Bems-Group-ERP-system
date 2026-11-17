@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getAuthenticatedEmployee, hasAnyRole } from '@/lib/auth';
+import { getAuthenticatedEmployee, hasAnyRole, hasEmployeePermission } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { resolveAuthorizedOrganizationScope } from '@/lib/organizations';
 
@@ -9,7 +9,10 @@ export async function GET(req: Request) {
   try {
     const actor = await getAuthenticatedEmployee(req);
     if (!actor) return NextResponse.json({ ok: false, error_code: 'NOT_PERMITTED', message: 'Authentication required.' }, { status: 401 });
-    if (!hasAnyRole(actor, ['GMD', 'SYSTEM_ADMIN', 'SUPER_ADMIN'])) {
+    const canViewAnalytics =
+      hasAnyRole(actor, ['GMD', 'SYSTEM_ADMIN', 'SUPER_ADMIN']) ||
+      (hasAnyRole(actor, ['CUSTOM_ADMIN']) && hasEmployeePermission(actor, 'finance', 'Overview', 'view_telemetry'));
+    if (!canViewAnalytics) {
       return NextResponse.json({ ok: false, error_code: 'NOT_PERMITTED', message: 'Executive authority required for financial analytics.' }, { status: 403 });
     }
 

@@ -1,6 +1,11 @@
 import { Readable } from 'node:stream';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
+import {
+  type AuthenticatedEmployee,
+  getAuthenticatedEmployee,
+  isReadOnlyEmployee,
+} from '@/lib/auth';
 
 export type NextRouteHandler = (
   request: NextRequest,
@@ -18,6 +23,46 @@ export type NextRouteModule = {
 };
 
 const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD'] as const;
+const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+const READ_ONLY_AUTH_ALLOWLIST = new Set([
+  '/api/auth/login',
+  '/api/auth/logout',
+  '/api/auth/refresh',
+  '/api/staff/onboard/complete',
+]);
+
+/**
+ * Global server-side read-only enforcement guard.
+ * Blocks all non-auth mutating requests from read-only CUSTOM_ADMIN accounts
+ * before any route handler is invoked.
+ */
+export async function evaluateReadOnlyGuard(
+  method: string,
+  nextPath: string,
+  req: NextRequest,
+  resolveActor: (r: NextRequest) => Promise<AuthenticatedEmployee | null> = getAuthenticatedEmployee
+): Promise<Response | null> {
+  const upperMethod = method.toUpperCase();
+  if (!MUTATING_METHODS.has(upperMethod)) return null;
+
+  const cleanPath = nextPath.split('?')[0];
+  if (READ_ONLY_AUTH_ALLOWLIST.has(cleanPath)) return null;
+
+  const cookieHeader = req.headers.get('cookie') || '';
+  const authHeader = req.headers.get('authorization') || '';
+  if (!cookieHeader.includes('bems_session=') && !authHeader.toLowerCase().startsWith('bearer ')) {
+    return null;
+  }
+
+  const actor = await resolveActor(req).catch(() => null);
+  if (actor && isReadOnlyEmployee(actor)) {
+    return NextResponse.json(
+      { error: 'Read-only compliance account: write operations are disabled.' },
+      { status: 403 }
+    );
+  }
+  return null;
+}
 
 /**
  * Converts a Next.js App Router path (e.g. `/api/budgets/[id]`)
@@ -122,6 +167,12 @@ export function mountNextRoute(
       url: fastifyPath,
       handler: async (req: FastifyRequest, reply: FastifyReply) => {
         const nextReq = buildNextRequest(req);
+        const blockedRes = await evaluateReadOnlyGuard(method, nextPath, nextReq);
+        if (blockedRes) {
+          await sendWebResponse(reply, blockedRes);
+          return;
+        }
+
         const rawParams = (req.params as Record<string, string>) || {};
         const params: Record<string, string> = {};
         for (const [k, v] of Object.entries(rawParams)) {

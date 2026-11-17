@@ -94,6 +94,7 @@ export default function RootPage() {
     upperRole === 'GMD' ||
     upperRole === 'SUPER_ADMIN' ||
     upperRole === 'SYSTEM_ADMIN' ||
+    upperRole === 'CUSTOM_ADMIN' ||
     Boolean(user.customAdminProfileId || user.customAdminTitle || user.customAdminPermissions);
   if (showWelcome && isAdminEntry) {
     return (

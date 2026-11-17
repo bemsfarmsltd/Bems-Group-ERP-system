@@ -5,6 +5,7 @@ import {
   hasActionPermission,
   hasCategoryAccess,
   hasModuleAccess,
+  isReadOnlyCustomAdmin,
   parsePermissionsJson,
 } from '@/lib/admin-permissions';
 import { createHash, randomBytes, scrypt as nodeScrypt, timingSafeEqual } from 'node:crypto';
@@ -273,6 +274,7 @@ export function publicEmployee(employee: AuthenticatedEmployee) {
 
 export const CANONICAL_ROLES = {
   SUPER_ADMIN: 'SYSTEM_ADMIN',
+  CUSTOM_ADMIN: 'CUSTOM_ADMIN',
   GMD: 'GMD',
   STAFF: 'STAFF',
 } as const;
@@ -280,19 +282,29 @@ export const CANONICAL_ROLES = {
 export const ROLE_DISPLAY_NAMES: Record<string, string> = {
   SYSTEM_ADMIN: 'Super admin',
   SUPER_ADMIN: 'Super admin',
+  CUSTOM_ADMIN: 'Custom Admin',
   GMD: 'The Group Managing Director',
   STAFF: 'Staff',
 };
 
 export function getRoleDisplayName(role: string): string {
-  return ROLE_DISPLAY_NAMES[role] || (role === 'GMD' ? 'The Group Managing Director' : role === 'SYSTEM_ADMIN' || role === 'SUPER_ADMIN' ? 'Super admin' : 'Staff');
+  return (
+    ROLE_DISPLAY_NAMES[role] ||
+    (role === 'GMD'
+      ? 'The Group Managing Director'
+      : role === 'CUSTOM_ADMIN'
+      ? 'Custom Admin'
+      : role === 'SYSTEM_ADMIN' || role === 'SUPER_ADMIN'
+      ? 'Super admin'
+      : 'Staff')
+  );
 }
 
 export function hasAnyRole(employee: AuthenticatedEmployee | null | undefined, roles: string[]): boolean {
   if (!employee || !employee.role) return false;
   const role = employee.role.toUpperCase();
 
-  // Super admin has full administrative oversight
+  // Super admin has full administrative oversight (CUSTOM_ADMIN intentionally excluded!)
   const isSuperAdmin = role === 'SYSTEM_ADMIN' || role === 'SUPER_ADMIN';
 
   for (const r of roles) {
@@ -309,6 +321,11 @@ export function hasAnyRole(employee: AuthenticatedEmployee | null | undefined, r
     }
   }
   return false;
+}
+
+export function isReadOnlyEmployee(employee: AuthenticatedEmployee | null | undefined): boolean {
+  if (!employee) return false;
+  return isReadOnlyCustomAdmin(employee.role, employee.customAdminPermissions);
 }
 
 export type HrAuthorizationScope = {

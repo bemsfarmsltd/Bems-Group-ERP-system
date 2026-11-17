@@ -26,6 +26,7 @@ import {
   Pencil,
 } from 'lucide-react';
 import { CustomAdminBuilderModal, type CustomAdminProfilePayload } from '@/components/control-center/CustomAdminBuilderModal';
+import { createMonnifyComplianceReadOnlyPermissions } from '@/lib/admin-permissions';
 
 type LeaderAccount = {
   id: string;
@@ -86,17 +87,20 @@ type Dept = { id: string; name: string; code: string; organizationId: string };
 
 const EXECUTIVE_INVITE_ROLES = [
   { value: 'SYSTEM_ADMIN', label: 'Super admin' },
+  { value: 'CUSTOM_ADMIN', label: 'Custom Admin (Scoped / Read-Only)' },
   { value: 'GMD', label: 'The Group Managing Director' },
 ];
 
 const STAFF_APPROVAL_ROLES = [
   { value: 'STAFF', label: 'Staff' },
+  { value: 'CUSTOM_ADMIN', label: 'Custom Admin' },
   { value: 'GMD', label: 'The Group Managing Director' },
   { value: 'SYSTEM_ADMIN', label: 'Super admin' },
 ];
 
 const getRoleDisplayName = (r: string) => {
   if (r === 'SYSTEM_ADMIN' || r === 'SUPER_ADMIN') return 'Super admin';
+  if (r === 'CUSTOM_ADMIN') return 'Custom Admin';
   if (r === 'GMD') return 'The Group Managing Director';
   if (r === 'HR' || r === 'HR_ADMIN') return 'Human Resources';
   if (r === 'STAFF') return 'Staff';
@@ -272,7 +276,8 @@ export function PeopleAccessWorkspaceModule({
     setInviteBusy(true);
     setInviteError('');
     try {
-      const useCustomAdminEndpoint = Boolean(selectedProfileId) && inviteForm.role === 'SYSTEM_ADMIN';
+      const useCustomAdminEndpoint =
+        (Boolean(selectedProfileId) && inviteForm.role !== 'GMD') || inviteForm.role === 'CUSTOM_ADMIN';
       const response = await fetch(
         useCustomAdminEndpoint ? '/api/control-center/admin-onboarding' : '/api/staff/invite',
         {
@@ -284,6 +289,7 @@ export function PeopleAccessWorkspaceModule({
               ? {
                   mode: 'INVITE_NEW',
                   ...inviteForm,
+                  role: 'CUSTOM_ADMIN',
                   customAdminProfileId: selectedProfileId,
                 }
               : inviteForm
@@ -1568,29 +1574,58 @@ export function PeopleAccessWorkspaceModule({
                 Create flexible, custom-named admin roles scoped by Module → Subsidiary → Left-Bar Category → In-Page Actions.
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => {
-                setEditingProfile(null);
-                setShowBuilderModal(true);
-              }}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                padding: '9px 16px',
-                borderRadius: 8,
-                border: 'none',
-                background: '#ea580c',
-                color: '#ffffff',
-                fontSize: 12.5,
-                fontWeight: 700,
-                cursor: 'pointer',
-              }}
-            >
-              <Plus size={14} />
-              <span>New Custom Admin Profile</span>
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingProfile({
+                    name: 'Monnify Compliance (Read-Only)',
+                    description: 'Strict view-only access for Monnify compliance & finance verification. Write operations are globally blocked.',
+                    permissions: createMonnifyComplianceReadOnlyPermissions(),
+                  });
+                  setShowBuilderModal(true);
+                }}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '9px 14px',
+                  borderRadius: 8,
+                  border: '1px solid #fed7aa',
+                  background: '#fff7ed',
+                  color: '#c2410c',
+                  fontSize: 12.5,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                <ShieldCheck size={14} />
+                <span>Monnify Read-Only Preset</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingProfile(null);
+                  setShowBuilderModal(true);
+                }}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '9px 16px',
+                  borderRadius: 8,
+                  border: 'none',
+                  background: '#ea580c',
+                  color: '#ffffff',
+                  fontSize: 12.5,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                <Plus size={14} />
+                <span>New Custom Admin Profile</span>
+              </button>
+            </div>
           </div>
 
           {customProfiles.length === 0 ? (
@@ -1965,11 +2000,11 @@ export function PeopleAccessWorkspaceModule({
                 </div>
               )}
 
-              {inviteForm.role === 'SYSTEM_ADMIN' && (
+              {(inviteForm.role === 'SYSTEM_ADMIN' || inviteForm.role === 'CUSTOM_ADMIN') && (
                 <div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                     <label style={{ fontSize: 12.5, fontWeight: 700, color: '#334155' }}>
-                      Custom Admin Profile (Optional)
+                      {inviteForm.role === 'CUSTOM_ADMIN' ? 'Custom Admin Profile (Required)' : 'Custom Admin Profile (Optional)'}
                     </label>
                     <button
                       type="button"
@@ -1983,11 +2018,16 @@ export function PeopleAccessWorkspaceModule({
                     </button>
                   </div>
                   <select
+                    required={inviteForm.role === 'CUSTOM_ADMIN'}
                     value={selectedProfileId}
                     onChange={(e) => setSelectedProfileId(e.target.value)}
                     style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 13, background: '#fff', fontWeight: 600 }}
                   >
-                    <option value="">Full Super Admin (Unrestricted)</option>
+                    {inviteForm.role === 'CUSTOM_ADMIN' ? (
+                      <option value="">Select Custom Admin Profile...</option>
+                    ) : (
+                      <option value="">Full Super Admin (Unrestricted)</option>
+                    )}
                     {customProfiles.map((p) => (
                       <option key={p.id} value={p.id}>{p.name}</option>
                     ))}

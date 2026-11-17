@@ -163,6 +163,7 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
+      normalizedRole = profileId ? 'CUSTOM_ADMIN' : 'SYSTEM_ADMIN';
       recipientName = existing.legalName;
       if (!subsidiaryId && existing.assignments?.[0]?.subsidiaryId) {
         subsidiaryId = existing.assignments[0].subsidiaryId;
@@ -171,14 +172,26 @@ export async function POST(request: NextRequest) {
         departmentId = existing.assignments[0].departmentId;
       }
     } else if (mode === 'INVITE_NEW') {
-      const role = String(body.role || 'SYSTEM_ADMIN').toUpperCase();
-      if (!['SYSTEM_ADMIN', 'SUPER_ADMIN', 'GMD'].includes(role)) {
+      const role = String(body.role || (profileId ? 'CUSTOM_ADMIN' : 'SYSTEM_ADMIN')).toUpperCase();
+      if (!['SYSTEM_ADMIN', 'SUPER_ADMIN', 'CUSTOM_ADMIN', 'GMD'].includes(role)) {
         return NextResponse.json(
-          { error: 'Admin invitations are strictly limited to SYSTEM_ADMIN or GMD.' },
+          { error: 'Admin invitations are strictly limited to SYSTEM_ADMIN, CUSTOM_ADMIN, or GMD.' },
           { status: 400 }
         );
       }
-      normalizedRole = role === 'SUPER_ADMIN' ? 'SYSTEM_ADMIN' : role;
+      if (role === 'GMD') {
+        normalizedRole = 'GMD';
+      } else if (role === 'CUSTOM_ADMIN' || profileId) {
+        normalizedRole = 'CUSTOM_ADMIN';
+        if (!profileId) {
+          return NextResponse.json(
+            { error: 'A Custom Admin profile is required for CUSTOM_ADMIN invitations.' },
+            { status: 400 }
+          );
+        }
+      } else {
+        normalizedRole = 'SYSTEM_ADMIN';
+      }
       const existingEmployee = await prisma.employee.findFirst({
         where: { workEmail: { equals: workEmail, mode: 'insensitive' } },
       });

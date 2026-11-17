@@ -449,6 +449,10 @@ export function hasModuleAccess(
 ): boolean {
   const normalized = String(role || '').toUpperCase();
   if (normalized === 'GMD') return true;
+  if (normalized === 'CUSTOM_ADMIN') {
+    if (!permissions || Object.keys(permissions).length === 0) return false;
+    return Boolean(permissions[moduleKey]?.enabled);
+  }
   if (!['SUPER_ADMIN', 'SYSTEM_ADMIN'].includes(normalized)) return false;
   if (!permissions || Object.keys(permissions).length === 0) return true;
   return Boolean(permissions[moduleKey]?.enabled);
@@ -461,8 +465,14 @@ export function hasCategoryAccess(
   categoryKey: string
 ): boolean {
   if (!hasModuleAccess(role, permissions, moduleKey)) return false;
-  if (!permissions || Object.keys(permissions).length === 0) return true;
-  const grant = permissions[moduleKey];
+  const normalized = String(role || '').toUpperCase();
+  if (normalized === 'GMD') return true;
+  if (normalized === 'CUSTOM_ADMIN') {
+    if (!permissions || Object.keys(permissions).length === 0) return false;
+  } else if (!permissions || Object.keys(permissions).length === 0) {
+    return true;
+  }
+  const grant = permissions?.[moduleKey];
   if (!grant?.enabled) return false;
   return Boolean(grant.categories?.[categoryKey]?.enabled);
 }
@@ -475,8 +485,14 @@ export function hasActionPermission(
   actionKey: string
 ): boolean {
   if (!hasCategoryAccess(role, permissions, moduleKey, categoryKey)) return false;
-  if (!permissions || Object.keys(permissions).length === 0) return true;
-  const actions = permissions[moduleKey]?.categories?.[categoryKey]?.actions || [];
+  const normalized = String(role || '').toUpperCase();
+  if (normalized === 'GMD') return true;
+  if (normalized === 'CUSTOM_ADMIN') {
+    if (!permissions || Object.keys(permissions).length === 0) return false;
+  } else if (!permissions || Object.keys(permissions).length === 0) {
+    return true;
+  }
+  const actions = permissions?.[moduleKey]?.categories?.[categoryKey]?.actions || [];
   return actions.includes(actionKey);
 }
 
@@ -486,11 +502,86 @@ export function getAllowedSubsidiariesForModule(
   moduleKey: AdminModuleKey
 ): 'ALL' | string[] {
   const normalized = String(role || '').toUpperCase();
-  if (normalized === 'GMD' || !permissions || Object.keys(permissions).length === 0) {
+  if (normalized === 'GMD') {
     return 'ALL';
   }
-  const grant = permissions[moduleKey];
-  if (!grant?.enabled || grant.subsidiaryScope === 'ALL') return 'ALL';
+  if (normalized !== 'CUSTOM_ADMIN' && (!permissions || Object.keys(permissions).length === 0)) {
+    return 'ALL';
+  }
+  const grant = permissions?.[moduleKey];
+  if (!grant?.enabled) return [];
+  if (grant.subsidiaryScope === 'ALL') return 'ALL';
   return grant.subsidiaryIds || [];
+}
+
+/**
+ * Returns true if an action key is strictly read-only (non-mutating, non-secret-revealing).
+ */
+export function isReadOnlyActionKey(actionKey: string): boolean {
+  const normalized = String(actionKey || '').trim().toLowerCase();
+  return normalized === 'view' || (normalized.startsWith('view_') && normalized !== 'view_reveal_credentials');
+}
+
+/**
+ * Returns true when an account is a CUSTOM_ADMIN with zero mutating action grants
+ * (i.e. all granted actions across enabled modules/categories are strictly read-only).
+ */
+export function isReadOnlyCustomAdmin(
+  role: string | null | undefined,
+  permissions: CustomAdminPermissionsMap | null | undefined
+): boolean {
+  const normalized = String(role || '').toUpperCase();
+  if (normalized !== 'CUSTOM_ADMIN') return false;
+  if (!permissions || Object.keys(permissions).length === 0) return true;
+
+  for (const modGrant of Object.values(permissions)) {
+    if (!modGrant?.enabled || !modGrant.categories) continue;
+    for (const catGrant of Object.values(modGrant.categories)) {
+      if (!catGrant?.enabled) continue;
+      const actions = Array.isArray(catGrant.actions) ? catGrant.actions : [];
+      for (const action of actions) {
+        if (!isReadOnlyActionKey(action)) {
+          return false;
+        }
+      }
+    }
+  }
+  return true;
+}
+
+/**
+ * Preset permission map for external compliance / payment partner reviewers (e.g. Monnify).
+ * Grants strictly view-only access to Finance, Treasury, Wallets, Accounting, Receipts, and Audit Trail.
+ */
+export function createMonnifyComplianceReadOnlyPermissions(): CustomAdminPermissionsMap {
+  return {
+    finance: {
+      enabled: true,
+      subsidiaryScope: 'ALL',
+      subsidiaryIds: [],
+      categories: {
+        Overview: { enabled: true, actions: ['view_telemetry', 'view_wallet_summary'] },
+        'Executive briefing': { enabled: true, actions: ['view_briefing'] },
+        'Fund requests': { enabled: true, actions: ['view_requests', 'view_dossier'] },
+        'Approvals & payments': { enabled: true, actions: ['view_approvals'] },
+        'Budgets & commitments': { enabled: true, actions: ['view_budgets'] },
+        'Treasury accounts': { enabled: true, actions: ['view_treasury'] },
+        'Wallets & funded budgets': { enabled: true, actions: ['view_wallets'] },
+        'Recurring commitments': { enabled: true, actions: ['view_commitments'] },
+        Accounting: { enabled: true, actions: ['view_accounting'] },
+        'Receipt archive': { enabled: true, actions: ['view_receipts'] },
+      },
+    },
+    'control-center': {
+      enabled: true,
+      subsidiaryScope: 'ALL',
+      subsidiaryIds: [],
+      categories: {
+        overview: { enabled: true, actions: ['view_control_overview'] },
+        org_structure: { enabled: true, actions: ['view_orgs_depts'] },
+        audit_trail: { enabled: true, actions: ['view_audit_logs'] },
+      },
+    },
+  };
 }
 

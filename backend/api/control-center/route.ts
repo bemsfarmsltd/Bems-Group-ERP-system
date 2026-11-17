@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getServerCache, invalidateServerCache, setServerCache } from '@/lib/server-cache';
-import { getAuthenticatedEmployee, hasAnyRole } from '@/lib/auth';
+import { getAuthenticatedEmployee, hasAnyRole, hasEmployeePermission } from '@/lib/auth';
 import { getAllowedSubsidiariesForModule } from '@/lib/admin-permissions';
 import { getMobileAppGate } from '@/lib/mobile-gate';
 
@@ -12,9 +12,13 @@ const EXEC_ROLES = ['GMD', 'SUPER_ADMIN', 'SYSTEM_ADMIN'];
 export async function GET(request: Request) {
   try {
     const actor = await getAuthenticatedEmployee(request);
-    if (!actor || !hasAnyRole(actor, EXEC_ROLES)) {
+    const canReadControlCenter =
+      actor &&
+      (hasAnyRole(actor, EXEC_ROLES) ||
+        (hasAnyRole(actor, ['CUSTOM_ADMIN']) && hasEmployeePermission(actor, 'control-center')));
+    if (!canReadControlCenter) {
       return NextResponse.json(
-        { error: 'Forbidden: Enterprise Control Center is restricted to GMD and Super Admin.' },
+        { error: 'Forbidden: Enterprise Control Center access is denied.' },
         { status: 403 }
       );
     }

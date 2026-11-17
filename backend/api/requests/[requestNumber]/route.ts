@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getAuthenticatedEmployee, hasAnyRole } from "@/lib/auth";
+import { getAuthenticatedEmployee, hasAnyRole, hasEmployeePermission } from "@/lib/auth";
 import { resolveAuthorizedOrganizationScope } from "@/lib/organizations";
 
 export const dynamic = "force-dynamic";
@@ -67,7 +67,9 @@ export async function GET(
       );
     }
 
-    const isExecutive = hasAnyRole(actor, ["SYSTEM_ADMIN", "SUPER_ADMIN", "GMD"]);
+    const isExecutive =
+      hasAnyRole(actor, ["SYSTEM_ADMIN", "SUPER_ADMIN", "GMD"]) ||
+      (hasAnyRole(actor, ["CUSTOM_ADMIN"]) && hasEmployeePermission(actor, "finance", "Fund requests", "view_requests"));
     const isOwner = expenditure.requestedById === actor.id;
     const isApprover = expenditure.approvalSteps.some((s) => s.approverId === actor.id);
     const isDisbursementAssignee = expenditure.disbursementAssigneeId === actor.id;

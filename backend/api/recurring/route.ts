@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getAuthenticatedEmployee, hasAnyRole } from '@/lib/auth';
+import { getAuthenticatedEmployee, hasAnyRole, hasEmployeePermission } from '@/lib/auth';
 import { toSystemRequestId } from '@/lib/request-id';
 import { resolveAuthorizedOrganizationScope } from '@/lib/organizations';
 
@@ -12,7 +12,10 @@ export async function GET(request: Request) {
   try {
     const actor = await getAuthenticatedEmployee(request);
     if (!actor) return NextResponse.json({ error: 'Sign in to view recurring commitments.' }, { status: 401 });
-    if (!hasAnyRole(actor, ['SYSTEM_ADMIN', 'SUPER_ADMIN', 'GMD'])) {
+    const canViewRecurring =
+      hasAnyRole(actor, ['SYSTEM_ADMIN', 'SUPER_ADMIN', 'GMD']) ||
+      (hasAnyRole(actor, ['CUSTOM_ADMIN']) && hasEmployeePermission(actor, 'finance', 'Recurring commitments', 'view_commitments'));
+    if (!canViewRecurring) {
       return NextResponse.json({ error: 'Executive access is required to view group recurring commitments.' }, { status: 403 });
     }
 

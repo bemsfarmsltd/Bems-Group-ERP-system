@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { sanitizeUserError } from "@/lib/safe-error";
 import { prisma } from "@/lib/prisma";
-import { getAuthenticatedEmployee, hasAnyRole } from "@/lib/auth";
+import { getAuthenticatedEmployee, hasAnyRole, hasEmployeePermission } from "@/lib/auth";
 import { toSystemRequestId } from "@/lib/request-id";
 import { notifyApprovalRequired } from "@/lib/notifications/bridge";
 import { createWithUniqueRequestNumber } from "@/lib/request-number";
@@ -30,7 +30,9 @@ export async function GET(request: Request) {
     const dateTo = searchParams.get("date_to");
     const limit = Math.min(Number(searchParams.get("limit") || 100), 200);
 
-    const isExecutive = hasAnyRole(actor, ["SYSTEM_ADMIN", "SUPER_ADMIN", "GMD"]);
+    const isExecutive =
+      hasAnyRole(actor, ["SYSTEM_ADMIN", "SUPER_ADMIN", "GMD"]) ||
+      (hasAnyRole(actor, ["CUSTOM_ADMIN"]) && hasEmployeePermission(actor, "finance", "Fund requests", "view_requests"));
 
     // Build Prisma where query
     const where: any = {};

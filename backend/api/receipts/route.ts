@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getAuthenticatedEmployee, hasAnyRole } from '@/lib/auth';
+import { getAuthenticatedEmployee, hasAnyRole, hasEmployeePermission } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { toSystemRequestId } from '@/lib/request-id';
 import { resolveAuthorizedOrganizationScope } from '@/lib/organizations';
@@ -9,7 +9,9 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: Request) {
   const actor = await getAuthenticatedEmployee(request);
   if (!actor) return NextResponse.json({ error: 'Sign in to search receipt records.' }, { status: 401 });
-  const privileged = hasAnyRole(actor, ['SYSTEM_ADMIN', 'SUPER_ADMIN', 'GMD']);
+  const privileged =
+    hasAnyRole(actor, ['SYSTEM_ADMIN', 'SUPER_ADMIN', 'GMD']) ||
+    (hasAnyRole(actor, ['CUSTOM_ADMIN']) && hasEmployeePermission(actor, 'finance', 'Receipt archive', 'view_receipts'));
 
   const { searchParams } = new URL(request.url);
   const subsidiary = searchParams.get('subsidiary') || searchParams.get('organization_id');

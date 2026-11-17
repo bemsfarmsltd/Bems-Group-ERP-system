@@ -1,7 +1,7 @@
 import { executeDashboardCommand } from '@/lib/staged-actions';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getAuthenticatedEmployee, hasAnyRole } from '@/lib/auth';
+import { getAuthenticatedEmployee, hasAnyRole, hasEmployeePermission } from '@/lib/auth';
 import { enforceMobileVersionGate } from '@/lib/mobile-gate';
 
 export const dynamic = 'force-dynamic';
@@ -21,7 +21,10 @@ export async function GET(req: NextRequest) {
 
     const actor = await getAuthenticatedEmployee(req);
     if (!actor) return NextResponse.json({ error: 'Sign in to view treasury information.' }, { status: 401 });
-    if (!hasAnyRole(actor, ['SYSTEM_ADMIN', 'SUPER_ADMIN', 'GMD'])) {
+    const canViewTreasury =
+      hasAnyRole(actor, ['SYSTEM_ADMIN', 'SUPER_ADMIN', 'GMD']) ||
+      (hasAnyRole(actor, ['CUSTOM_ADMIN']) && hasEmployeePermission(actor, 'finance', 'Treasury accounts', 'view_treasury'));
+    if (!canViewTreasury) {
       return NextResponse.json({ error: 'Executive or Super admin access is required.' }, { status: 403 });
     }
 

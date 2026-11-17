@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getAuthenticatedEmployee, hasAnyRole } from '@/lib/auth';
+import { getAuthenticatedEmployee, hasAnyRole, hasEmployeePermission } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 
 export const dynamic = 'force-dynamic';
@@ -17,7 +17,9 @@ export async function GET(
   });
   if (!receipt) return NextResponse.json({ error: 'Receipt not found.' }, { status: 404 });
   const reqRecord = receipt.disbursement.request;
-  const canViewByRole = hasAnyRole(actor, ['SYSTEM_ADMIN', 'SUPER_ADMIN', 'GMD']);
+  const canViewByRole =
+    hasAnyRole(actor, ['SYSTEM_ADMIN', 'SUPER_ADMIN', 'GMD']) ||
+    (hasAnyRole(actor, ['CUSTOM_ADMIN']) && hasEmployeePermission(actor, 'finance', 'Receipt archive', 'view_receipts'));
   const isRequester = reqRecord?.requestedById === actor.id;
   const isApprover = reqRecord?.approvalSteps.some((step) => step.approverId === actor.id) || false;
   const isPayrollRecipient = receipt.disbursement.beneficiaryEmployeeId === actor.id && !!receipt.disbursement.payrollItemId;

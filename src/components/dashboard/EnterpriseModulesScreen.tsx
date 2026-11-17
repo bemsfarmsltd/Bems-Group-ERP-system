@@ -21,6 +21,7 @@ import {
   type AdminModuleKey,
   type CustomAdminPermissionsMap,
   hasModuleAccess,
+  isReadOnlyCustomAdmin,
 } from '@/lib/admin-permissions';
 
 export interface EnterpriseUserSummary {
@@ -50,9 +51,10 @@ export function EnterpriseModulesScreen({ user }: { user: EnterpriseUserSummary 
   const [search, setSearch] = useState('');
 
   const isStaff = user?.role === 'STAFF';
-  const isControlExecutive = ['GMD', 'SUPER_ADMIN', 'SYSTEM_ADMIN'].includes(
-    String(user?.role || '').toUpperCase()
-  );
+  const isReadOnly = isReadOnlyCustomAdmin(user?.role, user?.customAdminPermissions);
+  const isControlExecutive =
+    ['GMD', 'SUPER_ADMIN', 'SYSTEM_ADMIN'].includes(String(user?.role || '').toUpperCase()) ||
+    hasModuleAccess(user?.role || '', user?.customAdminPermissions, 'control-center');
 
   const allModules: ModuleTileConfig[] = [
     ...(isControlExecutive
@@ -210,9 +212,14 @@ export function EnterpriseModulesScreen({ user }: { user: EnterpriseUserSummary 
           <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white pl-3 pr-1.5 py-1">
             <div className="text-right leading-tight">
               <div className="text-xs font-bold text-slate-900">{user?.legalName || 'User'}</div>
-              <div className="text-[10px] font-medium text-slate-500">
-                {user?.subsidiaryName || 'BEMS Group'} ·{' '}
-                <span className="text-orange-600 font-bold">{user?.role || 'STAFF'}</span>
+              <div className="text-[10px] font-medium text-slate-500 flex items-center justify-end gap-1.5">
+                <span>{user?.subsidiaryName || 'BEMS Group'} ·</span>
+                <span className="text-orange-600 font-bold">{user?.customAdminTitle || user?.role || 'STAFF'}</span>
+                {isReadOnly && (
+                  <span className="rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700">
+                    Read-Only
+                  </span>
+                )}
               </div>
             </div>
             <button

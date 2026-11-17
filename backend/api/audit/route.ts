@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getAuthenticatedEmployee, hasAnyRole } from '@/lib/auth';
+import { getAuthenticatedEmployee, hasAnyRole, hasEmployeePermission } from '@/lib/auth';
 import { resolveAuthorizedOrganizationScope } from '@/lib/organizations';
 import { inferAuditModule } from '@/lib/audit-forensics';
 
@@ -10,7 +10,10 @@ export async function GET(request: Request) {
   try {
     const actor = await getAuthenticatedEmployee(request);
     if (!actor) return NextResponse.json({ error: 'Sign in to view audit history.' }, { status: 401 });
-    if (!hasAnyRole(actor, ['SYSTEM_ADMIN', 'SUPER_ADMIN', 'GMD'])) {
+    const canViewAudit =
+      hasAnyRole(actor, ['SYSTEM_ADMIN', 'SUPER_ADMIN', 'GMD']) ||
+      (hasAnyRole(actor, ['CUSTOM_ADMIN']) && hasEmployeePermission(actor, 'control-center', 'audit_trail', 'view_audit_logs'));
+    if (!canViewAudit) {
       return NextResponse.json({ error: 'Executive audit access is required.' }, { status: 403 });
     }
     const { searchParams } = new URL(request.url);
