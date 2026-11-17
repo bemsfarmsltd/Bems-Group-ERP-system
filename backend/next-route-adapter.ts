@@ -32,9 +32,11 @@ export function toFastifyRoutePath(nextPath: string): string {
 
 function buildNextRequest(req: FastifyRequest): NextRequest {
   const protoHeader = req.headers['x-forwarded-proto'];
-  const proto = Array.isArray(protoHeader) ? protoHeader[0] : protoHeader || req.protocol || 'https';
+  const rawProto = Array.isArray(protoHeader) ? protoHeader[0] : protoHeader || req.protocol || 'https';
+  const proto = String(rawProto).split(',')[0].trim() || 'https';
   const hostHeader = req.headers['x-forwarded-host'] || req.headers.host || 'localhost';
-  const host = Array.isArray(hostHeader) ? hostHeader[0] : hostHeader;
+  const rawHost = Array.isArray(hostHeader) ? hostHeader[0] : hostHeader;
+  const host = String(rawHost).split(',')[0].trim() || 'localhost';
   const fullUrl = `${proto}://${host}${req.url}`;
 
   const headers = new Headers();

@@ -37,11 +37,11 @@ export async function buildBackendServer() {
 
   await app.register(cors, {
     origin: (origin, cb) => {
-      if (!origin || allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
+      if (!origin || origin === 'null' || allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
         cb(null, true);
         return;
       }
-      cb(new Error(`Origin ${origin} not allowed by CORS`), false);
+      cb(null, false);
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],

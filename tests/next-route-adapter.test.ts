@@ -39,6 +39,17 @@ describe('Next-to-Fastify Route Adapter & Mounted API Routes', () => {
         url: '/api/wallet/me',
       });
       expect(walletUnauth.statusCode).toBe(401);
+
+      const proxiedSession = await app.inject({
+        method: 'GET',
+        url: '/api/auth/session',
+        headers: {
+          'x-forwarded-proto': 'https, https',
+          'x-forwarded-host': 'bemserp.work, api.bemserp.work',
+        },
+      });
+      expect(proxiedSession.statusCode).toBe(200);
+      expect(proxiedSession.json()).toEqual({ user: null });
     } finally {
       await app.close();
     }
