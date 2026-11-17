@@ -246,10 +246,12 @@ export function NewRequestForm({
       if (res.ok) {
         router.push(`/requests/${data.requestNumber}`);
       } else {
-        setErrorMsg(data.error || 'Failed to submit fund request.');
+        const msg = String(data.error || 'Failed to submit fund request.');
+        setErrorMsg(msg.includes('prisma.') || msg.length > 220 ? 'We could not submit your fund request right now. Please check your entries and try again.' : msg);
       }
     } catch (err: any) {
-      setErrorMsg(err.message || 'An unexpected network error occurred.');
+      const msg = String(err?.message || 'An unexpected network error occurred.');
+      setErrorMsg(msg.includes('prisma.') || msg.length > 220 ? 'We could not submit your fund request right now. Please check your entries and try again.' : msg);
     } finally {
       setIsSubmitting(false);
     }

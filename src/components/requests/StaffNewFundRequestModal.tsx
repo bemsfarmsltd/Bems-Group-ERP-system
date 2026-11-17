@@ -236,13 +236,15 @@ export function StaffNewFundRequestModal({
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || 'Failed to submit fund requisition.');
+        const msg = String(data.error || 'Failed to submit fund requisition.');
+        throw new Error(msg.includes('prisma.') || msg.length > 220 ? 'We could not submit your fund request right now. Please check your entries and try again.' : msg);
       }
 
       onSubmitted?.();
       onClose();
     } catch (err: any) {
-      setErrorMessage(err.message || 'An unexpected network error occurred.');
+      const msg = String(err?.message || 'An unexpected network error occurred.');
+      setErrorMessage(msg.includes('prisma.') || msg.length > 220 ? 'We could not submit your fund request right now. Please check your entries and try again.' : msg);
     } finally {
       setSubmitting(false);
     }

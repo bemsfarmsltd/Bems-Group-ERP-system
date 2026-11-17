@@ -342,15 +342,51 @@ class _NewFundRequestScreenState extends State<NewFundRequestScreen> {
         ),
       );
     } catch (e) {
-      _showError('Failed to submit request: $e');
+      final raw = e.toString().replaceFirst('Exception: ', '').trim();
+      final isTechnical = raw.contains('prisma.') || raw.contains('invocation:') || raw.length > 200;
+      _showError(isTechnical
+          ? 'We could not submit your request right now. Please check your entries and try again.'
+          : raw);
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
   }
 
   void _showError(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: const Color(0xFFDC2626)),
+    if (!mounted) return;
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.error_outline_rounded, color: Color(0xFFEA580C), size: 22),
+            SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Unable to Submit Request',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          message,
+          style: const TextStyle(fontSize: 13.5, color: Color(0xFF334155), height: 1.45),
+        ),
+        actions: [
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFEA580C),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Okay', style: TextStyle(fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
     );
   }
 

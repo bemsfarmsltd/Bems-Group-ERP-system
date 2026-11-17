@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { sanitizeUserError } from "@/lib/safe-error";
 import { prisma } from "@/lib/prisma";
 import { getAuthenticatedEmployee, hasAnyRole } from "@/lib/auth";
 import { toSystemRequestId } from "@/lib/request-id";
@@ -457,7 +458,7 @@ export async function POST(request: Request) {
   } catch (error: any) {
     console.error("Failed to create request:", error);
     return NextResponse.json(
-      { error: error.message || "Failed to create request" },
+      { error: sanitizeUserError(error, "Unable to submit your fund request right now. Please check your entries and try again.") },
       { status: 500 }
     );
   }
