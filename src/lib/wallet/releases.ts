@@ -1,4 +1,5 @@
 import { canActorApproveFunds, financialApproverLabel } from '@/lib/gmd-access';
+import { checkRecurringDisbursementEligibility } from '@/lib/recurring-reminders';
 import {requiredFeeReserve} from './fees';
 import {prisma} from '@/lib/prisma';
 import {verifiedVendorDestination} from './vendor-bank';
@@ -16,6 +17,8 @@ async function sourceItems(tx:Prisma.TransactionClient,type:string,id:string):Pr
   if (type==='REQUEST') {
     const source=await tx.expenditureRequest.findUnique({where:{id},include:{requester:true,vendor:true,invoices:{orderBy:{createdAt:'desc'}},goodsReceipts:{orderBy:{receivedAt:'desc'}},disbursements:{select:{id:true}}}});
     if (!source || !['SUBMITTED','IN_REVIEW','APPROVED'].includes(source.approvalStatus) || !['UNPAID','MONNIFY_FAILED','MONNIFY_REVERSED'].includes(source.paymentStatus) || source.disbursements.length) throw new WalletError('SOURCE_NOT_ELIGIBLE','Select an unpaid staff request. Vendor payments cannot be diverted into staff wallets.');
+    const recurringCheck = checkRecurringDisbursementEligibility(source);
+    if (!recurringCheck.allowed) throw new WalletError('RECURRING_NOT_DUE', recurringCheck.message || 'Recurring commitment is not yet due.', 409);
     if (source.currency!=='NGN' || source.amountMinor<=BigInt(0)) throw new WalletError('CURRENCY_NOT_SUPPORTED','A positive NGN source is required.');
     if(source.vendorId){
       if(!computeThreeWayMatchFromLoadedRequest(source).summary.canDisburse)throw new WalletError('MATCH_REQUIRED','Vendor invoice and goods receipt must pass three-way matching.');

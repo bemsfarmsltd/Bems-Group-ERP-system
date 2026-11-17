@@ -482,6 +482,10 @@ model ExpenditureRequest {
 
   isRecurring          Boolean       @default(false)
   recurringInterval    String?       // MONTHLY | QUARTERLY | ANNUAL
+  recurringAutoPay     Boolean       @default(false)
+  recurringNextDueAt   DateTime?
+  recurringLastPaidAt  DateTime?
+  recurringReminderSentAt DateTime?
   disbursementAssigneeId String?
   disbursementAssignee Employee?     @relation("DisbursementAssignee", fields: [disbursementAssigneeId], references: [id])
   createdAt            DateTime      @default(now())

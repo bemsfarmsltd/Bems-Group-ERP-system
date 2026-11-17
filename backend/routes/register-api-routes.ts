@@ -5,6 +5,7 @@ import { mountNextRoute, type NextRouteModule } from '../next-route-adapter';
 
 import * as financeAccountingRoute from "../api/finance/accounting/route";
 import * as financeReportStudioRoute from "../api/finance/report-studio/route";
+import * as recurringAutopayRoute from "../api/requests/[requestNumber]/recurring-autopay/route";
 import * as route_0 from "../api/accountability/close/route";
 import * as route_1 from "../api/accountability/evidence/[attachmentId]/route";
 import * as route_2 from "../api/accountability/evidence/route";
@@ -439,6 +440,7 @@ export function registerAllNextApiRoutes(app: FastifyInstance): void {
   mountNextRoute(app, "/api/wallet/funding/refresh", route_203 as unknown as NextRouteModule);
   mountNextRoute(app, "/api/finance/accounting", financeAccountingRoute as unknown as NextRouteModule);
   mountNextRoute(app, "/api/finance/report-studio", financeReportStudioRoute as unknown as NextRouteModule);
+  mountNextRoute(app, "/api/requests/[requestNumber]/recurring-autopay", recurringAutopayRoute as unknown as NextRouteModule);
   mountNextRoute(app, "/api/wallet/funding", route_204 as unknown as NextRouteModule);
   mountNextRoute(app, "/api/wallet/issues/[id]/ack", route_205 as unknown as NextRouteModule);
   mountNextRoute(app, "/api/wallet/me", route_206 as unknown as NextRouteModule);

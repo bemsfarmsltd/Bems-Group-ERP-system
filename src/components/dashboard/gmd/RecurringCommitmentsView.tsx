@@ -30,6 +30,9 @@ type RecurringRequest = {
   amountMinor: string;
   currency: string;
   recurringInterval: string | null;
+  recurringAutoPay?: boolean;
+  recurringNextDueAt?: string | null;
+  recurringLastPaidAt?: string | null;
   approvalStatus: string;
   paymentStatus: string;
   accountabilityStatus: string;
@@ -76,6 +79,10 @@ export function RecurringCommitmentsView({ businessName }: { businessName: strin
   const [paymentFilter, setPaymentFilter] = useState('ALL');
   const [selectedRequest, setSelectedRequest] = useState<RecurringRequest | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [autoPayTarget, setAutoPayTarget] = useState<RecurringRequest | null>(null);
+  const [autoPayPin, setAutoPayPin] = useState('');
+  const [autoPayBusy, setAutoPayBusy] = useState(false);
+  const [autoPayError, setAutoPayError] = useState('');
 
   const load = async () => {
     setLoading(true);
@@ -514,9 +521,32 @@ export function RecurringCommitmentsView({ businessName }: { businessName: strin
                         <StatusBadge text={approvalLabel(request.approvalStatus)} approved={isApproved} />
                       </td>
 
-                      {/* Payment Status */}
+                      {/* Payment Status & Auto-Pay */}
                       <td style={{ padding: '12px 14px', color: '#64748b' }}>
-                        <span style={{ textTransform: 'capitalize' }}>{request.paymentStatus.replaceAll('_', ' ').toLowerCase()}</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                          <span style={{ textTransform: 'capitalize' }}>{request.paymentStatus.replaceAll('_', ' ').toLowerCase()}</span>
+                          <button
+                            type="button"
+                            title="GMD 8-digit PIN required to toggle Auto-Pay"
+                            onClick={() => {
+                              setAutoPayTarget(request);
+                              setAutoPayPin('');
+                              setAutoPayError('');
+                            }}
+                            style={{
+                              padding: '2px 7px',
+                              borderRadius: 5,
+                              fontSize: 10,
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              border: request.recurringAutoPay ? '1px solid #a7f3d0' : '1px solid #cbd5e1',
+                              background: request.recurringAutoPay ? '#ecfdf5' : '#f8fafc',
+                              color: request.recurringAutoPay ? '#047857' : '#475569',
+                            }}
+                          >
+                            {request.recurringAutoPay ? '✓ Auto-Pay ON' : 'Auto-Pay OFF'}
+                          </button>
+                        </div>
                       </td>
 
                       {/* Action */}
@@ -554,10 +584,77 @@ export function RecurringCommitmentsView({ businessName }: { businessName: strin
       >
         <ShieldAlert size={16} color="#2563eb" />
         <span>
-          <strong>Treasury Dual-Custody Enforced:</strong> Recurring requests still require individual executive review, verified bank payment slips,
-          and proof-of-performance upload for every cycle.
+          <strong>Treasury Dual-Custody Enforced:</strong> Recurring requests without Auto-Pay require GMD review, verified bank payment slips,
+          and trigger 7-day pre-due email alerts to GMD &amp; Finance admins only. Enabling Auto-Pay requires the GMD’s 8-digit Approval PIN.
         </span>
       </div>
+
+      {autoPayTarget && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          onClick={() => !autoPayBusy && setAutoPayTarget(null)}
+          style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(15, 23, 42, 0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+        >
+          <form
+            onClick={(e) => e.stopPropagation()}
+            onSubmit={async (e) => {
+              e.preventDefault();
+              setAutoPayBusy(true);
+              setAutoPayError('');
+              try {
+                const res = await fetch(`/api/requests/${encodeURIComponent(autoPayTarget.requestNumber)}/recurring-autopay`, {
+                  method: 'POST',
+                  credentials: 'include',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ autoPay: !autoPayTarget.recurringAutoPay, pin: autoPayPin }),
+                });
+                const json = await res.json();
+                if (!res.ok) throw new Error(json?.error || 'Could not update Auto-Pay.');
+                setAutoPayTarget(null);
+                setAutoPayPin('');
+                await load();
+              } catch (err) {
+                setAutoPayError(err instanceof Error ? err.message : 'Could not update Auto-Pay.');
+              } finally {
+                setAutoPayBusy(false);
+              }
+            }}
+            style={{ width: '100%', maxWidth: 420, background: '#fff', borderRadius: 12, border: '1px solid #e2e8f0', padding: 20, boxShadow: '0 20px 50px rgba(15, 23, 42, 0.25)' }}
+          >
+            <div style={{ fontSize: 10, fontWeight: 800, color: '#ea580c', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+              GMD APPROVAL PIN REQUIRED
+            </div>
+            <h3 style={{ margin: '4px 0 6px', fontSize: 16, fontWeight: 800, color: '#0f172a' }}>
+              {autoPayTarget.recurringAutoPay ? 'Disable' : 'Enable'} Auto-Pay for {autoPayTarget.title}
+            </h3>
+            <p style={{ margin: '0 0 12px', fontSize: 12, color: '#64748b' }}>
+              Enter your 8-digit GMD Approval PIN to {autoPayTarget.recurringAutoPay ? 'turn off' : 'authorize'} recurring Auto-Pay on {autoPayTarget.requestNumber}.
+            </p>
+            <input
+              type="password"
+              inputMode="numeric"
+              maxLength={8}
+              pattern="[0-9]{8}"
+              required
+              autoComplete="off"
+              value={autoPayPin}
+              onChange={(e) => setAutoPayPin(e.target.value.replace(/\D/g, ''))}
+              placeholder="8-digit GMD Approval PIN"
+              style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 13, marginBottom: 10 }}
+            />
+            {autoPayError && <p style={{ color: '#b91c1c', fontSize: 12, margin: '0 0 10px' }}>{autoPayError}</p>}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button type="button" disabled={autoPayBusy} onClick={() => setAutoPayTarget(null)} style={{ padding: '7px 12px', borderRadius: 7, border: '1px solid #cbd5e1', background: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                Cancel
+              </button>
+              <button type="submit" disabled={autoPayBusy || autoPayPin.length !== 8} style={{ padding: '7px 14px', borderRadius: 7, border: 'none', background: '#ea580c', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: autoPayBusy || autoPayPin.length !== 8 ? 0.6 : 1 }}>
+                {autoPayBusy ? 'Verifying…' : 'Confirm with PIN'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {/* Executive Requisition Inspection Modal */}
       <ExecutiveRecurringModal

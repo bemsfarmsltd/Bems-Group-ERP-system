@@ -5,6 +5,7 @@ import {useGmdAccess} from '@/components/ai/useGmdAccess';
 import FundingView from '@/components/wallet/FundingView';
 import { AccountingWorkspace } from '@/components/finance/AccountingWorkspace';
 import { ReportStudioView } from '@/components/finance/ReportStudioView';
+import { IntercompanyNotesView } from '@/components/finance/IntercompanyNotesView';
 import WalletView from '@/components/wallet/WalletView';
 import WalletDashboardSummary from '@/components/wallet/WalletDashboardSummary';
 import { GOVERNANCE_TEMPLATES } from '@/lib/governance-templates';
@@ -3631,7 +3632,7 @@ function AppWorkspace({user,onSignOut,onAddBusiness,onEditBusiness,businesses:ra
     if(target==='Follow-up tasks') return <LiveFollowUpTasksModule setNotice={setNotice}/>;
     if(target==='Closure clearances') return <ClosureClearancesModule business={current} setNotice={setNotice}/>;
     if(target==='Hybrid payroll') return <PayrollModule business={current} setNotice={setNotice} onNavigate={(p)=>window.location.href=p}/>;
-    if(target==='Intercompany notes'||target==='Intercompany & Audit Hub') return <LiveWorkspaceSettingsModule businessName={current.name} setNotice={setNotice} initialSection="Intercompany & Governance"/>;
+    if(target==='Intercompany notes'||target==='Intercompany & Audit Hub') return <IntercompanyNotesView scope={activeScope}/>;
     if(target==='Settlement reconciliation') return <SettlementReconciliationModule business={current} setNotice={setNotice}/>;
     if(target==='Vendors & suppliers') return <VendorsModule business={current} setNotice={setNotice} onNavigate={(p)=>window.location.href=p}/>;
     if(target==='Price benchmarks') return <PriceBenchmarksModule business={current} setNotice={setNotice}/>;

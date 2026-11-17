@@ -174,9 +174,23 @@ export async function POST(req: NextRequest) {
     const amount = String(body.get('amountMinor') || '');
     if (!/^\d+$/.test(amount)) return NextResponse.json({ error: 'A positive amount in kobo is required.' }, { status: 400 });
     const reference = String(body.get('externalReference') || '').trim();
+    const requestId = String(body.get('requestId') || '');
+    if (requestId) {
+      const targetReq = await prisma.expenditureRequest.findUnique({
+        where: { id: requestId },
+        select: { isRecurring: true, recurringNextDueAt: true, recurringLastPaidAt: true },
+      });
+      if (targetReq) {
+        const { checkRecurringDisbursementEligibility } = await import('@/lib/recurring-reminders');
+        const eligibility = checkRecurringDisbursementEligibility(targetReq);
+        if (!eligibility.allowed) {
+          return NextResponse.json({ error: eligibility.message }, { status: 409 });
+        }
+      }
+    }
     const receiptBytes = Buffer.from(await receipt.arrayBuffer());
     const payment = await prisma.$transaction(tx => recordTransfer(tx, {
-      actor, requestId: String(body.get('requestId') || ''), payerOrgId: String(body.get('payerOrgId') || ''),
+      actor, requestId, payerOrgId: String(body.get('payerOrgId') || ''),
       payerAccountId: String(body.get('payerAccountId') || '') || undefined, bankName: String(body.get('bankName') || ''),
       amountMinor: BigInt(amount), reference, beneficiaryName: String(body.get('beneficiaryName') || ''),
       beneficiaryBank: String(body.get('beneficiaryBank') || ''), beneficiaryAccount: String(body.get('beneficiaryAccount') || ''),

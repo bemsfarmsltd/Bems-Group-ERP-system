@@ -53,6 +53,9 @@ export async function GET(request: Request) {
         amountMinor: true,
         currency: true,
         recurringInterval: true,
+        recurringAutoPay: true,
+        recurringNextDueAt: true,
+        recurringLastPaidAt: true,
         approvalStatus: true,
         paymentStatus: true,
         accountabilityStatus: true,
@@ -74,11 +77,17 @@ export async function GET(request: Request) {
       return total + (multiplier ? request.amountMinor * multiplier : BigInt(0));
     }, BigInt(0));
 
+    const { evaluateRecurringReminders } = await import('@/lib/recurring-reminders');
+    void evaluateRecurringReminders(prisma).catch(() => {});
+
     return NextResponse.json({
       requests: requests.map((request) => ({
         ...request,
         systemId: toSystemRequestId(request.id),
         amountMinor: request.amountMinor.toString(),
+        recurringAutoPay: Boolean(request.recurringAutoPay),
+        recurringNextDueAt: request.recurringNextDueAt ? new Date(request.recurringNextDueAt).toISOString() : null,
+        recurringLastPaidAt: request.recurringLastPaidAt ? new Date(request.recurringLastPaidAt).toISOString() : null,
         createdAt: request.createdAt ? new Date(request.createdAt).toISOString() : new Date().toISOString(),
         neededBy: request.neededBy ? new Date(request.neededBy).toISOString() : new Date().toISOString(),
       })),

@@ -84,12 +84,243 @@ type AccountabilityCase = {
 };
 
 export function AccountabilityModule({ setNotice }: { setNotice: (message: string) => void }) {
-  const [cases, setCases] = useState<AccountabilityCase[]>([]); const [loading, setLoading] = useState(true); const [error, setError] = useState(''); const [query, setQuery] = useState(''); const [selected, setSelected] = useState<AccountabilityCase | null>(null); const [notes, setNotes] = useState(''); const [working, setWorking] = useState(false);
-  const load = useCallback(async () => { setLoading(true); setError(''); try { await api('/api/accountability', { method: 'POST' }); const data = await api<{ cases: AccountabilityCase[] }>('/api/accountability'); setCases(data.cases); } catch (e) { setError(errorText(e)); } finally { setLoading(false); } }, []);
+  const [cases, setCases] = useState<AccountabilityCase[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [query, setQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'OPEN' | 'EVIDENCE_SUBMITTED' | 'VERIFIED' | 'CLOSED'>('ALL');
+  const [selected, setSelected] = useState<AccountabilityCase | null>(null);
+  const [notes, setNotes] = useState('');
+  const [working, setWorking] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      await api('/api/accountability', { method: 'POST' });
+      const data = await api<{ cases: AccountabilityCase[] }>('/api/accountability');
+      setCases(data.cases || []);
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   useEffect(() => { void load(); }, [load]);
-  const filtered = cases.filter(c => `${c.request.requestNumber} ${c.request.title} ${c.owner.legalName} ${c.request.subsidiary.legalName} ${c.status}`.toLowerCase().includes(query.toLowerCase()));
-  const closeCase = async () => { if (!selected) return; setWorking(true); try { await api('/api/accountability/close', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ caseId: selected.id, decision: 'CLOSE', closureNotes: notes }) }); setNotice(`${selected.request.requestNumber} accountability case closed.`); setSelected(null); setNotes(''); await load(); } catch (e) { setError(errorText(e)); } finally { setWorking(false); } };
-  return <><PageHeading eyebrow="ACCOUNTABILITY" title="Accountability closure" description="Review evidence submitted by staff, verify the spend, and close completed cases." action={<button style={secondary} onClick={() => void load()}>↻ Refresh</button>}/><div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,minmax(130px,1fr))', gap: 12, marginBottom: 16 }}>{[['OPEN',cases.filter(c=>c.status==='OPEN').length],['EVIDENCE SUBMITTED',cases.filter(c=>c.status==='EVIDENCE_SUBMITTED').length],['VERIFIED',cases.filter(c=>c.status==='VERIFIED').length],['CLOSED',cases.filter(c=>c.status==='CLOSED').length]].map(([label,value])=><article style={card} key={String(label)}><small style={{ color: '#8090a8', fontWeight: 800 }}>{label}</small><div style={{ fontSize: 26, fontWeight: 800, color: '#13244a', marginTop: 6 }}>{value}</div></article>)}</div><section style={card}><input style={{ ...input, maxWidth: 440, marginBottom: 14 }} value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search request, staff, company, or status"/>{loading?<p>Loading cases…</p>:error?<StateMessage value={error} retry={()=>void load()}/>:filtered.length===0?<p style={{ color: '#7889a3' }}>No accountability cases match this view.</p>:filtered.map(c=><button key={c.id} onClick={()=>{setSelected(c);setNotes('')}} style={{ width: '100%', textAlign: 'left', padding: '15px 8px', display: 'grid', gridTemplateColumns: 'minmax(240px,2fr) 1fr 1fr 1fr auto', gap: 14, alignItems: 'center', border: 0, borderBottom: '1px solid #e8edf4', background: '#fff', cursor: 'pointer', color: '#263955' }}><span><b>{c.request.requestNumber} · {c.request.title}</b><small style={{ display: 'block', marginTop: 5, color: '#7788a2' }}>{c.request.subsidiary.legalName} · {c.owner.legalName}</small></span><span>{fmt(c.request.amountMinor)}</span><span>Due {date(c.dueAt)}</span><b>{c.status.replaceAll('_',' ')}</b><span>Details →</span></button>)}</section>{selected&&<div role="presentation" onMouseDown={e=>{if(e.target===e.currentTarget)setSelected(null)}} style={{ position:'fixed',inset:0,zIndex:1000,background:'rgba(5,18,45,.55)',display:'grid',placeItems:'center',padding:18 }}><section role="dialog" aria-modal="true" style={{...card,width:'min(760px,100%)',maxHeight:'88vh',overflow:'auto'}}><header style={{display:'flex',justifyContent:'space-between',gap:16}}><div><small style={{color:'#ea580c',fontWeight:800}}>{selected.request.requestNumber} · {selected.status}</small><h2 style={{margin:'6px 0 12px',fontSize:22}}>{selected.request.title}</h2></div><button style={secondary} onClick={()=>setSelected(null)}>Close</button></header><p><b>Requester:</b> {selected.request.requester.legalName} · <b>Owner:</b> {selected.owner.legalName}</p><p><b>Company:</b> {selected.request.subsidiary.legalName} · <b>Approved:</b> {fmt(selected.request.amountMinor)} · <b>Due:</b> {date(selected.dueAt)}</p><h3>Payment record</h3>{selected.request.disbursements.map(d=><div key={d.id} style={{...card,background:'#f7f9fc',marginBottom:8}}>{fmt(d.amountMinor)} · {d.externalReference} · {date(d.paidAt)} {d.receipt&&<>· <a href={`/api/receipts/${d.receipt.id}`} target="_blank">{d.receipt.fileName}</a></>}</div>)}<h3>Required evidence</h3><p>{selected.requiredDeliverables}</p><h3>Staff uploads</h3>{selected.attachments.length?selected.attachments.map(a=><p key={a.id}><a href={a.url} target="_blank">{a.fileName}</a> · {date(a.uploadedAt)}</p>):<p style={{color:'#7889a3'}}>No evidence has been submitted yet.</p>}{selected.status!=='CLOSED'&&<><label style={{display:'block',fontWeight:700,marginTop:16}}>Closure notes<textarea style={{...input,display:'block',marginTop:6,minHeight:80}} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Record what was checked and any variance."/></label><button style={{...primary,marginTop:12}} onClick={()=>void closeCase()} disabled={working||selected.attachments.length===0}>{working?'Closing…':'Verify evidence & close case'}</button>{selected.attachments.length===0&&<small style={{display:'block',marginTop:8,color:'#9a5b08'}}>The case can be closed after staff submit evidence.</small>}</>}</section></div>}</>;
+
+  const filtered = cases.filter(c =>
+    (statusFilter === 'ALL' || c.status === statusFilter) &&
+    `${c.request.requestNumber} ${c.request.title} ${c.owner.legalName} ${c.request.subsidiary.legalName} ${c.status}`
+      .toLowerCase()
+      .includes(query.toLowerCase()),
+  );
+
+  const closeCase = async () => {
+    if (!selected) return;
+    setWorking(true);
+    try {
+      await api('/api/accountability/close', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ caseId: selected.id, decision: 'CLOSE', closureNotes: notes }),
+      });
+      setNotice(`${selected.request.requestNumber} accountability case closed.`);
+      setSelected(null);
+      setNotes('');
+      await load();
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  const openCount = cases.filter(c => c.status === 'OPEN').length;
+  const submittedCount = cases.filter(c => c.status === 'EVIDENCE_SUBMITTED').length;
+  const verifiedCount = cases.filter(c => c.status === 'VERIFIED').length;
+  const closedCount = cases.filter(c => c.status === 'CLOSED').length;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <PageHeading
+        eyebrow="72-HOUR RETIRAL GOVERNANCE"
+        title="Accountability closure"
+        description="Track post-disbursement proof of spend, review staff receipts within 72 hours, and close verified cases."
+        action={<button style={secondary} onClick={() => void load()}>↻ Refresh</button>}
+      />
+
+      {/* 3-STEP WORKFLOW GUIDE */}
+      <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 12, padding: '12px 16px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
+        <div>
+          <div style={{ fontSize: 10, fontWeight: 800, color: '#c2410c', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Step 1 · Disbursement Confirmed</div>
+          <div style={{ fontSize: 12, color: '#431407', marginTop: 2 }}>Once funds are released or confirmed received, a 72-hour retiral case opens automatically.</div>
+        </div>
+        <div>
+          <div style={{ fontSize: 10, fontWeight: 800, color: '#c2410c', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Step 2 · Staff Uploads Proof</div>
+          <div style={{ fontSize: 12, color: '#431407', marginTop: 2 }}>Staff attaches vendor receipts, invoices, or delivery evidence in the Staff Portal / App.</div>
+        </div>
+        <div>
+          <div style={{ fontSize: 10, fontWeight: 800, color: '#c2410c', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Step 3 · Verify & Close Case</div>
+          <div style={{ fontSize: 12, color: '#431407', marginTop: 2 }}>Executive reviews submitted attachments, logs variance notes, and closes the accountability loop.</div>
+        </div>
+      </div>
+
+      {/* 4 KPI CARDS */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
+        <div style={{ background: 'linear-gradient(135deg, #ea580c, #f97316)', borderRadius: 12, padding: '14px 16px', color: '#fff', boxShadow: '0 4px 14px rgba(234, 88, 12, 0.22)' }}>
+          <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.08em', opacity: 0.9 }}>OPEN (PENDING PROOF)</div>
+          <div style={{ fontSize: 22, fontWeight: 800, marginTop: 4 }}>{openCount}</div>
+          <div style={{ fontSize: 11, opacity: 0.9 }}>Awaiting 72h staff upload</div>
+        </div>
+        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: '14px 16px' }}>
+          <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.08em', color: '#64748b' }}>EVIDENCE SUBMITTED</div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: '#d97706', marginTop: 4 }}>{submittedCount}</div>
+          <div style={{ fontSize: 11, color: '#64748b' }}>Ready for executive review</div>
+        </div>
+        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: '14px 16px' }}>
+          <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.08em', color: '#64748b' }}>VERIFIED</div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: '#0f172a', marginTop: 4 }}>{verifiedCount}</div>
+          <div style={{ fontSize: 11, color: '#64748b' }}>Checks completed</div>
+        </div>
+        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: '14px 16px' }}>
+          <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.08em', color: '#64748b' }}>CLOSED</div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: '#059669', marginTop: 4 }}>{closedCount}</div>
+          <div style={{ fontSize: 11, color: '#64748b' }}>Retiral fully settled</div>
+        </div>
+      </div>
+
+      {/* FILTER CHIPS + SEARCH */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          {(['ALL', 'OPEN', 'EVIDENCE_SUBMITTED', 'VERIFIED', 'CLOSED'] as const).map((s) => {
+            const active = statusFilter === s;
+            return (
+              <button
+                key={s}
+                type="button"
+                onClick={() => setStatusFilter(s)}
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: 8,
+                  fontSize: 11.5,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  border: active ? '1px solid #ea580c' : '1px solid #cbd5e1',
+                  background: active ? 'linear-gradient(135deg, #ea580c, #f97316)' : '#ffffff',
+                  color: active ? '#ffffff' : '#334155',
+                }}
+              >
+                {s === 'ALL' ? 'All Cases' : s.replaceAll('_', ' ')}
+              </button>
+            );
+          })}
+        </div>
+        <input
+          style={{ ...input, maxWidth: 340 }}
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          placeholder="Search request #, staff, company, or status…"
+        />
+      </div>
+
+      {error && <StateMessage value={error} retry={() => void load()} />}
+
+      {/* DENSE LEDGER TABLE */}
+      <section style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, overflow: 'hidden' }}>
+        <div style={{ padding: '12px 16px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <strong style={{ fontSize: 13.5, color: '#0f172a' }}>Accountability Cases Register</strong>
+          <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 999, background: '#f1f5f9', color: '#334155', border: '1px solid #e2e8f0' }}>
+            {filtered.length} Cases
+          </span>
+        </div>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+            <thead>
+              <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                <th style={{ padding: '10px 14px', textAlign: 'left', fontSize: 10, fontWeight: 800, letterSpacing: '0.06em', color: '#64748b' }}>REQUEST # & TITLE</th>
+                <th style={{ padding: '10px 12px', textAlign: 'left', fontSize: 10, fontWeight: 800, letterSpacing: '0.06em', color: '#64748b' }}>STAFF & ENTITY</th>
+                <th style={{ padding: '10px 12px', textAlign: 'right', fontSize: 10, fontWeight: 800, letterSpacing: '0.06em', color: '#64748b' }}>AMOUNT</th>
+                <th style={{ padding: '10px 12px', textAlign: 'left', fontSize: 10, fontWeight: 800, letterSpacing: '0.06em', color: '#64748b' }}>72H DEADLINE</th>
+                <th style={{ padding: '10px 12px', textAlign: 'left', fontSize: 10, fontWeight: 800, letterSpacing: '0.06em', color: '#64748b' }}>STATUS</th>
+                <th style={{ padding: '10px 14px', textAlign: 'right', fontSize: 10, fontWeight: 800, letterSpacing: '0.06em', color: '#64748b' }}>ACTION</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr><td colSpan={6} style={{ padding: 24, textAlign: 'center', color: '#64748b' }}>Loading accountability cases…</td></tr>
+              ) : filtered.length === 0 ? (
+                <tr><td colSpan={6} style={{ padding: 24, textAlign: 'center', color: '#64748b' }}>No accountability cases match this view yet. Cases appear here automatically after disbursements are confirmed.</td></tr>
+              ) : (
+                filtered.map(c => (
+                  <tr key={c.id} onClick={() => { setSelected(c); setNotes(''); }} style={{ borderBottom: '1px solid #f1f5f9', cursor: 'pointer' }} className="hover:bg-orange-50/30">
+                    <td style={{ padding: '10px 14px' }}>
+                      <strong style={{ color: '#0f172a' }}>{c.request.requestNumber}</strong>
+                      <div style={{ fontSize: 11.5, color: '#475569' }}>{c.request.title}</div>
+                    </td>
+                    <td style={{ padding: '10px 12px' }}>
+                      <div style={{ fontWeight: 600, color: '#0f172a' }}>{c.owner.legalName}</div>
+                      <div style={{ fontSize: 11, color: '#64748b' }}>{c.request.subsidiary.legalName}</div>
+                    </td>
+                    <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: '#0f172a' }}>{fmt(c.request.amountMinor)}</td>
+                    <td style={{ padding: '10px 12px', whiteSpace: 'nowrap', color: '#334155' }}>Due {date(c.dueAt)}</td>
+                    <td style={{ padding: '10px 12px' }}>
+                      <span style={{ padding: '2px 7px', borderRadius: 5, fontSize: 10.5, fontWeight: 700, background: c.status === 'CLOSED' ? '#ecfdf5' : c.status === 'EVIDENCE_SUBMITTED' ? '#fffbeb' : '#f1f5f9', color: c.status === 'CLOSED' ? '#047857' : c.status === 'EVIDENCE_SUBMITTED' ? '#b45309' : '#334155', border: '1px solid #e2e8f0' }}>
+                        {c.status.replaceAll('_', ' ')}
+                      </span>
+                    </td>
+                    <td style={{ padding: '10px 14px', textAlign: 'right' }}>
+                      <button type="button" onClick={(e) => { e.stopPropagation(); setSelected(c); setNotes(''); }} style={{ padding: '4px 9px', borderRadius: 6, border: '1px solid #fed7aa', background: '#fff7ed', color: '#c2410c', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+                        Review →
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {selected && (
+        <div role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) setSelected(null); }} style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(5,18,45,.55)', display: 'grid', placeItems: 'center', padding: 18 }}>
+          <section role="dialog" aria-modal="true" style={{ ...card, width: 'min(760px,100%)', maxHeight: '88vh', overflow: 'auto' }}>
+            <header style={{ display: 'flex', justifyContent: 'space-between', gap: 16 }}>
+              <div>
+                <small style={{ color: '#ea580c', fontWeight: 800 }}>{selected.request.requestNumber} · {selected.status}</small>
+                <h2 style={{ margin: '6px 0 12px', fontSize: 22 }}>{selected.request.title}</h2>
+              </div>
+              <button style={secondary} onClick={() => setSelected(null)}>Close</button>
+            </header>
+            <p><b>Requester:</b> {selected.request.requester.legalName} · <b>Owner:</b> {selected.owner.legalName}</p>
+            <p><b>Company:</b> {selected.request.subsidiary.legalName} · <b>Approved:</b> {fmt(selected.request.amountMinor)} · <b>Due:</b> {date(selected.dueAt)}</p>
+            <h3>Payment record</h3>
+            {selected.request.disbursements.map(d => (
+              <div key={d.id} style={{ ...card, background: '#f7f9fc', marginBottom: 8 }}>
+                {fmt(d.amountMinor)} · {d.externalReference} · {date(d.paidAt)} {d.receipt && <>· <a href={`/api/receipts/${d.receipt.id}`} target="_blank">{d.receipt.fileName}</a></>}
+              </div>
+            ))}
+            <h3>Required evidence</h3>
+            <p>{selected.requiredDeliverables}</p>
+            <h3>Staff uploads</h3>
+            {selected.attachments.length ? selected.attachments.map(a => <p key={a.id}><a href={a.url} target="_blank">{a.fileName}</a> · {date(a.uploadedAt)}</p>) : <p style={{ color: '#7889a3' }}>No evidence has been submitted yet.</p>}
+            {selected.status !== 'CLOSED' && (
+              <>
+                <label style={{ display: 'block', fontWeight: 700, marginTop: 16 }}>
+                  Closure notes
+                  <textarea style={{ ...input, display: 'block', marginTop: 6, minHeight: 80 }} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Record what was checked and any variance." />
+                </label>
+                <button style={{ ...primary, marginTop: 12 }} onClick={() => void closeCase()} disabled={working || selected.attachments.length === 0}>
+                  {working ? 'Closing…' : 'Verify evidence & close case'}
+                </button>
+                {selected.attachments.length === 0 && <small style={{ display: 'block', marginTop: 8, color: '#9a5b08' }}>The case can be closed after staff submit evidence.</small>}
+              </>
+            )}
+          </section>
+        </div>
+      )}
+    </div>
+  );
 }
 
 type ReceiptRow = {
@@ -5127,7 +5358,7 @@ export function WorkspaceSettingsModule({ businessName, setNotice, initialSectio
   const toggle=(key:string)=>setSettings(prev=>{const group=section==='Approval controls'?'approval.controls':section==='AI & Copilot Access'?'ai.access':'notifications.preferences';const curVal=prev[group]?.[key];const nextVal=group==='ai.access'?!(curVal!==false):!curVal;return {...prev,[group]:{...prev[group],[key]:nextVal}}});
   const setBulkAiAccess=(mode:'read'|'write',enabled:boolean)=>setSettings(prev=>{const nextAi={...normalizeAiAccessMatrix(prev['ai.access'] as Record<string,unknown>)};for(const s of AI_ACCESS_SCOPES){nextAi[`${s.key}.${mode}`]=enabled}return {...prev,'ai.access':nextAi}});
   const aiMatrix = useMemo(() => normalizeAiAccessMatrix(settings['ai.access'] as Record<string, unknown>), [settings]);
-  const titles=['Organization','AI & Copilot Access','Approval controls','Notifications','Data & retention','Mobile App Settings'];
+  const titles=['Organization','Approval controls','Notifications','Data & retention','Mobile App Settings'];
   const isMobileSection = section === 'Mobile App Settings' || section === 'Mobile App Version Control';
 
   return <>{!standalone && <PageHeading eyebrow="GROUP ADMINISTRATION" title="Settings" description="Manage saved company profiles, approval controls, AI copilot access, notifications, and mobile app version gates."/>}<section style={{...card,display:'grid',gridTemplateColumns:standalone?'1fr':'220px 1fr',gap:22,minHeight:450}}>{!standalone && <nav style={{display:'grid',alignContent:'start',gap:6}}>{titles.map(t=><button key={t} style={(section===t || (t==='Mobile App Settings' && isMobileSection))?{...primary,textAlign:'left'}:{...secondary,textAlign:'left'}} onClick={()=>setSection(t)}>{t}</button>)}</nav>}<div>{loading?<p>Loading settings…</p>:error?<StateMessage value={error} retry={()=>void load()}/>:<><div style={{display:'flex',justifyContent:'space-between',gap:16,alignItems:'center',flexWrap:'wrap',marginBottom:16}}><div><small style={{color:'#7788a0',fontWeight:800}}>{section.toUpperCase()}</small><h2 style={{margin:'5px 0 0',fontSize:22,color:'#0f172a'}}>{isMobileSection ? 'Mobile App Settings & Version Control' : `${section} settings`}</h2></div>{!isMobileSection&&<select style={{...input,width:'auto',minWidth:260}} value={organizationId} onChange={e=>void switchOrg(e.target.value)}>{organizations.map(o=><option value={o.id} key={o.id}>{o.name}</option>)}</select>}</div>{section==='Organization'?<div style={{display:'grid',gap:12,maxWidth:650}}><label>Legal name<input style={{...input,display:'block',marginTop:4}} value={profile.name} onChange={e=>setProfile(p=>({...p,name:e.target.value}))}/></label><label>Default currency<select style={{...input,display:'block',marginTop:4}} value={profile.currency} onChange={e=>setProfile(p=>({...p,currency:e.target.value}))}><option value="NGN">NGN — Nigerian naira</option><option value="USD">USD — US dollar</option><option value="GBP">GBP — British pound</option></select></label><label>Timezone<select style={{...input,display:'block',marginTop:4}} value={profile.timezone} onChange={e=>setProfile(p=>({...p,timezone:e.target.value}))}>{['Africa/Lagos','UTC','Europe/London','America/New_York'].map(x=><option key={x}>{x}</option>)}</select></label></div>:section==='Approval controls'?<div style={{display:'grid',gap:12}}><label style={{display:'flex',gap:10,alignItems:'center',padding:13,background:'#f7f9fc',borderRadius:9}}><input type="checkbox" checked={Boolean(current.requireDecisionReason)} onChange={()=>toggle('requireDecisionReason')}/>Require a reason for declines and clarification</label><label style={{display:'flex',gap:10,alignItems:'center',padding:13,background:'#f7f9fc',borderRadius:9}}><input type="checkbox" checked={Boolean(current.requireAssignedDisbursementOwner)} onChange={()=>toggle('requireAssignedDisbursementOwner')}/>Require the GMD to assign a payment recorder at final approval</label><p style={{color:'#70819b'}}>Duplicate receipt detection and staff salary-change notices stay enforced for financial control.</p></div>:section==='AI & Copilot Access'?<div style={{display:'grid',gap:18,maxWidth:960}}>

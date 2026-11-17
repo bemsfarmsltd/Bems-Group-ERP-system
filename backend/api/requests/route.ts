@@ -221,8 +221,14 @@ export async function GET(request: Request) {
         deliverable: req.deliverable,
         isRecurring: req.isRecurring,
         recurringInterval: req.recurringInterval,
+        recurringAutoPay: req.recurringAutoPay,
+        recurringNextDueAt: req.recurringNextDueAt ? new Date(req.recurringNextDueAt).toISOString() : null,
+        recurringLastPaidAt: req.recurringLastPaidAt ? new Date(req.recurringLastPaidAt).toISOString() : null,
       };
     });
+
+    const { evaluateRecurringReminders } = await import('@/lib/recurring-reminders');
+    void evaluateRecurringReminders(prisma).catch(() => {});
 
     return NextResponse.json(formatted, {
       headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0' }
@@ -378,6 +384,7 @@ export async function POST(request: Request) {
           accountabilityStatus: "PENDING",
           isRecurring: !!isRecurring,
           recurringInterval: isRecurring ? recurringInterval : null,
+          recurringNextDueAt: isRecurring ? (neededBy ? new Date(neededBy) : new Date()) : null,
           channel: {
             create: {
               classification: "GENERAL",

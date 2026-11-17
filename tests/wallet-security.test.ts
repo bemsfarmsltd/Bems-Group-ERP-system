@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { buildBackendServer } from '../backend/server';
+import { filterModuleEmailRecipients } from '../src/lib/email-routing';
+import { checkRecurringDisbursementEligibility } from '../src/lib/recurring-reminders';
 import { canActorApproveFunds, canApproveWalletRelease, superAdminGmdAccessEnabled } from '../src/lib/gmd-access';
 
 import { approvalOtpRequired, matchesReleaseOtp, releaseOtpDigest } from '../src/lib/wallet/approval-security';
@@ -155,10 +157,34 @@ describe('Wallet & Fund Approval Security Controls', () => {
         url: '/api/payroll/items/test-item-id/payslip',
       });
       expect(payslipRes.statusCode).toBe(401);
+
+      const autoPayRes = await app.inject({
+        method: 'POST',
+        url: '/api/requests/REQ-2026-0001/recurring-autopay',
+        headers: { 'content-type': 'application/json' },
+        payload: JSON.stringify({ autoPay: true, pin: '12345678' }),
+      });
+      expect([401, 403]).toContain(autoPayRes.statusCode);
     } finally {
       await app.close();
       if (prevTransfers === undefined) delete process.env.BEMS_WALLET_TRANSFERS_ENABLED;
       else process.env.BEMS_WALLET_TRANSFERS_ENABLED = prevTransfers;
     }
+  });
+
+  it('excludes HR-only admins from finance email alerts and blocks early recurring disbursements', () => {
+    const recipients = filterModuleEmailRecipients([
+      { id: 'gmd-1', legalName: 'GMD', workEmail: 'gmd@bemserp.work', role: 'GMD' },
+      { id: 'hr-1', legalName: 'HR Only Admin', workEmail: 'hr@bemserp.work', role: 'SYSTEM_ADMIN', customAdminPermissions: { hr: { enabled: true, categories: { 'Staff Profiles': { enabled: true, actions: ['view'] } }, subsidiaries: 'ALL' } } },
+      { id: 'fin-1', legalName: 'Finance Admin', workEmail: 'fin@bemserp.work', role: 'SYSTEM_ADMIN', customAdminPermissions: { finance: { enabled: true, categories: { Overview: { enabled: true, actions: ['view'] } }, subsidiaries: 'ALL' } } },
+    ], 'finance');
+    expect(recipients.map(r => r.id)).toEqual(['gmd-1', 'fin-1']);
+
+    const blocked = checkRecurringDisbursementEligibility({
+      isRecurring: true,
+      recurringLastPaidAt: new Date('2026-11-01T00:00:00Z'),
+      recurringNextDueAt: new Date('2026-12-01T00:00:00Z'),
+    }, new Date('2026-11-17T00:00:00Z'));
+    expect(blocked.allowed).toBe(false);
   });
 });
