@@ -1704,7 +1704,8 @@ export async function executeBusinessCommand(tx: Prisma.TransactionClient, input
       resultRecord = { employee_id: updated.id, employee_number: updated.employeeNumber, name: updated.legalName, status: updated.status, approval_status: updated.approvalStatus };
       notificationIntentIds.push(employeeId); notificationsDeliveredIds.push(employeeId);
     } else if (action.actionType === 'role_change') {
-      if(walletEnabled() && actor.id!==process.env.BEMS_FINANCIAL_GMD_ID && [materialPayload.employeeId, materialPayload.employee_id, materialPayload.target_employee_id].includes(process.env.BEMS_FINANCIAL_GMD_ID)) throw new Error('The designated GMD account cannot be changed by another administrator.');
+      const gmdProtectedId = process.env.BEMS_FINANCIAL_GMD_ID?.trim();
+      if (gmdProtectedId && walletEnabled() && actor.id !== gmdProtectedId && [materialPayload.employeeId, materialPayload.employee_id, materialPayload.target_employee_id].filter(Boolean).includes(gmdProtectedId)) throw new Error('The designated GMD account cannot be changed by another administrator.');
       const { employee_id, new_role, reason } = materialPayload;
 
       if (!['GMD', 'SUPER_ADMIN', 'SYSTEM_ADMIN'].includes(actor.role)) {
@@ -4039,7 +4040,8 @@ export async function executeBusinessCommand(tx: Prisma.TransactionClient, input
     } else if (action.actionType === 'staff_management') {
       const subAction = String(materialPayload.sub_action || materialPayload.action_type || 'EDIT_PROFILE').toUpperCase();
       if (!['REGISTER_OFFLINE', 'EDIT_PROFILE', 'TOGGLE_ATTENDANCE_EXEMPT', 'CHANGE_STATUS', 'REQUEST_UPDATE', 'SEND_PASSWORD_RESET_INVITE', 'RESET_PASSWORD_INVITE', 'DELETE_OR_DEACTIVATE'].includes(subAction)) throw new Error('Unsupported staff operation.');
-      if (subAction !== 'TOGGLE_ATTENDANCE_EXEMPT' && walletEnabled() && actor.id!==process.env.BEMS_FINANCIAL_GMD_ID && [materialPayload.employeeId, materialPayload.employee_id, materialPayload.target_employee_id].includes(process.env.BEMS_FINANCIAL_GMD_ID)) throw new Error('The designated GMD account cannot be changed by another administrator.');
+      const gmdProtectedId = process.env.BEMS_FINANCIAL_GMD_ID?.trim();
+      if (subAction !== 'TOGGLE_ATTENDANCE_EXEMPT' && gmdProtectedId && walletEnabled() && actor.id !== gmdProtectedId && [materialPayload.employeeId, materialPayload.employee_id, materialPayload.target_employee_id].filter(Boolean).includes(gmdProtectedId)) throw new Error('The designated GMD account cannot be changed by another administrator.');
 
       if (subAction === 'REGISTER_OFFLINE') {
         const legalName = String(materialPayload.legalName || '').trim();
