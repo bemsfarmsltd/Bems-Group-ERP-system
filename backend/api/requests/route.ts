@@ -363,6 +363,8 @@ export async function POST(request: Request) {
     });
     const groupId = sub?.parentGroupId || sub?.id || "";
 
+    const effectiveNeededBy = isNaN(needDate.getTime()) ? new Date(Date.now() + 7 * 24 * 3600 * 1000) : needDate;
+
     const newRequest = await createWithUniqueRequestNumber("REQ-2026", async (reqNum) => {
       return await prisma.expenditureRequest.create({
         data: {
@@ -378,13 +380,13 @@ export async function POST(request: Request) {
           title: titleStr,
           justification: justStr,
           deliverable: delivStr,
-          neededBy: isNaN(needDate.getTime()) ? new Date(Date.now() + 7 * 24 * 3600 * 1000) : needDate,
+          neededBy: effectiveNeededBy,
           approvalStatus: "IN_REVIEW",
           paymentStatus: "UNPAID",
           accountabilityStatus: "PENDING",
           isRecurring: !!isRecurring,
           recurringInterval: isRecurring ? recurringInterval : null,
-          recurringNextDueAt: isRecurring ? (neededBy ? new Date(neededBy) : new Date()) : null,
+          recurringNextDueAt: isRecurring ? effectiveNeededBy : null,
           channel: {
             create: {
               classification: "GENERAL",
