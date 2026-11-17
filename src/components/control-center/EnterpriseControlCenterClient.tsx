@@ -561,10 +561,23 @@ export default function EnterpriseControlCenterClient({ openWalletApprovals = fa
           )}
 
           {section === 'wallet_approval' && (
-            <>
+            <div className="space-y-5">
+              <div className="flex flex-wrap items-end justify-between gap-3">
+                <div>
+                  <div className="text-[10px] font-extrabold uppercase tracking-[0.14em] text-orange-600">
+                    CONTROL CENTER · WALLET GOVERNANCE
+                  </div>
+                  <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-slate-900">
+                    Wallet Approvals & Release Security
+                  </h1>
+                  <p className="mt-0.5 text-xs text-slate-600">
+                    Manage Monnify release authority, 8-digit approval PINs, GMD email OTP enforcement, and Super Admin lockout recovery.
+                  </p>
+                </div>
+              </div>
               <FundApprovalPolicyCard setNotice={(msg) => setNotice(msg)} />
               <WalletApprovalSecurityCard setNotice={(msg) => setNotice(msg)} />
-            </>
+            </div>
           )}
 
           {section === 'ai_control' && <AiAccessControlPanel setNotice={setNotice} />}

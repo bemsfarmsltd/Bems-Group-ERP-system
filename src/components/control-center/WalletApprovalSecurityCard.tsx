@@ -84,14 +84,49 @@ export function WalletApprovalSecurityCard({ setNotice }: { setNotice: (message:
     <label className="text-xs font-semibold">{label}<input className={field} type="password" autoComplete="off"
       inputMode="numeric" pattern="[0-9]{8}" maxLength={8} required value={value} onChange={e => change(e.target.value.replace(/\D/g, ''))} /></label>
   );
-  return <section className="mb-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-    <h3 className="text-sm font-semibold text-slate-900">Wallet Approval Security</h3>
+  return <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <div>
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="text-sm font-bold text-slate-900">Wallet Approval Security (PIN, OTP & Recovery)</h3>
+          {security && (
+            <>
+              <span className={`rounded-full border px-2.5 py-0.5 text-[11px] font-bold ${security.otpRequired ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>
+                {security.otpRequired ? '✓ GMD Email OTP On' : 'Email OTP Off'}
+              </span>
+              {security.canApprove && (
+                <span className={`rounded-full border px-2.5 py-0.5 text-[11px] font-bold ${security.locked ? 'border-red-200 bg-red-50 text-red-700' : security.pinSet ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>
+                  {security.locked ? 'Approval PIN Locked' : security.pinSet ? '✓ 8-Digit PIN Active' : 'PIN Not Set'}
+                </span>
+              )}
+              {security.canRecover && (
+                <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-[11px] font-bold text-slate-700">
+                  {security.lockedAccounts.length ? `${security.lockedAccounts.length} Locked Account(s)` : '0 Locked Accounts'}
+                </span>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
     {security && <>
-      <div className="mt-2 space-y-1 text-xs text-slate-600">
-        {security.canApprove && <p>{security.locked
-          ? security.recoveryAuthorized ? 'Recovery authorized. Set a new PIN within the recovery window.' : 'Financial approval is locked. Ask a Super Admin to authorize recovery.'
-          : security.pinSet ? 'Your approval PIN is active.' : 'Set your approval PIN to approve wallet releases.'}</p>}
-        <p>Email OTP is {security.otpRequired ? 'required for wallet releases and sent only to the designated GMD’s work email.' : 'disabled for wallet releases.'}</p>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+        <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 text-xs text-slate-700">
+          <div className="font-bold text-slate-900">Approval PIN & Lockout</div>
+          <p className="mt-1 text-slate-600">
+            {security.canApprove
+              ? security.locked
+                ? security.recoveryAuthorized ? 'Recovery authorized. Set a new PIN within the 30-minute window.' : 'Financial approval is locked after 3 failed PIN attempts. Ask a Super Admin to authorize recovery.'
+                : security.pinSet ? 'Your private 8-digit approval PIN is active for wallet releases.' : 'Set your private 8-digit approval PIN to authorize wallet releases.'
+              : 'Your current account is Super Admin (no direct disbursement authority). You can authorize a 30-minute PIN recovery window if the GMD or a delegate is locked out.'}
+          </p>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 text-xs text-slate-700">
+          <div className="font-bold text-slate-900">GMD Email OTP Policy</div>
+          <p className="mt-1 text-slate-600">
+            Email OTP is {security.otpRequired ? 'required for every wallet release (including payroll and vendor payments) and sent only to the designated GMD’s work email.' : 'currently disabled. Only the designated GMD can toggle this policy.'}
+          </p>
+        </div>
       </div>
       <div className="mt-3 flex flex-wrap gap-2">
         {security.canApprove && (!security.locked || security.recoveryAuthorized) &&

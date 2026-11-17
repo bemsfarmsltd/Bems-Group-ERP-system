@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getAuthenticatedEmployee, hasAnyRole } from '@/lib/auth';
 import { resolveAuthorizedOrganizationScope } from '@/lib/organizations';
+import { inferAuditModule } from '@/lib/audit-forensics';
 
 export const dynamic = 'force-dynamic';
 
@@ -129,15 +130,18 @@ export async function GET(request: Request) {
       });
     }
 
-    const whereClause = scopeIds ? { subsidiaryId: { in: scopeIds } } : {};
+    const moduleFilter = (searchParams.get('module') || 'ALL').toUpperCase();
+    const whereClause = scopeIds
+      ? (scope.isGroup ? { OR: [{ subsidiaryId: { in: scopeIds } }, { subsidiaryId: null }] } : { subsidiaryId: { in: scopeIds } })
+      : {};
 
-    const [auditLogs, projectLogs] = await Promise.all([
+    const [auditLogs, projectLogs, orgs] = await Promise.all([
       prisma.auditEvent.findMany({
         where: whereClause,
         take: limit,
         orderBy: { createdAt: 'desc' },
       }),
-      !scopeIds
+      (!scopeIds || scope.isGroup)
         ? prisma.projectActivityLog.findMany({
             take: Math.min(100, limit),
             orderBy: { createdAt: 'desc' },
@@ -146,16 +150,35 @@ export async function GET(request: Request) {
             },
           })
         : Promise.resolve([]),
+      prisma.organization.findMany({ select: { id: true, legalName: true, code: true } }),
     ]);
+
+    const orgNameMap = new Map(orgs.map((o) => [o.id, `${o.legalName} (${o.code})`]));
+
+    const normalizedAuditLogs = auditLogs.map((a) => ({
+      ...a,
+      module: a.module || inferAuditModule(a.targetType, a.action),
+      organizationName: a.subsidiaryId ? (orgNameMap.get(a.subsidiaryId) || a.subsidiaryId) : 'BEMS Group (Global)',
+    }));
 
     const normalizedProjectLogs = projectLogs.map((p) => ({
       id: `proj_${p.id}`,
       actorId: p.actorId,
       actorName: p.actor?.legalName || 'System',
       actorRole: p.actor?.role || 'STAFF',
+      groupId: 'BEMS-GROUP',
+      subsidiaryId: null,
+      organizationName: 'Projects Workspace',
       targetType: p.workItemId ? 'WORK_ITEM' : 'PROJECT',
       targetId: p.workItemId || p.projectId || p.id,
       action: `PROJECT_${p.action}`,
+      module: 'PROJECTS',
+      ipAddress: null,
+      userAgent: null,
+      deviceLabel: null,
+      beforeHash: null,
+      afterHash: null,
+      correlationId: p.id,
       metadata: JSON.stringify({
         projectId: p.projectId,
         workItemId: p.workItemId,
@@ -166,7 +189,8 @@ export async function GET(request: Request) {
       createdAt: p.createdAt,
     }));
 
-    const combinedLogs = [...auditLogs, ...normalizedProjectLogs]
+    const combinedLogs = [...normalizedAuditLogs, ...normalizedProjectLogs]
+      .filter((log) => moduleFilter === 'ALL' || (log.module || 'SYSTEM').toUpperCase() === moduleFilter)
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
       .slice(0, limit);
 

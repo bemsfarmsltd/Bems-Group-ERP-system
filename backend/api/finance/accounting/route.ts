@@ -7,6 +7,7 @@ import { resolveAuthorizedOrganizationScope } from '@/lib/organizations';
 import { prisma } from '@/lib/prisma';
 import { canActorApproveFunds, canApproveWalletRelease } from '@/lib/gmd-access';
 import { executeFinanceAction } from '@/lib/finance/actions';
+import { extractRequestForensics } from '@/lib/audit-forensics';
 import { dateField, field, invalid } from '@/lib/finance/ledger';
 import { readFinanceWorkspace } from '@/lib/finance/read';
 
@@ -64,10 +65,12 @@ export async function POST(request: Request) {
       if (postingActions.has(action) && !(await canActorApproveFunds(employee, tx))) invalid('The designated financial approver must post this entry.', 403);
       if (action === 'CLOSE_PERIOD' && !canApproveWalletRelease(employee)) invalid('Only the designated GMD can close a financial period.', 403);
       const target = await executeFinanceAction({ tx, actorId: actor.id, organizationId: entity, body, isGroup: org.type === 'GROUP' && canConsolidate }, action);
+      const forensics = extractRequestForensics(request);
       await tx.auditEvent.create({ data: {
         actorId: employee.id, actorName: employee.legalName, actorRole: employee.role,
         groupId: org.parentGroupId ?? org.id, subsidiaryId: entity, targetType: 'FINANCE_ACCOUNTING',
         targetId: String(target), action, correlationId: randomUUID(),
+        module: 'ACCOUNTING', ...forensics,
       } });
       return { success: true, result: target };
     }, { timeout: 20000 });

@@ -9,7 +9,7 @@ import { sessionBinding, verifyWalletPassword } from '@/lib/wallet/security';
 export async function GET(request: Request) {
   return walletHttp(request, async actor => {
     const canApprove = await canActorApproveFunds(actor);
-    const canRecover = actor.role === 'SUPER_ADMIN';
+    const canRecover = actor.role === 'SUPER_ADMIN' || actor.role === 'SYSTEM_ADMIN';
     if (!canApprove && !canRecover) throw new WalletError('NOT_PERMITTED', 'Wallet approval authority is required.', 403);
     return prisma.$transaction(async tx => {
       await liveWalletActor(tx, actor);
@@ -38,7 +38,7 @@ export async function POST(request: Request) {
       throw new WalletError('INVALID_ACTION', 'Choose an approval security action.', 400);
     }
     const isRecovery = body.action === 'AUTHORIZE_RECOVERY';
-    if (isRecovery && actor.role !== 'SUPER_ADMIN') throw new WalletError('NOT_PERMITTED', 'Only a Super Admin can authorize recovery.', 403);
+    if (isRecovery && actor.role !== 'SUPER_ADMIN' && actor.role !== 'SYSTEM_ADMIN') throw new WalletError('NOT_PERMITTED', 'Only a Super Admin can authorize recovery.', 403);
     const credentialHash = await verifyWalletPassword(actor, body.password, isRecovery ? false : body.action === 'SET_OTP_POLICY' ? 'GMD' : true);
     if (body.action === 'SET_PIN' && (typeof body.pin !== 'string' || !/^\d{8}$/.test(body.pin) ||
       /^(\d)\1{7}$/.test(body.pin) || ['01234567', '12345678', '23456789', '98765432', '87654321'].includes(body.pin) || body.pin === body.password)) {

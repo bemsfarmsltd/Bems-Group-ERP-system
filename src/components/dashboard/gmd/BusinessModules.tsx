@@ -4553,26 +4553,343 @@ export function IntercompanyModule({ setNotice, scope }: { setNotice: (message: 
   );
 }
 
-type AuditRow = { id: string; actorName: string; actorRole: string; targetType: string; targetId: string; action: string; metadata: string | null; createdAt: string; groupId: string; subsidiaryId: string | null };
+type AuditRow = {
+  id: string;
+  actorId?: string | null;
+  actorName: string;
+  actorRole: string;
+  targetType: string;
+  targetId: string;
+  action: string;
+  module?: string;
+  organizationName?: string;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+  deviceLabel?: string | null;
+  beforeHash?: string | null;
+  afterHash?: string | null;
+  correlationId?: string;
+  metadata: string | null;
+  createdAt: string;
+  groupId: string;
+  subsidiaryId: string | null;
+};
+
+const AUDIT_MODULES = [
+  { key: 'ALL', label: 'All Modules' },
+  { key: 'WALLET', label: 'Wallet & Treasury' },
+  { key: 'REQUESTS', label: 'Fund Requests' },
+  { key: 'PAYROLL', label: 'Payroll' },
+  { key: 'ACCOUNTING', label: 'Accounting' },
+  { key: 'CONTROL_CENTER', label: 'Control Center & Security' },
+  { key: 'VENDORS', label: 'Vendors & POs' },
+  { key: 'HR', label: 'HR & Staff' },
+  { key: 'ATTENDANCE', label: 'Attendance' },
+  { key: 'PROJECTS', label: 'Projects' },
+] as const;
+
 export function AuditLogsModule({ setNotice, scope }: { setNotice: (message: string) => void; scope?: string }) {
-  const [rows,setRows]=useState<AuditRow[]>([]);const [loading,setLoading]=useState(true);const [error,setError]=useState('');const [query,setQuery]=useState('');const [action,setAction]=useState('ALL');
-  const load=useCallback(async()=>{
+  const [rows, setRows] = useState<AuditRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [query, setQuery] = useState('');
+  const [action, setAction] = useState('ALL');
+  const [moduleFilter, setModuleFilter] = useState('ALL');
+  const [selected, setSelected] = useState<AuditRow | null>(null);
+
+  const load = useCallback(async () => {
     setLoading(true);
     setError('');
-    try{
-      const param = scope && scope !== 'ALL' ? `&subsidiary=${encodeURIComponent(scope)}` : '';
-      const data=await api<{logs:AuditRow[]}>(`/api/audit?limit=300${param}`);
-      setRows(data.logs);
-    }catch(e){
+    try {
+      const subParam = scope && scope !== 'ALL' ? `&subsidiary=${encodeURIComponent(scope)}` : '';
+      const modParam = moduleFilter !== 'ALL' ? `&module=${encodeURIComponent(moduleFilter)}` : '';
+      const data = await api<{ logs: AuditRow[] }>(`/api/audit?limit=350${subParam}${modParam}`);
+      setRows(data.logs || []);
+    } catch (e) {
       setError(errorText(e));
-    }finally{
+    } finally {
       setLoading(false);
     }
-  },[scope]);
-  useEffect(()=>{void load()},[load]);
-  const actions=[...new Set(rows.map(r=>r.action))];const filtered=rows.filter(r=>(action==='ALL'||r.action===action)&&`${r.actorName} ${r.actorRole} ${r.action} ${r.targetType} ${r.targetId} ${r.metadata||''}`.toLowerCase().includes(query.toLowerCase()));
-  const exportRows=()=>{const csv=[['Time','Action','Actor','Role','Target Type','Target ID','Metadata'],...filtered.map(r=>[r.createdAt,r.action,r.actorName,r.actorRole,r.targetType,r.targetId,r.metadata||''])].map(row=>row.map(v=>`"${String(v).replaceAll('"','""')}"`).join(',')).join('\r\n');const link=document.createElement('a');link.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));link.download='group-audit-log.csv';link.click();URL.revokeObjectURL(link.href);setNotice(`Exported ${filtered.length} audit events.`)};
-  return <><PageHeading eyebrow="CONTROL EVIDENCE" title="Audit logs" description="A searchable record of approvals, payment, salary changes, evidence, and administrative actions." action={<button style={secondary} onClick={exportRows}>↓ Export CSV</button>}/><div style={{...card,display:'flex',gap:10,marginBottom:14,flexWrap:'wrap'}}><input style={{...input,maxWidth:480}} value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search actor, action, request, or detail"/><select style={{...input,width:'auto',minWidth:200}} value={action} onChange={e=>setAction(e.target.value)}><option value="ALL">All actions</option>{actions.map(a=><option key={a}>{a}</option>)}</select><button style={secondary} onClick={()=>void load()}>↻ Refresh</button></div><section style={card}>{loading?<p>Loading audit events…</p>:error?<StateMessage value={error} retry={()=>void load()}/>:filtered.length===0?<p style={{color:'#7889a3'}}>No audit events match this search.</p>:<div style={{overflowX:'auto'}}><table style={{width:'100%',borderCollapse:'collapse',minWidth:800}}><thead><tr>{['When','Action','Actor','Record','Details'].map(x=><th key={x} style={{textAlign:'left',padding:10,color:'#71819a',fontSize:12}}>{x}</th>)}</tr></thead><tbody>{filtered.map(r=><tr key={r.id} style={{borderTop:'1px solid #e8edf4'}}><td style={{padding:10,whiteSpace:'nowrap'}}>{new Date(r.createdAt).toLocaleString('en-NG')}</td><td style={{padding:10}}><b>{r.action.replaceAll('_',' ')}</b></td><td style={{padding:10}}>{r.actorName}<small style={{display:'block',color:'#8290a4'}}>{r.actorRole}</small></td><td style={{padding:10}}>{r.targetType} · {r.targetId.slice(0,10)}</td><td style={{padding:10,color:'#65758f',maxWidth:350,overflowWrap:'anywhere'}}>{r.metadata||'—'}</td></tr>)}</tbody></table></div>}</section></>;
+  }, [scope, moduleFilter]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  const actions = [...new Set(rows.map(r => r.action))];
+  const filtered = rows.filter(r =>
+    (action === 'ALL' || r.action === action) &&
+    `${r.actorName} ${r.actorRole} ${r.action} ${r.module || ''} ${r.targetType} ${r.targetId} ${r.ipAddress || ''} ${r.deviceLabel || ''} ${r.organizationName || ''} ${r.metadata || ''}`
+      .toLowerCase()
+      .includes(query.toLowerCase()),
+  );
+
+  const financialCount = rows.filter(r => ['WALLET', 'REQUESTS', 'PAYROLL', 'ACCOUNTING'].includes((r.module || '').toUpperCase())).length;
+  const securityCount = rows.filter(r => ['CONTROL_CENTER', 'WALLET'].includes((r.module || '').toUpperCase())).length;
+  const uniqueActors = new Set(rows.map(r => r.actorName)).size;
+
+  const exportRows = () => {
+    const csv = [
+      ['Timestamp', 'Module', 'Action', 'Actor', 'Role', 'Entity', 'IP Address', 'Device', 'Target Type', 'Target ID', 'Correlation ID', 'Metadata'],
+      ...filtered.map(r => [
+        r.createdAt,
+        r.module || 'SYSTEM',
+        r.action,
+        r.actorName,
+        r.actorRole,
+        r.organizationName || r.subsidiaryId || 'Group',
+        r.ipAddress || '',
+        r.deviceLabel || '',
+        r.targetType,
+        r.targetId,
+        r.correlationId || '',
+        r.metadata || '',
+      ]),
+    ].map(row => row.map(v => `"${String(v).replaceAll('"', '""')}"`).join(',')).join('\r\n');
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+    link.download = `bems-system-audit-${moduleFilter.toLowerCase()}.csv`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+    setNotice(`Exported ${filtered.length} forensic audit events.`);
+  };
+
+  let parsedMeta: string | null = null;
+  if (selected?.metadata) {
+    try {
+      parsedMeta = JSON.stringify(JSON.parse(selected.metadata), null, 2);
+    } catch {
+      parsedMeta = selected.metadata;
+    }
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <PageHeading
+        eyebrow="FORENSIC CONTROL EVIDENCE"
+        title="System-Wide Audit Log"
+        description="End-to-end immutable audit trail across every ERP module with actor, timestamp, entity, IP, device, and payload inspection."
+        action={<button style={secondary} onClick={exportRows}>↓ Export Forensic CSV</button>}
+      />
+
+      {/* 4 KPI CARDS */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12 }}>
+        <div style={{ background: 'linear-gradient(135deg, #ea580c, #f97316)', borderRadius: 12, padding: '14px 16px', color: '#fff', boxShadow: '0 4px 14px rgba(234, 88, 12, 0.22)' }}>
+          <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.08em', opacity: 0.9, textTransform: 'uppercase' }}>Total Audit Events</div>
+          <div style={{ fontSize: 22, fontWeight: 800, marginTop: 4 }}>{rows.length}</div>
+          <div style={{ fontSize: 11, opacity: 0.9 }}>{moduleFilter === 'ALL' ? 'Across all modules' : `Filtered: ${moduleFilter}`}</div>
+        </div>
+        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: '14px 16px' }}>
+          <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.08em', color: '#64748b', textTransform: 'uppercase' }}>Financial & Treasury</div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: '#059669', marginTop: 4 }}>{financialCount}</div>
+          <div style={{ fontSize: 11, color: '#64748b' }}>Wallet, requests, payroll & ledger</div>
+        </div>
+        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: '14px 16px' }}>
+          <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.08em', color: '#64748b', textTransform: 'uppercase' }}>Security & Governance</div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: '#0f172a', marginTop: 4 }}>{securityCount}</div>
+          <div style={{ fontSize: 11, color: '#64748b' }}>PIN, OTP, policy & admin actions</div>
+        </div>
+        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: '14px 16px' }}>
+          <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.08em', color: '#64748b', textTransform: 'uppercase' }}>Active Actors</div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: '#0f172a', marginTop: 4 }}>{uniqueActors}</div>
+          <div style={{ fontSize: 11, color: '#64748b' }}>Distinct users recorded</div>
+        </div>
+      </div>
+
+      {/* MODULE CHIPS */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+        {AUDIT_MODULES.map((m) => {
+          const active = m.key === moduleFilter;
+          return (
+            <button
+              key={m.key}
+              type="button"
+              onClick={() => setModuleFilter(m.key)}
+              style={{
+                padding: '6px 12px',
+                borderRadius: 8,
+                fontSize: 11.5,
+                fontWeight: 700,
+                cursor: 'pointer',
+                border: active ? '1px solid #ea580c' : '1px solid #cbd5e1',
+                background: active ? 'linear-gradient(135deg, #ea580c, #f97316)' : '#ffffff',
+                color: active ? '#ffffff' : '#334155',
+              }}
+            >
+              {m.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* SEARCH + ACTION FILTER BAR */}
+      <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: '12px 14px', display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+        <input
+          style={{ ...input, flex: 1, minWidth: 240 }}
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          placeholder="Search actor, action, module, IP, device, entity, or record ID…"
+        />
+        <select style={{ ...input, width: 'auto', minWidth: 190 }} value={action} onChange={e => setAction(e.target.value)}>
+          <option value="ALL">All actions</option>
+          {actions.map(a => <option key={a} value={a}>{a.replaceAll('_', ' ')}</option>)}
+        </select>
+        <button style={secondary} onClick={() => void load()}>↻ Refresh</button>
+      </div>
+
+      {error && <StateMessage value={error} retry={() => void load()} />}
+
+      {/* DENSE TABLE */}
+      <section style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, overflow: 'hidden' }}>
+        <div style={{ padding: '12px 16px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <strong style={{ fontSize: 13.5, color: '#0f172a' }}>Audit Event Register</strong>
+          <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 999, background: '#f1f5f9', color: '#334155', border: '1px solid #e2e8f0' }}>
+            {filtered.length} Events
+          </span>
+        </div>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 920, fontSize: 12 }}>
+            <thead>
+              <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                {['DATE & TIME', 'MODULE', 'ACTION', 'ACTOR & ROLE', 'ENTITY', 'IP / DEVICE', 'TARGET', 'INSPECT'].map(h => (
+                  <th key={h} style={{ padding: '9px 12px', textAlign: 'left', fontSize: 10, fontWeight: 800, letterSpacing: '0.06em', color: '#64748b' }}>
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr><td colSpan={8} style={{ padding: 24, textAlign: 'center', color: '#64748b' }}>Loading system audit events…</td></tr>
+              ) : filtered.length === 0 ? (
+                <tr><td colSpan={8} style={{ padding: 24, textAlign: 'center', color: '#64748b' }}>No audit events match the selected module or search filter.</td></tr>
+              ) : (
+                filtered.map(r => (
+                  <tr
+                    key={r.id}
+                    onClick={() => setSelected(r)}
+                    style={{ borderBottom: '1px solid #f1f5f9', cursor: 'pointer' }}
+                    className="hover:bg-orange-50/40"
+                  >
+                    <td style={{ padding: '10px 12px', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums', color: '#334155' }}>
+                      {new Date(r.createdAt).toLocaleString('en-NG')}
+                    </td>
+                    <td style={{ padding: '10px 12px' }}>
+                      <span style={{ padding: '2px 7px', borderRadius: 5, fontSize: 10.5, fontWeight: 700, background: '#f1f5f9', color: '#334155', border: '1px solid #e2e8f0' }}>
+                        {r.module || 'SYSTEM'}
+                      </span>
+                    </td>
+                    <td style={{ padding: '10px 12px', fontWeight: 700, color: '#0f172a' }}>{r.action.replaceAll('_', ' ')}</td>
+                    <td style={{ padding: '10px 12px' }}>
+                      <div style={{ fontWeight: 600, color: '#0f172a' }}>{r.actorName}</div>
+                      <div style={{ fontSize: 10.5, color: '#64748b' }}>{r.actorRole}</div>
+                    </td>
+                    <td style={{ padding: '10px 12px', color: '#475569' }}>{r.organizationName || 'BEMS Group'}</td>
+                    <td style={{ padding: '10px 12px', fontSize: 11, color: '#475569' }}>
+                      <div>{r.ipAddress || '—'}</div>
+                      <div style={{ color: '#64748b' }}>{r.deviceLabel || 'Server / Internal'}</div>
+                    </td>
+                    <td style={{ padding: '10px 12px', fontFamily: 'var(--font-mono-tech, monospace)', fontSize: 11, color: '#475569' }}>
+                      {r.targetType} · {r.targetId.slice(0, 12)}
+                    </td>
+                    <td style={{ padding: '10px 12px' }}>
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setSelected(r); }}
+                        style={{ padding: '4px 9px', borderRadius: 6, border: '1px solid #fed7aa', background: '#fff7ed', color: '#c2410c', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}
+                      >
+                        Inspect
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {/* FORENSIC INSPECT MODAL */}
+      {selected && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Audit Event Dossier"
+          onClick={() => setSelected(null)}
+          style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(15, 23, 42, 0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ width: '100%', maxWidth: 680, maxHeight: '88vh', overflowY: 'auto', background: '#ffffff', borderRadius: 14, border: '1px solid #e2e8f0', boxShadow: '0 20px 50px rgba(15, 23, 42, 0.25)', padding: 20 }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid #e2e8f0', paddingBottom: 12 }}>
+              <div>
+                <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.12em', color: '#ea580c', textTransform: 'uppercase' }}>
+                  FORENSIC AUDIT DOSSIER · {selected.module || 'SYSTEM'}
+                </div>
+                <h3 style={{ margin: '4px 0 0', fontSize: 17, fontWeight: 800, color: '#0f172a' }}>
+                  {selected.action.replaceAll('_', ' ')}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelected(null)}
+                style={{ padding: '5px 10px', borderRadius: 7, border: '1px solid #cbd5e1', background: '#fff', color: '#334155', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
+              >
+                Close
+              </button>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10, marginTop: 14, fontSize: 12 }}>
+              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 10 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Executed By</div>
+                <div style={{ fontWeight: 700, color: '#0f172a', marginTop: 2 }}>{selected.actorName}</div>
+                <div style={{ color: '#475569' }}>{selected.actorRole}{selected.actorId ? ` · ${selected.actorId}` : ''}</div>
+              </div>
+              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 10 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Timestamp</div>
+                <div style={{ fontWeight: 700, color: '#0f172a', marginTop: 2 }}>{new Date(selected.createdAt).toLocaleString('en-NG')}</div>
+                <div style={{ color: '#475569', fontFamily: 'monospace', fontSize: 11 }}>{selected.createdAt}</div>
+              </div>
+              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 10 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>IP Address & Device</div>
+                <div style={{ fontWeight: 700, color: '#0f172a', marginTop: 2 }}>{selected.ipAddress || 'Internal / Not captured'}</div>
+                <div style={{ color: '#475569' }}>{selected.deviceLabel || 'Server / API'}</div>
+              </div>
+              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 10 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Entity & Target</div>
+                <div style={{ fontWeight: 700, color: '#0f172a', marginTop: 2 }}>{selected.organizationName || 'BEMS Group'}</div>
+                <div style={{ color: '#475569', fontFamily: 'monospace', fontSize: 11 }}>{selected.targetType} · {selected.targetId}</div>
+              </div>
+              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 10 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Correlation ID</div>
+                <div style={{ fontWeight: 600, color: '#0f172a', marginTop: 2, fontFamily: 'monospace', fontSize: 11, wordBreak: 'break-all' }}>{selected.correlationId || selected.id}</div>
+              </div>
+              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 10 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Integrity Hashes</div>
+                <div style={{ color: '#475569', fontFamily: 'monospace', fontSize: 11, marginTop: 2, wordBreak: 'break-all' }}>
+                  Before: {selected.beforeHash || '—'}<br />
+                  After: {selected.afterHash || '—'}
+                </div>
+              </div>
+            </div>
+
+            {selected.userAgent && (
+              <div style={{ marginTop: 10, background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 10, fontSize: 11 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Full User-Agent</div>
+                <div style={{ color: '#334155', fontFamily: 'monospace', marginTop: 2, wordBreak: 'break-all' }}>{selected.userAgent}</div>
+              </div>
+            )}
+
+            <div style={{ marginTop: 10 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', marginBottom: 4 }}>Event Metadata / Payload</div>
+              <pre style={{ margin: 0, background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 12, fontSize: 11.5, color: '#0f172a', overflowX: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                {parsedMeta || 'No additional JSON payload recorded.'}
+              </pre>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 type OrgRecord = { id:string; name:string; code:string; defaultCurrency:string; timezone:string };

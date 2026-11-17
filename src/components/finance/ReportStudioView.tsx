@@ -51,6 +51,15 @@ type ReportStudioPayload = {
   };
 };
 
+const VIEW_OPTIONS = [
+  { key: 'ENTITIES', label: 'By Entity', title: 'Subsidiary & Holding Company Settlement Statement', colLabel: 'ENTITY NAME', codeLabel: 'CODE' },
+  { key: 'STAFF', label: 'By Staff', title: 'Staff Expenditure, Wallet & Settlement Statement', colLabel: 'STAFF MEMBER', codeLabel: 'STAFF ID' },
+  { key: 'ACCOUNTS', label: 'By Account', title: 'Treasury, Monnify & Bank Account Settlement Statement', colLabel: 'ACCOUNT / BANK', codeLabel: 'ACCOUNT' },
+  { key: 'PAYMENT_TYPES', label: 'By Payment Type', title: 'Payment Type & Channel Settlement Statement', colLabel: 'PAYMENT TYPE', codeLabel: 'TYPE' },
+  { key: 'CATEGORIES', label: 'By Category', title: 'Expenditure Category Settlement Statement', colLabel: 'REQUEST CATEGORY', codeLabel: 'CATEGORY' },
+  { key: 'RECURRING', label: 'By Recurring', title: 'Recurring Commitments vs. One-Off Settlement Statement', colLabel: 'CADENCE / TYPE', codeLabel: 'MODE' },
+] as const;
+
 const PERIOD_OPTIONS = [
   { key: 'THIS_MONTH', label: 'This Month' },
   { key: 'LAST_MONTH', label: 'Last Month' },
@@ -68,6 +77,7 @@ export function ReportStudioView({
   scope: string;
   onSelectBusiness?: (id: string) => void;
 }) {
+  const [viewKey, setViewKey] = useState<string>('ENTITIES');
   const [periodKey, setPeriodKey] = useState<string>('THIS_MONTH');
   const [fromDate, setFromDate] = useState<string>(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10));
   const [toDate, setToDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
@@ -76,10 +86,12 @@ export function ReportStudioView({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
+  const activeViewMeta = VIEW_OPTIONS.find((v) => v.key === viewKey) || VIEW_OPTIONS[0];
+
   const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
     setError('');
-    const params = new URLSearchParams({ scope, period: periodKey });
+    const params = new URLSearchParams({ scope, period: periodKey, view: viewKey });
     if (periodKey === 'CUSTOM') {
       params.set('from', fromDate);
       params.set('to', toDate);
@@ -98,7 +110,7 @@ export function ReportStudioView({
     } finally {
       if (!signal?.aborted) setLoading(false);
     }
-  }, [scope, periodKey, fromDate, toDate]);
+  }, [scope, periodKey, viewKey, fromDate, toDate]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -274,6 +286,33 @@ export function ReportStudioView({
         </div>
       </div>
 
+      {/* DIMENSION SWITCHER */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+        {VIEW_OPTIONS.map((opt) => {
+          const active = opt.key === viewKey;
+          return (
+            <button
+              key={opt.key}
+              type="button"
+              onClick={() => setViewKey(opt.key)}
+              style={{
+                padding: '7px 13px',
+                borderRadius: 8,
+                fontSize: 12,
+                fontWeight: 700,
+                cursor: 'pointer',
+                border: active ? '1px solid #ea580c' : '1px solid #cbd5e1',
+                background: active ? 'linear-gradient(135deg, #ea580c, #f97316)' : '#ffffff',
+                color: active ? '#ffffff' : '#334155',
+                boxShadow: active ? '0 2px 8px rgba(234, 88, 12, 0.2)' : 'none',
+              }}
+            >
+              {opt.label}
+            </button>
+          );
+        })}
+      </div>
+
       {/* 4 KPI CARDS */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 12 }}>
         <div
@@ -359,7 +398,7 @@ export function ReportStudioView({
         >
           <div>
             <h2 style={{ margin: 0, fontSize: 14, fontWeight: 800, color: '#0f172a' }}>
-              Subsidiary & Holding Company Settlement Statement
+              {activeViewMeta.title}
             </h2>
             <div style={{ fontSize: 11.5, color: '#64748b', marginTop: 3, fontFamily: 'var(--font-mono-tech, monospace)' }}>
               Reference: {data?.statementRef || 'BEMS-REP-PENDING'} &bull; Period: {data ? `${data.period.from} – ${data.period.to}` : '—'}
@@ -406,8 +445,8 @@ export function ReportStudioView({
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
             <thead>
               <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                <th style={{ padding: '10px 14px', textAlign: 'left', fontSize: 10, fontWeight: 800, letterSpacing: '0.06em', color: '#64748b', textTransform: 'uppercase' }}>ENTITY NAME</th>
-                <th style={{ padding: '10px 12px', textAlign: 'left', fontSize: 10, fontWeight: 800, letterSpacing: '0.06em', color: '#64748b', textTransform: 'uppercase' }}>CODE</th>
+                <th style={{ padding: '10px 14px', textAlign: 'left', fontSize: 10, fontWeight: 800, letterSpacing: '0.06em', color: '#64748b', textTransform: 'uppercase' }}>{activeViewMeta.colLabel}</th>
+                <th style={{ padding: '10px 12px', textAlign: 'left', fontSize: 10, fontWeight: 800, letterSpacing: '0.06em', color: '#64748b', textTransform: 'uppercase' }}>{activeViewMeta.codeLabel}</th>
                 <th style={{ padding: '10px 12px', textAlign: 'right', fontSize: 10, fontWeight: 800, letterSpacing: '0.06em', color: '#64748b', textTransform: 'uppercase' }}>PAID / TOTAL TXS</th>
                 <th style={{ padding: '10px 12px', textAlign: 'right', fontSize: 10, fontWeight: 800, letterSpacing: '0.06em', color: '#64748b', textTransform: 'uppercase' }}>APPROVED (GROSS)</th>
                 <th style={{ padding: '10px 12px', textAlign: 'right', fontSize: 10, fontWeight: 800, letterSpacing: '0.06em', color: '#64748b', textTransform: 'uppercase' }}>CHARGES</th>
@@ -435,10 +474,10 @@ export function ReportStudioView({
                 filteredRows.map((row) => (
                   <tr
                     key={row.organizationId}
-                    onClick={() => onSelectBusiness?.(row.organizationId)}
+                    onClick={() => viewKey === 'ENTITIES' && onSelectBusiness?.(row.organizationId)}
                     style={{
                       borderBottom: '1px solid #f1f5f9',
-                      cursor: onSelectBusiness ? 'pointer' : 'default',
+                      cursor: viewKey === 'ENTITIES' && onSelectBusiness ? 'pointer' : 'default',
                       transition: 'background 0.12s',
                     }}
                     className="hover:bg-orange-50/40"
