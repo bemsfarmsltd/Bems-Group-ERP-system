@@ -1,6 +1,43 @@
 const fs = require('fs');
 const path = require('path');
+const { execSync } = require('child_process');
 
+// 1. Clean up any wedged old bemserp.work next-server processes (via /proc/<pid>/cwd)
+try {
+  const myPid = process.pid;
+  const myPpid = process.ppid;
+  const myCwd = process.cwd();
+  const psOut = execSync('ps -eo pid,ppid,etime,args', { encoding: 'utf8' });
+  const lines = psOut.split('\n').filter((l) => l.includes('node') || l.includes('lsnode') || l.includes('next'));
+
+  for (const line of lines) {
+    const parts = line.trim().split(/\s+/);
+    const pid = parseInt(parts[0], 10);
+    if (!pid || pid === myPid || pid === myPpid) continue;
+
+    let procCwd = '';
+    try {
+      procCwd = fs.readlinkSync(`/proc/${pid}/cwd`);
+    } catch {}
+
+    const isBemsErpFrontendNode =
+      procCwd.includes('/domains/bemserp.work/hbuilds/versions/') &&
+      !procCwd.includes('/domains/api.bemserp.work');
+
+    if (isBemsErpFrontendNode && procCwd !== myCwd) {
+      try {
+        process.kill(pid, 'SIGKILL');
+        console.log(`[patch-standalone-server] KILLED wedged bemserp.work server PID ${pid} (cwd=${procCwd})`);
+      } catch (e) {
+        console.log(`[patch-standalone-server] Failed to kill PID ${pid}: ${e.message}`);
+      }
+    }
+  }
+} catch (err) {
+  console.warn('[patch-standalone-server] Process cleanup warning:', err.message);
+}
+
+// 2. Patch .next/standalone/server.js with CloudLinux LVE thread & crash guards
 const standaloneServerPath = path.join(process.cwd(), '.next', 'standalone', 'server.js');
 
 if (fs.existsSync(standaloneServerPath)) {
