@@ -1,3 +1,7 @@
+if (!process.env.TOKIO_WORKER_THREADS) process.env.TOKIO_WORKER_THREADS = "1";
+if (!process.env.RAYON_NUM_THREADS) process.env.RAYON_NUM_THREADS = "1";
+if (!process.env.UV_THREADPOOL_SIZE) process.env.UV_THREADPOOL_SIZE = "2";
+
 import { PrismaClient } from "@prisma/client";
 
 const globalForPrisma = globalThis as unknown as {
@@ -13,10 +17,10 @@ if (
   !connectionUrl.includes("pgbouncer=true")
 ) {
   const separator = connectionUrl.includes("?") ? "&" : "?";
-  connectionUrl += `${separator}pgbouncer=true&connection_limit=15&pool_timeout=15`;
+  connectionUrl += `${separator}pgbouncer=true&connection_limit=5&pool_timeout=10&connect_timeout=10`;
 } else if (connectionUrl && !connectionUrl.includes("connection_limit=")) {
   const separator = connectionUrl.includes("?") ? "&" : "?";
-  connectionUrl += `${separator}connection_limit=15&pool_timeout=15`;
+  connectionUrl += `${separator}connection_limit=5&pool_timeout=10&connect_timeout=10`;
 }
 
 export const prisma =

@@ -1,4 +1,7 @@
 // Production startup script for Hostinger Node.js Application Manager
+process.env.TOKIO_WORKER_THREADS = process.env.TOKIO_WORKER_THREADS || "1";
+process.env.RAYON_NUM_THREADS = process.env.RAYON_NUM_THREADS || "1";
+process.env.UV_THREADPOOL_SIZE = process.env.UV_THREADPOOL_SIZE || "2";
 const { createServer } = require("http");
 const { parse } = require("url");
 const next = require("next");

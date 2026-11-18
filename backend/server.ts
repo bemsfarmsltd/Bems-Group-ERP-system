@@ -227,8 +227,9 @@ if (!process.env.VITEST) {
 
       const shutdown = async (signal: string) => {
         logger.info({ signal }, 'Shutting down backend server...');
-        await app.close();
-        await prisma.$disconnect();
+        setTimeout(() => process.exit(0), 1500).unref();
+        await app.close().catch(() => {});
+        await prisma.$disconnect().catch(() => {});
         process.exit(0);
       };
       process.on('SIGINT', () => void shutdown('SIGINT'));
