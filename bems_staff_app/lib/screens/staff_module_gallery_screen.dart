@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../models/staff_models.dart';
+import '../services/staff_api_service.dart';
+import '../services/staff_storage_service.dart';
 import '../theme/subsidiary_theme.dart';
 import 'staff_main_screen.dart';
 import 'staff_admin_chat_screen.dart';
@@ -16,8 +18,31 @@ class StaffModuleGalleryScreen extends StatefulWidget {
 }
 
 class _StaffModuleGalleryScreenState extends State<StaffModuleGalleryScreen> {
+  late StaffUser _user;
   String _searchQuery = '';
+  bool _refreshingAccess = false;
   final TextEditingController _searchController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _user = widget.user;
+    _refreshAccess();
+  }
+
+  Future<void> _refreshAccess() async {
+    if (_refreshingAccess) return;
+    setState(() => _refreshingAccess = true);
+    try {
+      final fresh = await StaffApiService.fetchFreshSessionUser(_user);
+      if (fresh != null && mounted) {
+        await StaffStorageService.saveUser(fresh);
+        setState(() => _user = fresh);
+      }
+    } finally {
+      if (mounted) setState(() => _refreshingAccess = false);
+    }
+  }
 
   @override
   void dispose() {
@@ -27,7 +52,10 @@ class _StaffModuleGalleryScreenState extends State<StaffModuleGalleryScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final modules = _getEnterpriseModules(widget.user);
+    final allowedSet = _user.staffAppModules.map((e) => e.toLowerCase()).toSet();
+    final modules = _getEnterpriseModules(_user)
+        .where((m) => allowedSet.contains(m.id.toLowerCase()))
+        .toList();
     final filtered = _searchQuery.isEmpty
         ? modules
         : modules.where((m) {
@@ -217,25 +245,66 @@ class _StaffModuleGalleryScreenState extends State<StaffModuleGalleryScreen> {
               ),
             ),
 
-            // Enterprise Modules Grid (2 Columns)
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 40),
-              sliver: SliverGrid(
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  mainAxisSpacing: 14,
-                  crossAxisSpacing: 14,
-                  childAspectRatio: 0.86,
+            // Enterprise Modules Grid (2 Columns) or Empty State
+            if (filtered.isEmpty)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
+                  child: Container(
+                    padding: const EdgeInsets.all(24),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: Column(
+                      children: [
+                        const Icon(Icons.lock_outline_rounded, size: 36, color: Color(0xFF94A3B8)),
+                        const SizedBox(height: 12),
+                        Text(
+                          _searchQuery.isNotEmpty
+                              ? 'No matching modules found'
+                              : 'No modules assigned yet',
+                          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          _searchQuery.isNotEmpty
+                              ? 'Try clearing your search filter.'
+                              : 'Ask your System Admin or HR to enable modules for your account in Control Center.',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(fontSize: 12.5, color: Color(0xFF64748B)),
+                        ),
+                        const SizedBox(height: 14),
+                        OutlinedButton.icon(
+                          onPressed: _refreshingAccess ? null : _refreshAccess,
+                          icon: const Icon(Icons.refresh_rounded, size: 16),
+                          label: Text(_refreshingAccess ? 'Checking Access...' : 'Refresh Access'),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
-                delegate: SliverChildBuilderDelegate(
-                  (context, index) {
-                    final m = filtered[index];
-                    return _buildModuleCard(m);
-                  },
-                  childCount: filtered.length,
+              )
+            else
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 40),
+                sliver: SliverGrid(
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    mainAxisSpacing: 14,
+                    crossAxisSpacing: 14,
+                    childAspectRatio: 0.86,
+                  ),
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) {
+                      final m = filtered[index];
+                      return _buildModuleCard(m);
+                    },
+                    childCount: filtered.length,
+                  ),
                 ),
               ),
-            ),
           ],
         ),
       ),

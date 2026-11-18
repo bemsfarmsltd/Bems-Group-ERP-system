@@ -203,6 +203,31 @@ class StaffApiService {
     return false;
   }
 
+  /// Fetch fresh session user (including updated staffAppModules) from /api/auth/session
+  static Future<StaffUser?> fetchFreshSessionUser(StaffUser user) async {
+    try {
+      final res = await _executeWithFailover(
+        (host) => http.get(
+          Uri.parse('$host/api/auth/session?_t=${DateTime.now().millisecondsSinceEpoch}'),
+          headers: _headers(token: user.token, employeeId: user.id),
+        ),
+        timeout: const Duration(seconds: 8),
+      );
+
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        if (data is Map<String, dynamic> && data['user'] is Map<String, dynamic>) {
+          final returned = Map<String, dynamic>.from(data['user'] as Map);
+          final modules = returned['staffAppModules'] is List
+              ? (returned['staffAppModules'] as List).map((e) => e.toString()).toList()
+              : user.staffAppModules;
+          return user.copyWith(staffAppModules: modules);
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
   /// Check version gate status against backend
   static Future<Map<String, dynamic>?> checkVersionGate() async {
     try {
@@ -797,7 +822,7 @@ class StaffApiService {
       (host) => http.post(
         Uri.parse('$host/api/auth/magic-link'),
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'email': email.trim().toLowerCase()}),
+        body: jsonEncode({'email': email.trim().toLowerCase(), 'portal': 'staff'}),
       ),
     );
 
@@ -828,6 +853,7 @@ class StaffApiService {
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'email': email.trim().toLowerCase(),
+          'portal': 'staff',
           'code': code.trim(),
           'newPassword': newPassword,
         }),

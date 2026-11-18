@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { ArrowLeft, Mail, Phone, Building2, ShieldCheck, Clock, Activity, Wallet, FileText, UserCheck } from 'lucide-react';
 import { resolveApiUrl } from '@/lib/api-client';
 import { walletMoney } from '@/components/wallet/WalletView';
+import { StaffAppModulesCard } from '@/components/control-center/StaffAppModulesCard';
 
 type DossierData = {
   profile: {
@@ -24,6 +25,7 @@ type DossierData = {
     subsidiaryName: string;
     departmentName: string;
     customAdminProfileName: string | null;
+    staffAppModules?: string[];
     verifiedBank: { bankName: string; accountNumberMasked: string; accountName: string } | null;
   };
   summary: {
@@ -230,6 +232,19 @@ export function EmployeeDossierView({
               </div>
             </div>
           </section>
+
+          {/* STAFF APP MODULE ACCESS */}
+          <StaffAppModulesCard
+            employeeId={p.id}
+            initialModules={p.staffAppModules}
+            onSaved={(modules) =>
+              setData((prev) =>
+                prev
+                  ? { ...prev, profile: { ...prev.profile, staffAppModules: modules } }
+                  : prev
+              )
+            }
+          />
 
           {/* VALUE / ACTIVITY SUMMARY */}
           <section style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 12, padding: 14 }}>

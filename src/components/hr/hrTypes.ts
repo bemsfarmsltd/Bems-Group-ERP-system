@@ -81,6 +81,7 @@ export interface HrStaffMember {
   phone?: string | null;
   status: string;
   approvalStatus: string;
+  staffAppModules?: string[];
   avatarUrl?: string | null;
   jobTitle?: string | null;
   employmentType?: string | null;

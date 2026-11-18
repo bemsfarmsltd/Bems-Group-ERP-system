@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getAuthenticatedEmployee } from '@/lib/auth';
+import { hasStaffAppModuleAccess } from '@/lib/staff-modules';
 import { resolveAuthorizedOrganizationScope } from '@/lib/organizations';
 import { prisma } from '@/lib/prisma';
 
@@ -141,6 +142,14 @@ export async function resolveProjectContext(req: Request, allowStaffPortal = fal
   if (!actor) {
     return {
       error: NextResponse.json({ error: 'Unauthorized. Please sign in.' }, { status: 401 }),
+    };
+  }
+  if (!hasStaffAppModuleAccess(actor, 'projects')) {
+    return {
+      error: NextResponse.json(
+        { error: 'Forbidden: Project Management module is not enabled for your Staff App account.' },
+        { status: 403 }
+      ),
     };
   }
 

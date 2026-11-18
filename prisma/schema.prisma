@@ -169,6 +169,9 @@ model Employee {
   customAdminTitle      String?
   customAdminProfile    CustomAdminProfile? @relation(fields: [customAdminProfileId], references: [id], onDelete: SetNull)
 
+  // Staff App Module Access (Flutter Staff App & Mobile APK)
+  staffAppModulesJson   String?   // JSON array of allowed module keys e.g. ["finance","projects"]
+
   createdAt      DateTime @default(now())
 
   authSessions   AuthSession[]

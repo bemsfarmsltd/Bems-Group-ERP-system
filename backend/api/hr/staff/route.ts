@@ -1,4 +1,6 @@
+import { requireCustomAdminHrAction } from '@/lib/hrRouteHelper';
 import { NextResponse } from 'next/server';
+import { resolveStaffAppModules } from '@/lib/staff-modules';
 import { getAuthenticatedEmployee, getHrAuthorizationScope } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { projectSafeEmployeeDto } from '@/lib/platform/read-catalog';
@@ -97,6 +99,7 @@ export async function GET(req: Request) {
         bvn: true,
         highestEducation: true,
         isOfflineStaff: true,
+        staffAppModulesJson: true,
         isAttendanceExempt: true,
         bankName: true,
         accountNumber: true,
@@ -158,6 +161,7 @@ export async function GET(req: Request) {
         phone: s.phone,
         status: s.status,
         approvalStatus: s.approvalStatus,
+        staffAppModules: resolveStaffAppModules(s.staffAppModulesJson),
         avatarUrl: s.avatarUrl,
         jobTitle: s.jobTitle,
         employmentType: s.employmentType,
@@ -228,6 +232,8 @@ export async function POST(req: Request) {
     }
 
     if (action === 'APPROVE_ONBOARDING') {
+      const denied = requireCustomAdminHrAction(actor, 'employees', 'approve_staff_signup');
+      if (denied) return denied;
       const updated = await approveEmployeeOnboarding({
         actor,
         targetEmployeeId: employeeId,
@@ -239,6 +245,8 @@ export async function POST(req: Request) {
     }
 
     if (action === 'REJECT_ONBOARDING') {
+      const denied = requireCustomAdminHrAction(actor, 'employees', 'approve_staff_signup');
+      if (denied) return denied;
       const { rejectionReason } = body;
       const updated = await rejectEmployeeOnboarding({
         actor,
@@ -251,6 +259,8 @@ export async function POST(req: Request) {
     }
 
     if (action === 'UPDATE_STATUS') {
+      const denied = requireCustomAdminHrAction(actor, 'employees', 'manage_exits');
+      if (denied) return denied;
       const { newStatus, reason } = body;
       if (!['ACTIVE', 'ON_LEAVE', 'SUSPENDED', 'TERMINATED'].includes(newStatus)) {
         return NextResponse.json({ error: 'Invalid status' }, { status: 400 });
@@ -268,6 +278,8 @@ export async function POST(req: Request) {
     }
 
     if (action === 'REQUEST_PROFILE_UPDATE') {
+      const denied = requireCustomAdminHrAction(actor, 'employees', 'edit_employee_profile');
+      if (denied) return denied;
       const { requestedFields, instructions } = body;
       if (!Array.isArray(requestedFields) || requestedFields.length === 0) {
         return NextResponse.json({ error: 'Please specify fields to update' }, { status: 400 });

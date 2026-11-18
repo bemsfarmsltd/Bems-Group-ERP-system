@@ -47,6 +47,7 @@ class StaffUser {
 
   final String avatarUrl;
   final String token;
+  final List<String> staffAppModules;
 
   const StaffUser({
     required this.id,
@@ -88,6 +89,7 @@ class StaffUser {
     this.bvnMask = '',
     this.avatarUrl = '',
     this.token = '',
+    this.staffAppModules = const ['finance'],
   });
 
   StaffUser copyWith({
@@ -107,6 +109,7 @@ class StaffUser {
     String? nextOfKinAddress,
     String? avatarUrl,
     String? token,
+    List<String>? staffAppModules,
   }) {
     return StaffUser(
       id: id,
@@ -148,6 +151,7 @@ class StaffUser {
       bvnMask: bvnMask,
       avatarUrl: avatarUrl ?? this.avatarUrl,
       token: token ?? this.token,
+      staffAppModules: staffAppModules ?? this.staffAppModules,
     );
   }
 
@@ -192,6 +196,9 @@ class StaffUser {
       bvnMask: json['bvnMask']?.toString() ?? '',
       avatarUrl: json['avatarUrl']?.toString() ?? '',
       token: json['token']?.toString() ?? '',
+      staffAppModules: json['staffAppModules'] is List
+          ? (json['staffAppModules'] as List).map((e) => e.toString()).toList()
+          : const ['finance'],
     );
   }
 
@@ -235,6 +242,7 @@ class StaffUser {
         'bvnMask': bvnMask,
         'avatarUrl': avatarUrl,
         'token': token,
+        'staffAppModules': staffAppModules,
       };
 }
 

@@ -209,6 +209,13 @@ export async function buildBackendServer() {
     });
   });
 
+  logger.info('Step 1.5: ensuring idempotent schema columns');
+  try {
+    await prisma.$executeRawUnsafe('ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "staffAppModulesJson" TEXT;');
+  } catch (err) {
+    logger.warn({ err }, 'Could not ensure Employee.staffAppModulesJson column at startup');
+  }
+
   logger.info('Step 2: registering Next API routes onto Fastify');
   await registerNextApiPlugin(app, registerAllNextApiRoutes);
   registerSsrAndFileRoutes(app);

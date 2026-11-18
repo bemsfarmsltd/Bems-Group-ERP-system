@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { sanitizeUserError } from "@/lib/safe-error";
 import { prisma } from "@/lib/prisma";
 import { getAuthenticatedEmployee, hasAnyRole, hasEmployeePermission } from "@/lib/auth";
+import { hasStaffAppModuleAccess } from "@/lib/staff-modules";
 import { toSystemRequestId } from "@/lib/request-id";
 import { notifyApprovalRequired } from "@/lib/notifications/bridge";
 import { createWithUniqueRequestNumber } from "@/lib/request-number";
@@ -17,6 +18,9 @@ export async function GET(request: Request) {
     const actor = await getAuthenticatedEmployee(request);
     if (!actor) {
       return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+    }
+    if (!hasStaffAppModuleAccess(actor, "finance")) {
+      return NextResponse.json({ error: "Forbidden: Financial Management module is not enabled for your Staff App account." }, { status: 403 });
     }
     const { searchParams } = new URL(request.url);
 
@@ -251,6 +255,9 @@ export async function POST(request: Request) {
 
     if (!actor) {
       return NextResponse.json({ error: "Sign in to submit a fund request." }, { status: 401 });
+    }
+    if (!hasStaffAppModuleAccess(actor, "finance")) {
+      return NextResponse.json({ error: "Forbidden: Financial Management module is not enabled for your Staff App account." }, { status: 403 });
     }
     if (hasAnyRole(actor, ["GMD", "SYSTEM_ADMIN", "SUPER_ADMIN"])) {
       return NextResponse.json({ error: "The Group Managing Director and Super admin accounts are executive governance roles and do not submit fund requests." }, { status: 403 });

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getAuthenticatedEmployee, hasAdminOrCustomPermission } from '@/lib/auth';
 import { inferAuditModule } from '@/lib/audit-forensics';
+import { resolveStaffAppModules } from '@/lib/staff-modules';
 
 export const dynamic = 'force-dynamic';
 
@@ -171,6 +172,7 @@ export async function GET(request: Request, context: { params: Promise<{ employe
         subsidiaryName: emp.assignments[0]?.subsidiary?.legalName || 'BEMS Group',
         departmentName: emp.assignments[0]?.department?.name || 'General',
         customAdminProfileName: emp.customAdminProfile?.name || null,
+        staffAppModules: resolveStaffAppModules(emp.staffAppModulesJson),
         verifiedBank: bankAccount
           ? {
               bankName: bankAccount.bankCode,

@@ -9,6 +9,11 @@ import {
   isReadOnlyCustomAdmin,
   parsePermissionsJson,
 } from '@/lib/admin-permissions';
+import {
+  type StaffAppModuleKey,
+  hasStaffAppModuleAccess,
+  resolveStaffAppModules,
+} from '@/lib/staff-modules';
 import { createHash, randomBytes, scrypt as nodeScrypt, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import { cookies, headers } from 'next/headers';
@@ -30,6 +35,7 @@ export type AuthenticatedEmployee = {
   customAdminProfileId?: string | null;
   customAdminTitle?: string | null;
   customAdminPermissions?: CustomAdminPermissionsMap | null;
+  staffAppModules?: StaffAppModuleKey[];
 };
 
 export function normalizeSystemRole(
@@ -73,6 +79,9 @@ function buildAuthenticatedEmployee(employee: any): AuthenticatedEmployee {
     customAdminProfileId: isGmd ? null : employee.customAdminProfileId || null,
     customAdminTitle: isGmd ? null : employee.customAdminTitle || employee.customAdminProfile?.name || null,
     customAdminPermissions: permissions,
+    staffAppModules: Array.isArray(employee.staffAppModules)
+      ? employee.staffAppModules
+      : resolveStaffAppModules(employee.staffAppModulesJson),
   };
 }
 
@@ -137,6 +146,26 @@ export function invalidateSessionCache(token?: string) {
   SESSION_CACHE.delete(hashToken(token));
 }
 
+export async function isApprovalLoginLocked(employee: { id: string; role: string }) {
+  if (employee.role !== 'GMD') return false;
+  const credential = await prisma.walletApprovalCredential.findUnique({
+    where: { employeeId: employee.id },
+    select: { lockedAt: true, recoveryUntil: true },
+  });
+  return Boolean(credential?.lockedAt && (!credential.recoveryUntil || credential.recoveryUntil <= new Date()));
+}
+
+export async function passwordMatchesApprovalPin(
+  tx: import('@prisma/client').Prisma.TransactionClient, employeeId: string, password: string
+) {
+  await tx.$queryRaw`SELECT "id" FROM "Employee" WHERE "id"=${employeeId} FOR UPDATE`;
+  if (!/^\d{8}$/.test(password)) return false;
+  const credential = await tx.walletApprovalCredential.findUnique({
+    where: { employeeId }, select: { pinHash: true },
+  });
+  return credential ? verifyPassword(password, credential.pinHash) : false;
+}
+
 export async function getAuthenticatedEmployee(
   req?: Request,
   options?: { disallowServiceToken?: boolean; allowServiceToken?: boolean }
@@ -196,7 +225,7 @@ export async function getAuthenticatedEmployee(
     });
     if (session && session.expiresAt > new Date()) {
       const employee = session.employee;
-      if (canAccessEmployeePortal(employee)) {
+      if (canAccessEmployeePortal(employee) && !(await isApprovalLoginLocked(employee))) {
         return buildAuthenticatedEmployee(employee);
       }
     }
@@ -240,7 +269,7 @@ export async function getAuthenticatedEmployee(
       }
       if (session && session.expiresAt > new Date()) {
         const employee = session.employee;
-        if (canAccessEmployeePortal(employee)) {
+        if (canAccessEmployeePortal(employee) && !(await isApprovalLoginLocked(employee))) {
           const authEmp = buildAuthenticatedEmployee(employee);
           // Administrative grants and executive seat changes must be read on each request.
           if (authEmp.role === 'STAFF' && !authEmp.customAdminProfileId) {
@@ -299,6 +328,9 @@ export function publicEmployee(employee: AuthenticatedEmployee | any) {
     customAdminProfileId: isGmd ? null : employee.customAdminProfileId || null,
     customAdminTitle: isGmd ? null : employee.customAdminTitle || employee.customAdminProfile?.name || null,
     customAdminPermissions: resolveEmployeeCustomPermissions(employee),
+    staffAppModules: Array.isArray(employee.staffAppModules)
+      ? employee.staffAppModules
+      : resolveStaffAppModules(employee.staffAppModulesJson),
   };
 }
 

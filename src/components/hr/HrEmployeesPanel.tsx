@@ -30,6 +30,7 @@ import {
   HrSubsidiarySummary,
   formatNairaMinor,
 } from './hrTypes';
+import { StaffAppModulesCard } from '@/components/control-center/StaffAppModulesCard';
 
 const PROFILE_TABS = [
   'Overview',
@@ -945,6 +946,18 @@ export default function HrEmployeesPanel({
 
               {activeProfileTab === 'Overview' && (
                 <div className="space-y-4">
+                  {/* Staff App Module Access */}
+                  <StaffAppModulesCard
+                    employeeId={selectedStaff.id}
+                    initialModules={selectedStaff.staffAppModules}
+                    onSaved={(modules) => {
+                      setSelectedStaff((prev) => (prev ? { ...prev, staffAppModules: modules } : prev));
+                      setStaff((prev) =>
+                        prev.map((item) => (item.id === selectedStaff.id ? { ...item, staffAppModules: modules } : item))
+                      );
+                    }}
+                  />
+
                   {/* Quick Stat Strip with Icons & Color Accents */}
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs border-t-2" style={{ borderTopColor: activeBrandColor }}>

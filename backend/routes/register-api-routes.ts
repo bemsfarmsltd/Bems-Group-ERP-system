@@ -104,6 +104,7 @@ import * as route_93 from "../api/control-center/admin-onboarding/route";
 import * as route_94 from "../api/control-center/admin-profiles/route";
 import * as route_95 from "../api/control-center/ai-access/route";
 import * as walletApprovalSecurityRoute from "../api/control-center/wallet-approval-security/route";
+import * as staffModulesRoute from "../api/control-center/staff-modules/route";
 import * as route_96 from "../api/control-center/fund-approval-policy/route";
 import * as route_97 from "../api/control-center/route";
 import * as route_98 from "../api/cron/morning-digest/route";
@@ -331,6 +332,7 @@ export function registerAllNextApiRoutes(app: FastifyInstance): void {
   mountNextRoute(app, "/api/control-center/admin-profiles", route_94 as unknown as NextRouteModule);
   mountNextRoute(app, "/api/control-center/ai-access", route_95 as unknown as NextRouteModule);
   mountNextRoute(app, "/api/control-center/wallet-approval-security", walletApprovalSecurityRoute as unknown as NextRouteModule);
+  mountNextRoute(app, "/api/control-center/staff-modules", staffModulesRoute as unknown as NextRouteModule);
   mountNextRoute(app, "/api/control-center/fund-approval-policy", route_96 as unknown as NextRouteModule);
   mountNextRoute(app, "/api/control-center", route_97 as unknown as NextRouteModule);
   mountNextRoute(app, "/api/cron/morning-digest", route_98 as unknown as NextRouteModule);

@@ -1,10 +1,11 @@
 import { normalizeSystemRole } from '@/lib/auth';
-import { type CustomAdminPermissionsMap, hasCategoryAccess, parsePermissionsJson } from '@/lib/admin-permissions';
+import { type CustomAdminPermissionsMap, getAllowedSubsidiariesForModule, hasActionPermission, parsePermissionsJson } from '@/lib/admin-permissions';
 import { isStaffAccount } from '@/lib/portal-access';
 import {walletWorkerStatus} from './runtime-state';
 import { canActorApproveFunds, canApproveWalletRelease, financialApproverLabel } from '@/lib/gmd-access';
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { Prisma } from '@prisma/client';
+import { hasStaffAppModuleAccess } from '@/lib/staff-modules';
 import { prisma } from '@/lib/prisma';
 
 export type WalletActor = {
@@ -133,6 +134,13 @@ export async function createFundedEnvelopeTx(tx:Tx,actor:WalletActor,input:Envel
     return { id, organizationId: input.organizationId, label, allocatedMinor: amount.toString(), remainingMinor: amount.toString() };
 }
 export async function readOwnWallet(actor: WalletActor) {
+  if (!hasStaffAppModuleAccess(actor as any, 'finance')) {
+    throw new WalletError(
+      'MODULE_DISABLED',
+      'Financial Management module is not enabled for your Staff App account.',
+      403
+    );
+  }
   // Read-only review stays available while monetary execution is disabled.
   return prisma.$transaction(async tx => {
     const employee = await liveWalletActor(tx, actor);
@@ -187,26 +195,54 @@ export async function readFundingDashboard(actor: WalletActor) {
   // Current-account/role checks below also apply in read-only review mode.
   return prisma.$transaction(async tx => {
     const emp = await liveWalletActor(tx, actor);
-    let canViewFunding = ['GMD', 'SUPER_ADMIN', 'SYSTEM_ADMIN'].includes(actor.role);
-    if (!canViewFunding && normalizeSystemRole(emp.role, emp.customAdminProfileId) === 'CUSTOM_ADMIN') {
-      let perms = actor.customAdminPermissions || null;
-      if (!perms && emp.customAdminProfileId) {
-        const prof = await tx.customAdminProfile.findUnique({
-          where: { id: emp.customAdminProfileId },
-          select: { permissionsJson: true },
-        });
-        perms = parsePermissionsJson(prof?.permissionsJson);
+    const role = normalizeSystemRole(emp.role, emp.customAdminProfileId);
+    if (role === 'CUSTOM_ADMIN') {
+      const profile = emp.customAdminProfileId ? await tx.customAdminProfile.findUnique({
+        where: { id: emp.customAdminProfileId },
+        select: { permissionsJson: true },
+      }) : null;
+      const permissions = parsePermissionsJson(profile?.permissionsJson);
+      if (!hasActionPermission(role, permissions, 'finance', 'Wallets & funded budgets', 'view_wallets')) {
+        throw new WalletError('NOT_PERMITTED', 'Wallet viewing permission is required.', 403);
       }
-      canViewFunding =
-        hasCategoryAccess('CUSTOM_ADMIN', perms, 'finance', 'Wallets & funded budgets') ||
-        hasCategoryAccess('CUSTOM_ADMIN', perms, 'finance', 'Overview');
+
+      const allowed = getAllowedSubsidiariesForModule(role, permissions, 'finance');
+      const organizations = await tx.organization.findMany({
+        where: { status: 'ACTIVE', defaultCurrency: 'NGN', ...(allowed === 'ALL' ? {} : { id: { in: allowed } }) },
+        select: { id: true, code: true, legalName: true, type: true },
+      });
+      const organizationIds = organizations.map(({ id }) => id);
+      const envelopes = organizationIds.length ? await tx.$queryRaw<unknown[]>`
+        SELECT e."id", e."organizationId", e."label", e."allocatedMinor", e."remainingMinor",
+               e."status", e."createdAt", o."legalName" AS "organizationName"
+        FROM "WalletBudgetEnvelope" e JOIN "Organization" o ON o."id" = e."organizationId"
+        WHERE e."organizationId" IN (${Prisma.join(organizationIds)})
+        ORDER BY e."createdAt" DESC LIMIT 100
+      ` : [];
+      const staffWallets = organizationIds.length ? await tx.$queryRaw<unknown[]>`
+        SELECT e."id", e."legalName", e."employeeNumber", e."role", c."organizationId" AS "subsidiaryId",
+               o."legalName" AS "organizationName", sum(c."availableMinor")::bigint AS "availableMinor",
+               sum(c."heldMinor")::bigint AS "heldMinor", sum(c."settledMinor")::bigint AS "settledMinor"
+        FROM "WalletCreditLot" c JOIN "Employee" e ON e."id" = c."employeeId"
+        JOIN "Organization" o ON o."id" = c."organizationId"
+        WHERE c."organizationId" IN (${Prisma.join(organizationIds)})
+        GROUP BY e."id", c."organizationId", o."legalName"
+        ORDER BY "availableMinor" DESC, e."legalName" LIMIT 100
+      ` : [];
+      return walletJson({
+        walletMode: walletEnabled(), scopedReadOnly: true, funding: null, envelopes, organizations, staffWallets,
+        proposals: [], requests: [], vendors: [], transfers: [], payrollBatches: [], issues: [], journals: [],
+        approvalLabel: financialApproverLabel(), canApprove: false,
+      });
     }
-    if (!canViewFunding) throw new WalletError('NOT_PERMITTED', 'Executive financial visibility is required.', 403);
+    if (role !== 'GMD' && role !== 'SYSTEM_ADMIN') {
+      throw new WalletError('NOT_PERMITTED', 'Wallet viewing permission is required.', 403);
+    }
     const envelopes = await tx.$queryRaw<any[]>`SELECT e.*, o."legalName" AS "organizationName" FROM "WalletBudgetEnvelope" e JOIN "Organization" o ON o."id" = e."organizationId" ORDER BY e."createdAt" DESC LIMIT 100`;
     let funding;
     try { funding = await fundingState(tx); } catch (error) { if (error instanceof WalletError && error.code === 'FUNDING_NOT_CONFIGURED') funding = null; else throw error; }
     const proposals = await tx.$queryRaw<any[]>`SELECT p."id",p."sourceType",p."sourceId",p."amountMinor",p."category",p."confirmationHash",p."expiresAt",p."conversationId" FROM "WalletReleaseProposal" p WHERE p."status"='PENDING' AND p."expiresAt">now() ORDER BY p."createdAt" DESC LIMIT 100`;
-    for (const p of proposals) p.items = await tx.$queryRaw<any[]>`SELECT i.*, COALESCE(e."legalName",v."name") AS "employeeName",COALESCE(e."employeeNumber",'Vendor') AS "employeeNumber", o."legalName" AS "organizationName", r."requestNumber", r."title" AS "requestTitle", b."label" AS "envelopeLabel" FROM "WalletReleaseItem" i LEFT JOIN "Employee" e ON e."id"=i."employeeId" LEFT JOIN "Vendor" v ON v."id"=i."vendorId" JOIN "Organization" o ON o."id"=i."organizationId" JOIN "WalletBudgetEnvelope" b ON b."id"=i."envelopeId" LEFT JOIN "ExpenditureRequest" r ON i."sourceType"='REQUEST' AND r."id"=i."sourceId" WHERE i."proposalId"=${p.id} ORDER BY e."legalName",i."organizationId"`;
+    for (const p of proposals) p.items = await tx.$queryRaw<any[]>`SELECT i."id",i."sourceType",i."sourceId",i."employeeId",i."vendorId",i."organizationId",i."envelopeId",i."amountMinor",i."category", COALESCE(e."legalName",v."name") AS "employeeName",COALESCE(e."employeeNumber",'Vendor') AS "employeeNumber", o."legalName" AS "organizationName", r."requestNumber", r."title" AS "requestTitle", b."label" AS "envelopeLabel" FROM "WalletReleaseItem" i LEFT JOIN "Employee" e ON e."id"=i."employeeId" LEFT JOIN "Vendor" v ON v."id"=i."vendorId" JOIN "Organization" o ON o."id"=i."organizationId" JOIN "WalletBudgetEnvelope" b ON b."id"=i."envelopeId" LEFT JOIN "ExpenditureRequest" r ON i."sourceType"='REQUEST' AND r."id"=i."sourceId" WHERE i."proposalId"=${p.id} ORDER BY e."legalName",i."organizationId"`;
     for(const p of proposals){const r=p.sourceType==='REQUEST'?await tx.expenditureRequest.findUnique({where:{id:p.sourceId},select:{title:true,justification:true,requestNumber:true}}):null;const b=p.sourceType==='PAYROLL_BATCH'?await tx.payrollBatch.findUnique({where:{id:p.sourceId},select:{period:{select:{year:true,month:true}}}}):null;p.title=r?.title||(b?`Salary ${b.period.year}-${b.period.month}`:p.sourceType==='REQUEST_BATCH'?'Staff requisition batch':'Payment release');p.purpose=r?.justification||(p.sourceType==='REQUEST_BATCH'?`${p.items.length} staff requisitions`:'Approved net salary');p.requestNumber=r?.requestNumber;}
     const payrollBatches = await tx.payrollBatch.findMany({ where: { status: { in: ['SUBMITTED','APPROVED'] }, bulkFundedAt: null }, select: { id:true,totalNetMinor:true,version:true,period:{select:{year:true,month:true}},items:{select:{employeeId:true,netMinor:true,allocations:{select:{subsidiaryId:true}},employee:{select:{legalName:true}}}} }, take:50 });
     const issues = await tx.$queryRaw<any[]>`SELECT "id","reference","code","detail","createdAt" FROM "WalletReconciliationIssue" WHERE "resolvedAt" IS NULL ORDER BY "createdAt" DESC LIMIT 100`;
