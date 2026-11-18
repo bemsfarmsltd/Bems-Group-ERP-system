@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getAuthenticatedEmployee, getHrAuthorizationScope } from '@/lib/auth';
+import { getAuthenticatedEmployee, getHrAuthorizationScope, hasEmployeePermission, type AuthenticatedEmployee } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 
 export async function resolveHrContext(req: Request) {
@@ -26,13 +26,17 @@ export async function resolveHrContext(req: Request) {
       : []
     : hrScope.subsidiaryIds;
 
+  if (requestedSubId && allowedSubIds.length === 0) {
+    return { error: NextResponse.json({ error: 'Subsidiary is outside your HR scope.' }, { status: 403 }) };
+  }
+
   const useSubFilter = Boolean(requestedSubId) || !hrScope.isGlobal;
   const orgWhere = useSubFilter ? { organizationId: { in: allowedSubIds } } : {};
 
   const defaultOrg = await prisma.organization.findFirst({
     where: requestedSubId
       ? { id: requestedSubId }
-      : { status: 'ACTIVE' },
+      : { status: 'ACTIVE', ...(hrScope.isGlobal ? {} : { id: { in: allowedSubIds } }) },
     orderBy: { type: 'asc' },
     select: { id: true },
   });
@@ -46,6 +50,12 @@ export async function resolveHrContext(req: Request) {
     orgWhere,
     defaultOrgId: requestedSubId || defaultOrg?.id || allowedSubIds[0] || '',
   };
+}
+
+export function requireCustomAdminHrAction(actor: AuthenticatedEmployee, category: string, action: string) {
+  if (actor.role === 'CUSTOM_ADMIN' && !hasEmployeePermission(actor, 'hr', category, action)) {
+    return NextResponse.json({ error: 'This action is outside your HR permissions.' }, { status: 403 });
+  }
 }
 
 export function canUseSubFilter(hrScope: { isGlobal: boolean; subsidiaryIds: string[] }, orgId: string) {
