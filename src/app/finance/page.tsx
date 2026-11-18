@@ -30,7 +30,7 @@ import ExecutiveBriefingClient from "../briefing/ExecutiveBriefingClient";
 import { RequestDossierModal, type RequestDossier } from "@/components/requests/RequestDossierModal";
 import { RequestChatModal } from "@/components/requests/RequestChatModal";
 import { StaffAdminChatModal } from "@/components/chat/StaffAdminChatModal";
-import { getAllowedSubsidiariesForModule, hasCategoryAccess, hasModuleAccess, type CustomAdminPermissionsMap } from "@/lib/admin-permissions";
+import { getAllowedSubsidiariesForModule, hasActionPermission, hasCategoryAccess, hasModuleAccess, type CustomAdminPermissionsMap } from "@/lib/admin-permissions";
 import {
   AccountabilityModule as LiveAccountabilityModule,
   AnalyticsBIPage as LiveAnalyticsBIPage,
@@ -1754,7 +1754,8 @@ function RoleOverviewModule({role,business,user,cases,setActive,setNotice,onRole
           <p>Real-time expenditure pipeline, cash run-rate, and accountability governance across {business.name}.</p>
         </div>
       </div>
-      <WalletDashboardSummary onOpen={() => setActive("Wallets & funded budgets")} />
+      {(user.role !== 'CUSTOM_ADMIN' || hasActionPermission(user.role, user.customAdminPermissions, 'finance', 'Wallets & funded budgets', 'view_wallets')) &&
+        <WalletDashboardSummary onOpen={() => setActive("Wallets & funded budgets")} />}
       <ModernBentoDashboard
         role={role}
         businessName={business.name}
@@ -3254,7 +3255,9 @@ function AppWorkspace({user,onSignOut,onAddBusiness,onEditBusiness,businesses:ra
           .map((group) => ({
             ...group,
             items: group.items.filter(([name]) =>
-              hasCategoryAccess(
+              name === 'Wallets & funded budgets' && safeUser.role === 'CUSTOM_ADMIN'
+                ? hasActionPermission(safeUser.role, safeUser.customAdminPermissions, 'finance', name, 'view_wallets')
+                : hasCategoryAccess(
                 safeUser.role,
                 (safeUser as any).customAdminPermissions,
                 'finance',
@@ -3337,7 +3340,7 @@ function AppWorkspace({user,onSignOut,onAddBusiness,onEditBusiness,businesses:ra
     }
     if (
       target === 'Wallets & funded budgets' &&
-      (hasCategoryAccess(safeUser.role, safeUser.customAdminPermissions, 'finance', 'Wallets & funded budgets') ||
+      (hasActionPermission(safeUser.role, safeUser.customAdminPermissions, 'finance', 'Wallets & funded budgets', 'view_wallets') ||
         ['GMD', 'SUPER_ADMIN', 'SYSTEM_ADMIN'].includes(safeUser.role))
     ) {
       return (
@@ -3352,12 +3355,7 @@ function AppWorkspace({user,onSignOut,onAddBusiness,onEditBusiness,businesses:ra
     }
     if (target === 'My wallet' && safeUser.role === 'STAFF') return <WalletView brandColor={activeBrandColor} />;
 
-    if (isStaff) {
-      if (typeof window !== 'undefined') {
-        window.location.href = '/staff-app/index.html';
-      }
-      return null;
-    }
+    if (isStaff) return null;
 
 
     if (gmdAccess) {
@@ -4328,7 +4326,7 @@ export default function Home() {
 
   useEffect(() => {
     if (authStatus === 'signed-in' && user?.role === 'STAFF' && typeof window !== 'undefined') {
-      window.location.href = '/staff-app/index.html';
+      window.location.replace('/staff-app/index.html');
     }
   }, [authStatus, user]);
 
@@ -4343,7 +4341,7 @@ export default function Home() {
     setStatus('ready');
     setAuthStatus('signed-in');
     if (u.role === 'STAFF') {
-      window.location.href = '/staff';
+      window.location.href = '/staff-app/index.html';
       return;
     }
     setShowAiEntry(true);

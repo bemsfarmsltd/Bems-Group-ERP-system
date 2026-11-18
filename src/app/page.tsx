@@ -91,10 +91,83 @@ export default function RootPage() {
 
   const upperRole = String(user.role || '').toUpperCase();
   if (upperRole === 'STAFF') {
-    if (typeof window !== 'undefined') {
-      window.location.replace('/staff');
-    }
-    return null;
+    const handleSwitchToAdmin = async () => {
+      try {
+        await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+      } catch {}
+      setUser(null);
+      setAuthStatus('unauthenticated');
+    };
+
+    return (
+      <main
+        style={{
+          minHeight: '100vh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: '#f8fafc',
+          padding: 24,
+        }}
+      >
+        <div
+          style={{
+            width: '100%',
+            maxWidth: 440,
+            background: '#ffffff',
+            border: '1px solid #e2e8f0',
+            borderRadius: 16,
+            padding: 28,
+            boxShadow: '0 8px 24px rgba(15, 23, 42, 0.06)',
+          }}
+        >
+          <div style={{ fontSize: 12, fontWeight: 700, color: '#ea580c', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+            BEMS Staff Session Active
+          </div>
+          <h1 style={{ margin: '8px 0 6px', fontSize: 20, fontWeight: 800, color: '#0f172a' }}>
+            Signed in as {user.legalName || 'Staff'}
+          </h1>
+          <p style={{ margin: '0 0 20px', fontSize: 13.5, color: '#475569', lineHeight: 1.5 }}>
+            Your browser currently holds a Staff session. Continue directly to the BEMS Staff App, or sign out to log into the Admin Control Center.
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <a
+              href="/staff-app/index.html"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                height: 42,
+                borderRadius: 10,
+                background: '#ea580c',
+                color: '#ffffff',
+                fontSize: 14,
+                fontWeight: 700,
+                textDecoration: 'none',
+              }}
+            >
+              Open Staff App
+            </a>
+            <button
+              type="button"
+              onClick={handleSwitchToAdmin}
+              style={{
+                height: 42,
+                borderRadius: 10,
+                background: '#ffffff',
+                color: '#0f172a',
+                border: '1px solid #cbd5e1',
+                fontSize: 14,
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              Sign Out &amp; Switch to Admin
+            </button>
+          </div>
+        </div>
+      </main>
+    );
   }
 
   const isAdminEntry =
