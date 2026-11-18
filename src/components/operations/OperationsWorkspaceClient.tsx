@@ -3,7 +3,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Plus, RefreshCw, X } from 'lucide-react';
-import '@/app/connect.css';
 import { resolveApiUrl } from '@/lib/api-client';
 import { OperationsPhasesPanel } from '@/components/operations/OperationsPhasesPanel';
 
@@ -184,11 +183,11 @@ export default function OperationsWorkspaceClient({ actorName, actorRole }: { ac
       if (!ovRes.ok) throw new Error(ovJson?.error || 'Could not load Operations Command Centre.');
       setData(ovJson);
 
-      if (!woForm.organizationId && ovJson.subsidiaries?.[0]?.id) {
+      if (ovJson.subsidiaries?.[0]?.id) {
         const firstSub = ovJson.subsidiaries[0].id;
-        setWoForm((prev) => ({ ...prev, organizationId: prev.organizationId || firstSub }));
-        setSiteForm((prev) => ({ ...prev, organizationId: prev.organizationId || firstSub }));
-        setServiceForm((prev) => ({ ...prev, organizationId: prev.organizationId || firstSub }));
+        setWoForm((prev) => (prev.organizationId ? prev : { ...prev, organizationId: firstSub }));
+        setSiteForm((prev) => (prev.organizationId ? prev : { ...prev, organizationId: firstSub }));
+        setServiceForm((prev) => (prev.organizationId ? prev : { ...prev, organizationId: firstSub }));
       }
 
       if (dispRes.ok) {
@@ -204,7 +203,7 @@ export default function OperationsWorkspaceClient({ actorName, actorRole }: { ac
     } finally {
       setLoading(false);
     }
-  }, [orgFilter, siteFilter, statusFilter, priorityFilter, woForm.organizationId]);
+  }, [orgFilter, siteFilter, statusFilter, priorityFilter]);
 
   useEffect(() => {
     void loadAll();
@@ -359,12 +358,14 @@ export default function OperationsWorkspaceClient({ actorName, actorRole }: { ac
     }
   };
 
+  const safeActorName = String(actorName || 'Operations User').trim() || 'Operations User';
+  const safeActorRole = String(actorRole || 'ADMIN');
   const activeSub = (data?.subsidiaries || []).find((s) => s.id === orgFilter) || null;
   const activeBusinessName = activeSub ? activeSub.legalName : 'BEMS Group';
   const activeBrandColor = activeSub?.brandColor || '#ea580c';
   const activeLogoUrl = activeSub?.logoUrl || '/bems-group-logo.png?v=20261024';
-  const initials = actorName
-    .split(' ')
+  const initials = safeActorName
+    .split(/\s+/)
     .filter(Boolean)
     .slice(0, 2)
     .map((p) => p[0]?.toUpperCase())
@@ -681,7 +682,7 @@ export default function OperationsWorkspaceClient({ actorName, actorRole }: { ac
 
             <div
               className="user-pill"
-              title={`${actorName} (${actorRole})`}
+              title={`${safeActorName} (${safeActorRole})`}
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -760,12 +761,12 @@ export default function OperationsWorkspaceClient({ actorName, actorRole }: { ac
           {activeTab === 'command' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(175px, 1fr))', gap: 12 }}>
-                <KpiCard label="Open Work Orders" value={data?.kpis.openCount ?? 0} sub="Awaiting execution" color="#0284c7" />
-                <KpiCard label="In Progress" value={data?.kpis.inProgressCount ?? 0} sub="Active field/office work" color="#ea580c" />
-                <KpiCard label="SLA Overdue" value={data?.kpis.overdueCount ?? 0} sub="Past due target" color="#dc2626" />
-                <KpiCard label="Blocked" value={data?.kpis.blockedCount ?? 0} sub="Needs escalation" color="#b91c1c" />
-                <KpiCard label="Today's Dispatches" value={data?.kpis.todayDispatchesCount ?? 0} sub={`${data?.kpis.activeSitesCount ?? 0} active sites`} color="#4f46e5" />
-                <KpiCard label="Completed / Closed" value={data?.kpis.completedCount ?? 0} sub={`${data?.kpis.pendingApprovalsCount ?? 0} pending approvals`} color="#059669" />
+                <KpiCard label="Open Work Orders" value={data?.kpis?.openCount ?? 0} sub="Awaiting execution" color="#0284c7" />
+                <KpiCard label="In Progress" value={data?.kpis?.inProgressCount ?? 0} sub="Active field/office work" color="#ea580c" />
+                <KpiCard label="SLA Overdue" value={data?.kpis?.overdueCount ?? 0} sub="Past due target" color="#dc2626" />
+                <KpiCard label="Blocked" value={data?.kpis?.blockedCount ?? 0} sub="Needs escalation" color="#b91c1c" />
+                <KpiCard label="Today's Dispatches" value={data?.kpis?.todayDispatchesCount ?? 0} sub={`${data?.kpis?.activeSitesCount ?? 0} active sites`} color="#4f46e5" />
+                <KpiCard label="Completed / Closed" value={data?.kpis?.completedCount ?? 0} sub={`${data?.kpis?.pendingApprovalsCount ?? 0} pending approvals`} color="#059669" />
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.5fr) minmax(300px, 1fr)', gap: 16 }}>

@@ -25,5 +25,11 @@ export default async function OperationsPage() {
     redirect('/');
   }
 
-  return <OperationsWorkspaceClient actorName={actor.legalName} actorRole={actor.role} />;
+  const resolvedActorName =
+    (actor as unknown as { fullName?: string; name?: string; legalName?: string }).fullName ||
+    (actor as unknown as { name?: string }).name ||
+    actor.legalName ||
+    'Operations User';
+
+  return <OperationsWorkspaceClient actorName={resolvedActorName} actorRole={actor.role || 'ADMIN'} />;
 }
