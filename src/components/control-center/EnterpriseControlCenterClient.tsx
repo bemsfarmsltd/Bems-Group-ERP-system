@@ -26,6 +26,7 @@ import { WalletApprovalSecurityCard } from '@/components/control-center/WalletAp
 import { FundApprovalPolicyCard } from '@/components/control-center/FundApprovalPolicyCard';
 import { RecurringAutoPayPolicyCard } from '@/components/control-center/RecurringAutoPayPolicyCard';
 import { SubsidiaryPortfolioView } from '@/components/dashboard/gmd/SubsidiaryPortfolioView';
+import { NotificationCentrePanel } from '@/components/notifications/NotificationCentrePanel';
 import { hasCategoryAccess } from '@/lib/admin-permissions';
 import {
   AuditLogsModule as LiveAuditLogsModule,
@@ -39,7 +40,7 @@ import { AmbientBottomAiBar } from '@/components/ai/AmbientBottomAiBar';
 import { AiFinancialManagerDrawer } from '@/components/ai/AiFinancialManagerDrawer';
 import { notifyAiInteraction } from '@/components/ai/AiScreenEdgeGlow';
 
-type ControlSection =
+export type ControlSection =
   | 'overview'
   | 'onboarding'
   | 'ai_control'
@@ -55,15 +56,26 @@ const NAV_ITEMS: Array<{ id: ControlSection; label: string; subtitle: string; ic
   { id: 'onboarding', label: 'Admin Onboarding', subtitle: 'GMD & Super Admin invitations', icon: UserPlus },
   { id: 'wallet_approval', label: 'Wallet Approvals', subtitle: 'Approvers, PIN recovery and email OTP', icon: ShieldCheck },
   { id: 'ai_control', label: 'AI Access Control', subtitle: '2-layer AI policy & governance', icon: Bot },
-  { id: 'notifications', label: 'Notifications', subtitle: 'WhatsApp, Slack & alert channels', icon: Bell },
+  { id: 'notifications', label: 'Notifications', subtitle: 'Notification Centre & alert channels', icon: Bell },
   { id: 'data_retention', label: 'Data & Retention', subtitle: 'Audit archival & data retention', icon: Database },
   { id: 'mobile_apps', label: 'Mobile Apps', subtitle: 'Staff & Executive APK releases', icon: Smartphone },
   { id: 'org_structure', label: 'Subsidiaries & Depts', subtitle: 'Shared org units across modules', icon: Building2 },
   { id: 'audit_trail', label: 'System Audit Log', subtitle: 'Cross-module security & audit trail', icon: ShieldCheck },
 ];
 
-export default function EnterpriseControlCenterClient({ openWalletApprovals = false }: { openWalletApprovals?: boolean }) {
-  const [section, setSection] = useState<ControlSection>(openWalletApprovals ? 'wallet_approval' : 'overview');
+export default function EnterpriseControlCenterClient({
+  openWalletApprovals = false,
+  initialSection,
+  initialNotificationCategory = 'ALL',
+}: {
+  openWalletApprovals?: boolean;
+  initialSection?: ControlSection;
+  initialNotificationCategory?: string;
+}) {
+  const [section, setSection] = useState<ControlSection>(
+    initialSection || (openWalletApprovals ? 'wallet_approval' : 'overview')
+  );
+  const [notificationsTab, setNotificationsTab] = useState<'centre' | 'channels'>('centre');
   const [collapsed, setCollapsed] = useState(true);
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<any>(null);
@@ -585,13 +597,64 @@ export default function EnterpriseControlCenterClient({ openWalletApprovals = fa
           {section === 'ai_control' && <AiAccessControlPanel setNotice={setNotice} />}
 
           {section === 'notifications' && (
-            <LiveWorkspaceSettingsModule
-              key="Notifications"
-              businessName="BEMS Group"
-              setNotice={(msg) => setNotice(msg)}
-              initialSection="Notifications"
-              standalone
-            />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div
+                style={{
+                  display: 'inline-flex',
+                  alignSelf: 'flex-start',
+                  gap: 6,
+                  padding: 4,
+                  borderRadius: 12,
+                  background: '#ffffff',
+                  border: '1px solid #e2e8f0',
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => setNotificationsTab('centre')}
+                  style={{
+                    padding: '7px 14px',
+                    borderRadius: 9,
+                    border: 'none',
+                    background: notificationsTab === 'centre' ? '#0f172a' : 'transparent',
+                    color: notificationsTab === 'centre' ? '#ffffff' : '#475569',
+                    fontSize: 12.5,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Notification Centre
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setNotificationsTab('channels')}
+                  style={{
+                    padding: '7px 14px',
+                    borderRadius: 9,
+                    border: 'none',
+                    background: notificationsTab === 'channels' ? '#0f172a' : 'transparent',
+                    color: notificationsTab === 'channels' ? '#ffffff' : '#475569',
+                    fontSize: 12.5,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Alert Channels &amp; Bridges
+                </button>
+              </div>
+
+              {notificationsTab === 'centre' ? (
+                <NotificationCentrePanel embedded initialCategory={initialNotificationCategory} />
+              ) : (
+                <LiveWorkspaceSettingsModule
+                  key="Notifications"
+                  businessName="BEMS Group"
+                  setNotice={(msg) => setNotice(msg)}
+                  initialSection="Notifications"
+                  standalone
+                />
+              )}
+            </div>
           )}
 
           {section === 'data_retention' && (
