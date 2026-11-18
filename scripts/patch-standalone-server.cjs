@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 
-// 1. Clean up any wedged old bemserp.work next-server processes (via /proc/<pid>/cwd)
+// 1. Clean up any wedged old bemserp.work next-server OR orphaned lsnode.js processes
 try {
   const myPid = process.pid;
   const myPpid = process.ppid;
@@ -16,18 +16,30 @@ try {
     if (!pid || pid === myPid || pid === myPpid) continue;
 
     let procCwd = '';
+    let procEnv = '';
     try {
       procCwd = fs.readlinkSync(`/proc/${pid}/cwd`);
     } catch {}
+    try {
+      procEnv = fs.readFileSync(`/proc/${pid}/environ`, 'utf8').replace(/\0/g, ' ');
+    } catch {}
 
-    const isBemsErpFrontendNode =
-      procCwd.includes('/domains/bemserp.work/hbuilds/versions/') &&
-      !procCwd.includes('/domains/api.bemserp.work');
+    const isBemsErpFrontend =
+      (procCwd.includes('/domains/bemserp.work') || procEnv.includes('/domains/bemserp.work')) &&
+      !procCwd.includes('/domains/api.bemserp.work') &&
+      !procEnv.includes('/domains/api.bemserp.work');
 
-    if (isBemsErpFrontendNode && procCwd !== myCwd) {
+    const isCurrentBuildProcess =
+      procCwd === myCwd ||
+      line.includes('npm run build') ||
+      line.includes('patch-standalone-server') ||
+      line.includes('next build') ||
+      line.includes('postcss');
+
+    if (isBemsErpFrontend && !isCurrentBuildProcess) {
       try {
         process.kill(pid, 'SIGKILL');
-        console.log(`[patch-standalone-server] KILLED wedged bemserp.work server PID ${pid} (cwd=${procCwd})`);
+        console.log(`[patch-standalone-server] KILLED stale bemserp.work PID ${pid} (cwd=${procCwd})`);
       } catch (e) {
         console.log(`[patch-standalone-server] Failed to kill PID ${pid}: ${e.message}`);
       }
