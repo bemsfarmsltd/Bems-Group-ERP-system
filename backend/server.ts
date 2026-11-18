@@ -209,11 +209,23 @@ export async function buildBackendServer() {
     });
   });
 
-  logger.info('Step 1.5: ensuring idempotent schema columns');
-  try {
-    await prisma.$executeRawUnsafe('ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "staffAppModulesJson" TEXT;');
-  } catch (err) {
-    logger.warn({ err }, 'Could not ensure Employee.staffAppModulesJson column at startup');
+  if (!process.env.VITEST) {
+    const [schema] = await prisma.$queryRaw<Array<{ exists: boolean }>>`
+      SELECT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = current_schema() AND table_name = 'Employee'
+          AND column_name = 'staffAppModulesJson'
+      ) AS "exists"
+    `;
+    if (!schema?.exists) {
+      await prisma.$executeRaw`ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "staffAppModulesJson" TEXT`;
+    }
+    try {
+      const { ensureOperationsSchema } = await import('@/lib/ops-ensure-schema');
+      await ensureOperationsSchema();
+    } catch (err) {
+      logger.warn({ err }, 'Could not ensure Operations Phase 1 schema tables at startup');
+    }
   }
 
   logger.info('Step 2: registering Next API routes onto Fastify');

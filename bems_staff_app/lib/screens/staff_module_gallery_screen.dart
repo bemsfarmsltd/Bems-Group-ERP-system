@@ -7,6 +7,7 @@ import '../theme/subsidiary_theme.dart';
 import 'staff_main_screen.dart';
 import 'staff_admin_chat_screen.dart';
 import 'modules/staff_module_workstation_screen.dart';
+import 'modules/staff_operations_screen.dart';
 
 class StaffModuleGalleryScreen extends StatefulWidget {
   final StaffUser user;
@@ -17,7 +18,7 @@ class StaffModuleGalleryScreen extends StatefulWidget {
   State<StaffModuleGalleryScreen> createState() => _StaffModuleGalleryScreenState();
 }
 
-class _StaffModuleGalleryScreenState extends State<StaffModuleGalleryScreen> {
+class _StaffModuleGalleryScreenState extends State<StaffModuleGalleryScreen> with WidgetsBindingObserver {
   late StaffUser _user;
   String _searchQuery = '';
   bool _refreshingAccess = false;
@@ -26,6 +27,7 @@ class _StaffModuleGalleryScreenState extends State<StaffModuleGalleryScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _user = widget.user;
     _refreshAccess();
   }
@@ -37,7 +39,7 @@ class _StaffModuleGalleryScreenState extends State<StaffModuleGalleryScreen> {
       final fresh = await StaffApiService.fetchFreshSessionUser(_user);
       if (fresh != null && mounted) {
         await StaffStorageService.saveUser(fresh);
-        setState(() => _user = fresh);
+        if (mounted) setState(() => _user = fresh);
       }
     } finally {
       if (mounted) setState(() => _refreshingAccess = false);
@@ -45,7 +47,13 @@ class _StaffModuleGalleryScreenState extends State<StaffModuleGalleryScreen> {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _refreshAccess();
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _searchController.dispose();
     super.dispose();
   }
@@ -422,11 +430,12 @@ class _StaffModuleGalleryScreenState extends State<StaffModuleGalleryScreen> {
         badgeColor: const Color(0xFF059669),
         icon: Icons.account_balance_wallet_rounded,
         gradient: [SubsidiaryTheme.current.color, const Color(0xFFC2410C)],
-        onTap: (ctx) {
-          Navigator.push(
+        onTap: (ctx) async {
+          await Navigator.push(
             ctx,
             MaterialPageRoute(builder: (_) => StaffMainScreen(user: user, fromGallery: true)),
           );
+          if (mounted) await _refreshAccess();
         },
       ),
 
@@ -521,40 +530,15 @@ class _StaffModuleGalleryScreenState extends State<StaffModuleGalleryScreen> {
         id: 'operations',
         eyebrow: 'FIELD OPERATIONS',
         title: 'Operations Management System',
-        description: 'Field operations coordination, fleet management, logistics tracking, and facility oversight.',
-        badgeText: 'PIPELINE',
-        badgeColor: const Color(0xFF64748B),
+        description: 'Work orders, site dispatch, service requests, and daily field execution.',
+        badgeText: 'ACTIVE',
+        badgeColor: const Color(0xFF059669),
         icon: Icons.local_shipping_rounded,
         gradient: [const Color(0xFF059669), const Color(0xFF047857)],
         onTap: (ctx) {
           Navigator.push(
             ctx,
-            MaterialPageRoute(
-              builder: (_) => StaffModuleWorkstationScreen(
-                user: user,
-                config: ModuleConfig(
-                  id: 'operations',
-                  eyebrow: 'FIELD OPERATIONS',
-                  title: 'Operations Management System',
-                  subtitle: 'Fleet, Logistics & Field Oversight',
-                  description: 'Field operations coordination, fleet management, logistics tracking, and facility oversight for ${widget.user.subsidiary.isNotEmpty ? widget.user.subsidiary : 'your organization'}.',
-                  icon: Icons.local_shipping_rounded,
-                  gradientColors: const [Color(0xFF059669), Color(0xFF047857)],
-                  statusText: 'Pipeline (Phase 2)',
-                  quickActions: const [
-                    {'title': 'Daily Operations Log', 'desc': 'Record field activities and shift handovers', 'icon': Icons.assignment_rounded, 'color': Color(0xFF059669)},
-                    {'title': 'Fleet & Logistics', 'desc': 'Track vehicle transit and facility maintenance', 'icon': Icons.local_shipping_rounded, 'color': Color(0xFF0284C7)},
-                  ],
-                  metricCards: [
-                    {'label': 'STATUS', 'value': 'Pipeline', 'sub': 'Phase 2 Development'},
-                    {'label': 'FACILITIES', 'value': 'Multi-site', 'sub': 'Field Hubs'},
-                  ],
-                  sampleTasks: [
-                    {'task': 'Fleet Operations Protocol', 'details': 'In active design', 'time': 'Phase 2'},
-                  ],
-                ),
-              ),
-            ),
+            MaterialPageRoute(builder: (_) => StaffOperationsScreen(user: user)),
           );
         },
       ),

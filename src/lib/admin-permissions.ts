@@ -270,6 +270,7 @@ export const ADMIN_PERMISSION_CATALOG: PermissionModuleDef[] = [
         actions: [
           { key: 'view_directory', label: 'View Employee Directory' },
           { key: 'edit_employee_profile', label: 'Edit Employee Profiles & Placements' },
+          { key: 'manage_staff_app_modules', label: 'Manage Staff App Module Access' },
           { key: 'approve_staff_signup', label: 'Approve Pending Staff Registrations' },
           { key: 'manage_exits', label: 'Process Terminations & Exits' },
         ],
@@ -347,6 +348,7 @@ export const ADMIN_PERMISSION_CATALOG: PermissionModuleDef[] = [
           { key: 'view_admins', label: 'View Leadership & Admin Roster' },
           { key: 'invite_new_admin', label: 'Send Fresh Admin Invitations' },
           { key: 'promote_staff_to_admin', label: 'Promote Existing Staff to Admin' },
+          { key: 'manage_staff_app_modules', label: 'Manage Staff App Module Access' },
           { key: 'create_edit_admin_profiles', label: 'Create / Edit Custom Admin Profiles' },
           { key: 'suspend_activate_admin', label: 'Suspend / Activate Admin Accounts' },
         ],
@@ -381,15 +383,33 @@ export const ADMIN_PERMISSION_CATALOG: PermissionModuleDef[] = [
   {
     key: 'operations',
     label: 'Operations Management',
-    description: 'Field operations coordination, fleet, logistics, and facility oversight.',
+    description: 'Operations Command Centre, sites, service catalogue, work orders, dispatch, and approvals.',
     categories: [
       {
         key: 'operations_core',
-        label: 'Operations Core',
+        label: 'Operations Core & Command Centre',
         actions: [
           { key: 'view_module', label: 'View Operations Module' },
           { key: 'manage_records', label: 'Create / Update Field & Fleet Records' },
           { key: 'approve_workflows', label: 'Approve Operations Workflows' },
+        ],
+      },
+      {
+        key: 'operations_work_orders',
+        label: 'Work Orders & Dispatch',
+        actions: [
+          { key: 'view_work_orders', label: 'View Work Orders & Service Requests' },
+          { key: 'create_work_orders', label: 'Create & Update Work Orders' },
+          { key: 'assign_dispatch', label: 'Schedule & Reassign Dispatch' },
+          { key: 'verify_close', label: 'Verify & Close Completed Work' },
+        ],
+      },
+      {
+        key: 'operations_setup',
+        label: 'Sites & Service Catalogue',
+        actions: [
+          { key: 'view_sites_services', label: 'View Sites & Service Definitions' },
+          { key: 'manage_sites_services', label: 'Create & Edit Sites & Services' },
         ],
       },
     ],

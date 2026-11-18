@@ -2401,3 +2401,156 @@ model CustomAdminProfile {
   employees       Employee[]
   invitations     AdminInvitation[]
 }
+
+// ============================================================
+// OPERATIONS MANAGEMENT SYSTEM (OMS - PHASE 1)
+// ============================================================
+
+model OpsSite {
+  id                 String   @id @default(uuid())
+  organizationId     String
+  departmentId       String?
+  code               String   @unique
+  name               String
+  siteType           String   @default("OFFICE") // OFFICE | BRANCH | WAREHOUSE | FIELD_SITE | HUB
+  stateRegion        String?
+  address            String?
+  timeZone           String   @default("Africa/Lagos")
+  operatingHoursJson String?
+  contactName        String?
+  contactPhone       String?
+  supervisorId       String?
+  status             String   @default("ACTIVE") // ACTIVE | INACTIVE
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  workOrders         OpsWorkOrder[]
+  dispatches         OpsDispatchAssignment[]
+
+  @@index([organizationId, status])
+  @@index([supervisorId])
+}
+
+model OpsServiceDefinition {
+  id                   String   @id @default(uuid())
+  organizationId       String
+  departmentId         String?
+  code                 String   @unique
+  name                 String
+  category             String   @default("FIELD_SERVICE") // FIELD_SERVICE | MAINTENANCE | LOGISTICS | ADMIN_SUPPORT | CLIENT_DELIVERY
+  description          String?
+  ownerId              String?
+  slaAcknowledgeMins   Int      @default(60)
+  slaResolveHours      Int      @default(24)
+  requiresVerification Boolean  @default(false)
+  requiresApproval     Boolean  @default(false)
+  isClientFacing       Boolean  @default(false)
+  status               String   @default("ACTIVE") // ACTIVE | ARCHIVED
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  workOrders           OpsWorkOrder[]
+
+  @@index([organizationId, status])
+}
+
+model OpsWorkOrder {
+  id                String    @id @default(uuid())
+  workOrderNumber   String    @unique
+  organizationId    String
+  siteId            String?
+  site              OpsSite?  @relation(fields: [siteId], references: [id], onDelete: SetNull)
+  serviceId         String?
+  service           OpsServiceDefinition? @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  departmentId      String?
+  parentWorkOrderId String?
+  parentWorkOrder   OpsWorkOrder?  @relation("OpsSubWorkOrders", fields: [parentWorkOrderId], references: [id], onDelete: SetNull)
+  subWorkOrders     OpsWorkOrder[] @relation("OpsSubWorkOrders")
+  sourceType        String    @default("INTERNAL") // INTERNAL | SERVICE_REQUEST | FINANCE_LINK | PROJECT_HANDOVER | SCHEDULED
+  title             String
+  description       String?
+  priority          String    @default("MEDIUM") // LOW | MEDIUM | HIGH | CRITICAL
+  status            String    @default("NEW") // NEW | TRIAGED | ASSIGNED | SCHEDULED | IN_PROGRESS | AWAITING_INPUT | BLOCKED | REVIEW | COMPLETED | CLOSED | CANCELLED
+  blockedReason     String?
+  requesterId       String
+  ownerId           String?
+  assigneeId        String?
+  supervisorId      String?
+  approverId        String?
+  dueAt             DateTime?
+  acknowledgedAt    DateTime?
+  startedAt         DateTime?
+  completedAt       DateTime?
+  verifiedAt        DateTime?
+  closedAt          DateTime?
+  checklistJson     String?
+  evidenceUrlsJson  String?
+  linkedRequestId   String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  dispatches        OpsDispatchAssignment[]
+  workLogs          OpsWorkLog[]
+  approvals         OpsApprovalDecision[]
+
+  @@index([organizationId, status])
+  @@index([assigneeId, status])
+  @@index([requesterId])
+  @@index([siteId])
+  @@index([dueAt])
+}
+
+model OpsDispatchAssignment {
+  id               String       @id @default(uuid())
+  workOrderId      String
+  workOrder        OpsWorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  organizationId   String
+  siteId           String?
+  site             OpsSite?     @relation(fields: [siteId], references: [id], onDelete: SetNull)
+  assigneeId       String
+  dispatcherId     String
+  plannedDate      DateTime
+  windowStart      String?
+  windowEnd        String?
+  dispatchStatus   String       @default("ASSIGNED") // UNASSIGNED | ASSIGNED | ACCEPTED | EN_ROUTE | ON_SITE | COMPLETED | FAILED | REASSIGNED
+  notes            String?
+  reassignedFromId String?
+  reassignReason   String?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  @@index([organizationId, plannedDate])
+  @@index([assigneeId, dispatchStatus])
+  @@index([workOrderId])
+}
+
+model OpsWorkLog {
+  id              String       @id @default(uuid())
+  workOrderId     String
+  workOrder       OpsWorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  actorId         String
+  entryType       String       @default("COMMENT") // COMMENT | STATE_CHANGE | EVIDENCE | APPROVAL | DISPATCH
+  fromStatus      String?
+  toStatus        String?
+  message         String
+  attachmentsJson String?
+  createdAt       DateTime     @default(now())
+
+  @@index([workOrderId, createdAt])
+}
+
+model OpsApprovalDecision {
+  id             String       @id @default(uuid())
+  workOrderId    String
+  workOrder      OpsWorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  organizationId String
+  initiatorId    String
+  approverId     String?
+  decision       String       @default("PENDING") // PENDING | APPROVED | REJECTED | REVISION_REQUESTED
+  reason         String?
+  decidedAt      DateTime?
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId, decision])
+  @@index([workOrderId])
+}

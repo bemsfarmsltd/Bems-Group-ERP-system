@@ -218,6 +218,7 @@ class StaffApiService {
         final data = jsonDecode(res.body);
         if (data is Map<String, dynamic> && data['user'] is Map<String, dynamic>) {
           final returned = Map<String, dynamic>.from(data['user'] as Map);
+          if (returned['id'] != user.id) return null;
           final modules = returned['staffAppModules'] is List
               ? (returned['staffAppModules'] as List).map((e) => e.toString()).toList()
               : user.staffAppModules;
@@ -1301,5 +1302,85 @@ class StaffApiService {
       return data is Map<String, dynamic> ? data : {};
     }
     throw Exception(data['error']?.toString() ?? 'Failed to submit profile updates.');
+  }
+
+  /// Operations Phase 1: Fetch assigned work orders, dispatches, sites, and services
+  static Future<Map<String, dynamic>> fetchOperationsInbox({
+    required String employeeId,
+    String? token,
+  }) async {
+    final res = await _executeWithFailover(
+      (host) => http.get(
+        Uri.parse('$host/api/operations/staff/inbox'),
+        headers: _headers(token: token, employeeId: employeeId),
+      ),
+      timeout: const Duration(seconds: 12),
+    );
+    final data = jsonDecode(res.body);
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      return data is Map<String, dynamic> ? data : {};
+    }
+    throw Exception(data['error']?.toString() ?? 'Could not load Operations inbox.');
+  }
+
+  /// Operations Phase 1: Raise a Service Request / Work Order from Staff App
+  static Future<Map<String, dynamic>> createOperationsServiceRequest({
+    required String employeeId,
+    required String title,
+    String? description,
+    String? siteId,
+    String? serviceId,
+    String priority = 'MEDIUM',
+    String? token,
+  }) async {
+    final res = await _executeWithFailover(
+      (host) => http.post(
+        Uri.parse('$host/api/operations/work-orders'),
+        headers: _headers(token: token, employeeId: employeeId),
+        body: jsonEncode({
+          'title': title,
+          'description': description,
+          'siteId': siteId,
+          'serviceId': serviceId,
+          'priority': priority,
+        }),
+      ),
+      timeout: const Duration(seconds: 12),
+    );
+    final data = jsonDecode(res.body);
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      return data is Map<String, dynamic> ? data : {};
+    }
+    throw Exception(data['error']?.toString() ?? 'Could not submit service request.');
+  }
+
+  /// Operations Phase 1: Update Work Order status or post a work log note
+  static Future<Map<String, dynamic>> updateOperationsWorkOrder({
+    required String employeeId,
+    required String workOrderId,
+    String? status,
+    String? reason,
+    bool commentOnly = false,
+    String? message,
+    String? token,
+  }) async {
+    final res = await _executeWithFailover(
+      (host) => http.patch(
+        Uri.parse('$host/api/operations/work-orders/$workOrderId'),
+        headers: _headers(token: token, employeeId: employeeId),
+        body: jsonEncode({
+          if (status != null) 'status': status,
+          if (reason != null && reason.isNotEmpty) 'reason': reason,
+          if (commentOnly) 'commentOnly': true,
+          if (message != null && message.isNotEmpty) 'message': message,
+        }),
+      ),
+      timeout: const Duration(seconds: 12),
+    );
+    final data = jsonDecode(res.body);
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      return data is Map<String, dynamic> ? data : {};
+    }
+    throw Exception(data['error']?.toString() ?? 'Could not update work order.');
   }
 }
