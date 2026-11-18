@@ -3279,7 +3279,15 @@ function AppWorkspace({user,onSignOut,onAddBusiness,onEditBusiness,businesses:ra
   const incompleteLocked=['Inbox','Customers','Campaigns','Cases & SLAs','Commerce & orders','Payments','Bookings','Loyalty & rewards','Analytics & BI','Quality & experiments'];
   const fullyOnboardedDemo=true;
   const isLocked=(_name:string)=>false;
-  const openModule=(name:string)=>{setActive(name);setSearch('')};
+  const openModule=(name:string)=>{
+    setActive(name);
+    setSearch('');
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      url.searchParams.set('tab', name);
+      window.history.replaceState({}, '', url.toString());
+    }
+  };
   const selectBusiness = useCallback((id: string) => {
     const next = businesses.find(b => b.id === id);
     if (!next || next.id === current.id) {

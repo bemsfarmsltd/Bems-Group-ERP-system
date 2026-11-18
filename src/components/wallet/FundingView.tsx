@@ -1404,7 +1404,10 @@ export default function FundingView({
       )}
 
       {/* ALLOCATE MODAL (LIGHT THEME) */}
-      {showAllocateModal && (
+      {showAllocateModal && (() => {
+        const freeMinorNum = Number(data?.funding?.freeMinor ?? 0);
+        const allocationBlocked = Boolean(data?.funding?.paused) || freeMinorNum <= 0;
+        return (
         <div style={{ position: 'fixed', inset: 0, zIndex: 999, background: 'rgba(15, 23, 42, 0.45)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ width: '100%', maxWidth: 480, background: '#ffffff', borderRadius: 12, padding: 20, boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #f1f5f9', paddingBottom: 10 }}>
@@ -1415,6 +1418,14 @@ export default function FundingView({
                 <X size={16} />
               </button>
             </div>
+
+            {allocationBlocked && (
+              <div style={{ padding: '10px 12px', borderRadius: 8, background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', fontSize: 11.5, fontWeight: 600, lineHeight: 1.45 }}>
+                {data?.funding?.paused
+                  ? 'New commitments are blocked because the central company funding pool is currently paused.'
+                  : `New commitments are blocked: free unallocated Monnify backing is ${walletMoney(String(freeMinorNum))} (verified balance ${walletMoney(String(data?.funding?.availableMinor ?? '0'))} is fully committed or short against unsettled approvals and fee reserves). Top up Monnify or reconcile before allocating.`}
+              </div>
+            )}
 
             <p style={{ fontSize: 11, color: '#64748b', margin: 0 }}>
               Locks central Monnify backing to a chosen subsidiary budget. Individual requests will draw from this allocation upon GMD sign-off. Allocations cannot exceed available Monnify balance.
@@ -1489,7 +1500,7 @@ export default function FundingView({
               </button>
               <button
                 type="button"
-                disabled={busy || !organizationId || !label || !amount}
+                disabled={busy || allocationBlocked || !organizationId || !label || !amount}
                 onClick={() =>
                   run(async () => {
                     await api(
@@ -1508,14 +1519,15 @@ export default function FundingView({
                     setNotice('Funded budget envelope allocated successfully.');
                   })
                 }
-                style={{ padding: '6px 14px', borderRadius: 6, border: 0, background: effectiveBrandColor, color: '#fff', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}
+                style={{ padding: '6px 14px', borderRadius: 6, border: 0, background: effectiveBrandColor, color: '#fff', fontSize: 11, fontWeight: 700, cursor: allocationBlocked ? 'not-allowed' : 'pointer', opacity: allocationBlocked ? 0.5 : 1 }}
               >
                 Confirm Allocation
               </button>
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* ADJUST MODAL (LIGHT THEME) */}
       {adjustment && (

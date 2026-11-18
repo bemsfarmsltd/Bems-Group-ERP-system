@@ -208,13 +208,19 @@ export function useDynamicDashboardConfig({ role, businessName, subsidiaryId, br
         : baseConfig.teamMembers;
 
       // 7. Dynamic Accountability Clearance Rate
-      const arcPercent = paidCount > 0 ? Math.min(100, Math.round((closedCases / paidCount) * 100)) : 100;
+      const clearanceDenom = paidCount > 0 ? paidCount : reqCount;
+      const arcPercent = clearanceDenom > 0 ? Math.min(100, Math.round((closedCases / clearanceDenom) * 100)) : 100;
 
-      // 8. Dynamic SLA Clock
+      // 8. Dynamic SLA Clock & Group Review Queue Reminder
       const decisionQueue = analyticsRes.decisionQueue || [];
       const oldestPending = decisionQueue[0];
       const timerValue = oldestPending ? `${String(Math.max(1, 24 - (oldestPending.ageDays * 24))).padStart(2, '0')}:00:00` : '00:00:00';
       const timerSubtitle = oldestPending ? `Action queue: ${oldestPending.requestNumber}` : 'All requests within SLA';
+      const reminderTitle = pendingCount > 0 ? `${pendingCount} Request${pendingCount === 1 ? '' : 's'} Awaiting Authorization` : baseConfig.reminderTitle;
+      const reminderSubtitle = pendingCount > 0 ? 'Group Approval Queue' : baseConfig.reminderSubtitle;
+      const reminderTime = pendingCount > 0
+        ? (oldestPending ? `Oldest pending: ${oldestPending.requestNumber}` : `${pendingCount} awaiting sign-off`)
+        : 'All review queues clear';
 
       const transactionsAmount = paidCount > 0 ? String(paidCount) : '0';
       const transactionsDelta = paidCount > 0 ? `+${paidCount}` : '0';
@@ -230,9 +236,12 @@ export function useDynamicDashboardConfig({ role, businessName, subsidiaryId, br
         projects,
         teamMembers,
         arcPercent,
-        arcSubtitle: `${closedCases} of ${paidCount || reqCount || 0} Cleared`,
+        arcSubtitle: `${closedCases} of ${clearanceDenom} Cleared`,
         timerValue,
         timerSubtitle,
+        reminderTitle,
+        reminderSubtitle,
+        reminderTime,
         transactionsAmount,
         transactionsDelta,
       });
