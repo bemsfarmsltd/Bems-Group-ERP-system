@@ -237,16 +237,10 @@ class _StaffMainScreenState extends State<StaffMainScreen> {
         employeeId: _currentUser.id,
         token: _currentUser.token,
       ),
-      _currentUser.staffAppModules.contains('hr')
-          ? StaffApiService.fetchTodayAttendanceBundle(
-              employeeId: _currentUser.id,
-              token: _currentUser.token,
-            )
-          : Future.value(<String, dynamic>{}),
+      Future.value(<String, dynamic>{}),
       StaffApiService.fetchMyProfile(_currentUser),
     ]);
     final data = results[0] as Map<String, dynamic>;
-    final attendanceBundle = results[1] as Map<String, dynamic>;
     final refreshedUser = results[2] as StaffUser;
 
     Map<String, dynamic>? wallet;
@@ -260,13 +254,12 @@ class _StaffMainScreenState extends State<StaffMainScreen> {
         _requests = data['requests'] as List<FundRequestItem>;
         _disbursementsAwaiting = data['disbursementsAwaiting'] as List<DisbursementItem>;
         _cases = data['accountabilityCases'] as List<AccountabilityCaseItem>;
-        _todayAttendance = attendanceBundle['record'] as Map<String, dynamic>?;
-        _isTodayOffDay = attendanceBundle['isOffDay'] == true;
+        _todayAttendance = null;
+        _isTodayOffDay = false;
         _walletData = wallet;
         _isLoading = false;
       });
       _checkProfileUpdateGate();
-      if (refreshedUser.staffAppModules.contains('hr')) _evaluateAttendancePrompt();
       StaffNotificationService().syncAndNotify(refreshedUser);
     }
   }

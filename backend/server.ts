@@ -37,7 +37,10 @@ export async function buildBackendServer() {
 
   await app.register(cors, {
     origin: (origin, cb) => {
-      if (!origin || origin === 'null' || allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
+      const isLocalDevOrigin =
+        process.env.NODE_ENV !== 'production' &&
+        Boolean(origin && (origin.startsWith('http://127.0.0.1:') || origin.startsWith('http://localhost:')));
+      if (!origin || origin === 'null' || isLocalDevOrigin || allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
         cb(null, true);
         return;
       }
@@ -45,7 +48,7 @@ export async function buildBackendServer() {
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'x-app-id', 'x-app-version', 'x-employee-id'],
   });
 
   await app.register(cookie);

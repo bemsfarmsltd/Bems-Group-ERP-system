@@ -125,7 +125,11 @@ class StaffApiService {
 
   static List<String> get _candidateHosts {
     if (kIsWeb) {
-      return [Uri.base.origin];
+      final origin = Uri.base.origin;
+      if (origin.contains('127.0.0.1') || origin.contains('localhost')) {
+        return ['http://127.0.0.1:4000'];
+      }
+      return [origin];
     }
     return [
       _activeBaseUrl,
@@ -137,6 +141,7 @@ class StaffApiService {
   static Future<http.Response> _executeWithFailover(
     Future<http.Response> Function(String host) requestFn, {
     Duration timeout = const Duration(seconds: 15),
+    bool checkSession = true,
   }) async {
     dynamic lastError;
     for (final host in _candidateHosts) {
@@ -151,7 +156,7 @@ class StaffApiService {
           } catch (_) {
             onUpgradeRequired?.call({});
           }
-        } else if (res.statusCode == 401 || res.statusCode == 403) {
+        } else if (checkSession && res.statusCode == 401) {
           onSessionInvalidated?.call();
         }
 
@@ -259,6 +264,7 @@ class StaffApiService {
           'password': password,
         }),
       ),
+      checkSession: false,
     );
 
     Map<String, dynamic> data = {};
@@ -1496,5 +1502,160 @@ class StaffApiService {
       return data is Map<String, dynamic> ? data : {};
     }
     throw Exception(data['error']?.toString() ?? 'Could not acknowledge handover.');
+  }
+
+  /// Fetch Staff Self-Service HR Workspace (/api/staff/hr)
+  static Future<Map<String, dynamic>> fetchMyHrWorkspace(StaffUser user) async {
+    final res = await _executeWithFailover(
+      (host) => http.get(
+        Uri.parse('$host/api/staff/hr'),
+        headers: _headers(token: user.token, employeeId: user.id),
+      ),
+      timeout: const Duration(seconds: 12),
+    );
+    final data = res.body.trim().isNotEmpty ? jsonDecode(res.body) : {};
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      return data is Map<String, dynamic> ? data : {};
+    }
+    throw Exception(data['error']?.toString() ?? 'Could not load HR workspace.');
+  }
+
+  /// Submit a Staff Leave Request (/api/staff/hr)
+  static Future<Map<String, dynamic>> submitLeaveRequest({
+    required StaffUser user,
+    required String leaveType,
+    required String startDate,
+    required String endDate,
+    required String reason,
+    String? handoverNotes,
+  }) async {
+    final res = await _executeWithFailover(
+      (host) => http.post(
+        Uri.parse('$host/api/staff/hr'),
+        headers: _headers(token: user.token, employeeId: user.id),
+        body: jsonEncode({
+          'action': 'REQUEST_LEAVE',
+          'leaveType': leaveType,
+          'startDate': startDate,
+          'endDate': endDate,
+          'reason': reason,
+          'handoverNotes': handoverNotes,
+        }),
+      ),
+      timeout: const Duration(seconds: 12),
+    );
+    final data = res.body.trim().isNotEmpty ? jsonDecode(res.body) : {};
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      return data is Map<String, dynamic> ? data : {};
+    }
+    throw Exception(data['error']?.toString() ?? 'Could not submit leave request.');
+  }
+
+  /// Submit a Staff HR Request Ticket (/api/staff/hr)
+  static Future<Map<String, dynamic>> submitHrRequestTicket({
+    required StaffUser user,
+    required String category,
+    required String subject,
+    required String description,
+    String priority = 'NORMAL',
+  }) async {
+    final res = await _executeWithFailover(
+      (host) => http.post(
+        Uri.parse('$host/api/staff/hr'),
+        headers: _headers(token: user.token, employeeId: user.id),
+        body: jsonEncode({
+          'action': 'SUBMIT_HR_REQUEST',
+          'category': category,
+          'subject': subject,
+          'description': description,
+          'priority': priority,
+        }),
+      ),
+      timeout: const Duration(seconds: 12),
+    );
+    final data = res.body.trim().isNotEmpty ? jsonDecode(res.body) : {};
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      return data is Map<String, dynamic> ? data : {};
+    }
+    throw Exception(data['error']?.toString() ?? 'Could not submit HR request.');
+  }
+
+  /// Generic Staff Self-Service HR Action (/api/staff/hr)
+  static Future<Map<String, dynamic>> postHrAction({
+    required StaffUser user,
+    required Map<String, dynamic> payload,
+    String fallbackError = 'Could not process HR action.',
+  }) async {
+    final res = await _executeWithFailover(
+      (host) => http.post(
+        Uri.parse('$host/api/staff/hr'),
+        headers: _headers(token: user.token, employeeId: user.id),
+        body: jsonEncode(payload),
+      ),
+      timeout: const Duration(seconds: 12),
+    );
+    final data = res.body.trim().isNotEmpty ? jsonDecode(res.body) : {};
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      return data is Map<String, dynamic> ? data : {};
+    }
+    throw Exception(data['error']?.toString() ?? fallbackError);
+  }
+
+  /// Cancel a pending Staff Leave Request (/api/staff/hr)
+  static Future<void> cancelLeaveRequest({
+    required StaffUser user,
+    required String leaveId,
+  }) async {
+    await postHrAction(
+      user: user,
+      payload: {'action': 'CANCEL_LEAVE', 'leaveId': leaveId},
+      fallbackError: 'Could not cancel leave request.',
+    );
+  }
+
+  /// Request attendance excuse / deduction waiver (/api/staff/hr)
+  static Future<void> requestAttendanceExcuse({
+    required StaffUser user,
+    required String attendanceId,
+    required String excuseReason,
+  }) async {
+    await postHrAction(
+      user: user,
+      payload: {
+        'action': 'REQUEST_ATTENDANCE_EXCUSE',
+        'attendanceId': attendanceId,
+        'excuseReason': excuseReason,
+      },
+      fallbackError: 'Could not submit attendance excuse.',
+    );
+  }
+
+  /// Dispute a proposed payroll deduction adjustment (/api/staff/hr)
+  static Future<void> disputeDeduction({
+    required StaffUser user,
+    required String adjustmentId,
+    required String disputeNote,
+  }) async {
+    await postHrAction(
+      user: user,
+      payload: {
+        'action': 'DISPUTE_DEDUCTION',
+        'adjustmentId': adjustmentId,
+        'disputeNote': disputeNote,
+      },
+      fallbackError: 'Could not dispute deduction.',
+    );
+  }
+
+  /// Acknowledge / digitally sign an HR document (/api/staff/hr)
+  static Future<void> signHrDocument({
+    required StaffUser user,
+    required String documentId,
+  }) async {
+    await postHrAction(
+      user: user,
+      payload: {'action': 'SIGN_DOCUMENT', 'documentId': documentId},
+      fallbackError: 'Could not sign document.',
+    );
   }
 }

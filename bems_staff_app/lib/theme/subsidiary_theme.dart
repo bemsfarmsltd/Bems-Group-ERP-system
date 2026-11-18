@@ -193,7 +193,7 @@ class SubsidiaryLogoBadge extends StatelessWidget {
       child: Image.network(
         resolvedUrl,
         fit: BoxFit.contain,
-        errorBuilder: (_, __, ___) => _MonogramFallback(brand: activeBrand, size: size),
+        errorBuilder: (_, __, ___) => _BemsAssetFallback(brand: activeBrand, size: size),
       ),
     );
   }
@@ -221,7 +221,26 @@ class SubsidiaryLogoBadge extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: resolvedUrl != null
           ? _buildLogoContent(activeBrand, resolvedUrl)
-          : _MonogramFallback(brand: activeBrand, size: size),
+          : _BemsAssetFallback(brand: activeBrand, size: size),
+    );
+  }
+}
+
+class _BemsAssetFallback extends StatelessWidget {
+  final SubsidiaryBrand brand;
+  final double size;
+
+  const _BemsAssetFallback({required this.brand, required this.size});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.all(size * 0.08),
+      child: Image.asset(
+        'assets/images/bems-logo.png',
+        fit: BoxFit.contain,
+        errorBuilder: (_, __, ___) => _MonogramFallback(brand: brand, size: size),
+      ),
     );
   }
 }

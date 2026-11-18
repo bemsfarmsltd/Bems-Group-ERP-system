@@ -192,6 +192,7 @@ import * as route_178 from "../api/staff/chat/unread/route";
 import * as route_179 from "../api/staff/disbursements/route";
 import * as route_180 from "../api/staff/invite/resend/route";
 import * as route_181 from "../api/staff/invite/route";
+import * as route_staff_hr from "../api/staff/hr/route";
 import * as route_182 from "../api/staff/me/route";
 import * as route_183 from "../api/staff/offline/route";
 import * as route_184 from "../api/staff/onboard/complete/route";
@@ -440,6 +441,7 @@ export function registerAllNextApiRoutes(app: FastifyInstance): void {
   mountNextRoute(app, "/api/staff/disbursements", route_179 as unknown as NextRouteModule);
   mountNextRoute(app, "/api/staff/invite/resend", route_180 as unknown as NextRouteModule);
   mountNextRoute(app, "/api/staff/invite", route_181 as unknown as NextRouteModule);
+  mountNextRoute(app, "/api/staff/hr", route_staff_hr as unknown as NextRouteModule);
   mountNextRoute(app, "/api/staff/me", route_182 as unknown as NextRouteModule);
   mountNextRoute(app, "/api/staff/offline", route_183 as unknown as NextRouteModule);
   mountNextRoute(app, "/api/staff/onboard/complete", route_184 as unknown as NextRouteModule);

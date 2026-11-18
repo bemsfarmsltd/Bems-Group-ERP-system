@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import '../services/staff_api_service.dart';
 import '../services/staff_storage_service.dart';
 import 'staff_module_gallery_screen.dart';
-import 'subsidiary_welcome_screen.dart';
 import 'staff_register_screen.dart';
 import 'staff_forgot_password_screen.dart';
 
@@ -22,7 +21,29 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
   final _passwordController = TextEditingController();
   bool _isLoading = false;
   bool _obscurePassword = true;
+  bool _showBiometricButton = false;
   String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkBiometricReady();
+  }
+
+  Future<void> _checkBiometricReady() async {
+    try {
+      final hasHardware = await StaffBiometricService.isHardwareAvailable();
+      final isConfigured = await StaffStorageService.isBiometricConfigured();
+      final isEnabled = await StaffStorageService.isBiometricEnabled();
+      final creds = await StaffStorageService.getSavedCredentials();
+      if (!mounted) return;
+      setState(() {
+        _showBiometricButton = hasHardware && isConfigured && isEnabled && creds != null;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _showBiometricButton = false);
+    }
+  }
 
   @override
   void dispose() {
@@ -55,15 +76,18 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
 
       if (!mounted) return;
 
-      // Check if biometric is supported and not yet configured
+      // Check if biometric is supported and not yet fully set & enabled
       final hasHardware = await StaffBiometricService.isHardwareAvailable();
       final isConfigured = await StaffStorageService.isBiometricConfigured();
+      final isEnabled = await StaffStorageService.isBiometricEnabled();
+      final savedCreds = await StaffStorageService.getSavedCredentials();
+      final biometricsReady = isConfigured && isEnabled && savedCreds != null;
 
-      if (hasHardware && !isConfigured) {
+      if (hasHardware && !biometricsReady) {
         if (mounted) {
           await _promptEnableBiometrics(user, email, password);
         }
-      } else if (hasHardware && isConfigured) {
+      } else if (hasHardware && biometricsReady) {
         // Keep saved credentials fresh for biometric quick sign in
         await StaffStorageService.saveCredentials(email: email, password: password);
         if (mounted) {
@@ -92,8 +116,8 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
     Navigator.pushReplacement(
       context,
       PageRouteBuilder(
-        transitionDuration: const Duration(milliseconds: 350),
-        pageBuilder: (_, __, ___) => SubsidiaryWelcomeScreen(user: user),
+        transitionDuration: const Duration(milliseconds: 250),
+        pageBuilder: (_, __, ___) => StaffModuleGalleryScreen(user: user),
         transitionsBuilder: (_, animation, __, child) =>
             FadeTransition(opacity: animation, child: child),
       ),
@@ -433,19 +457,21 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
                               ),
                       ),
 
-                      const SizedBox(height: 12),
+                      if (_showBiometricButton) ...[
+                        const SizedBox(height: 12),
 
-                      // Biometric button
-                      OutlinedButton.icon(
-                        onPressed: _handleBiometricAuth,
-                        icon: Icon(Icons.fingerprint_rounded, size: 20, color: SubsidiaryTheme.current.color),
-                        label: const Text('Quick Sign In with Biometrics', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 13),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                          side: const BorderSide(color: Color(0xFFE2E8F0)),
+                        // Biometric button (shown only when staff enrolled & enabled biometrics)
+                        OutlinedButton.icon(
+                          onPressed: _handleBiometricAuth,
+                          icon: Icon(Icons.fingerprint_rounded, size: 20, color: SubsidiaryTheme.current.color),
+                          label: const Text('Quick Sign In with Biometrics', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 13),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                            side: const BorderSide(color: Color(0xFFE2E8F0)),
+                          ),
                         ),
-                      ),
+                      ],
                     ],
                   ),
                 ),
