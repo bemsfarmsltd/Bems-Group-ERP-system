@@ -1321,21 +1321,16 @@ class _StaffHrScreenState extends State<StaffHrScreen> {
             ? Center(child: CircularProgressIndicator(color: accent, strokeWidth: 2.5))
             : _error != null
                 ? _buildErrorState()
-                : Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 960),
-                      child: PageView(
-                        controller: _pageController,
-                        physics: const BouncingScrollPhysics(),
-                        onPageChanged: (idx) => setState(() => _currentIndex = idx),
-                        children: [
-                          _buildHomeTab(accent, subsidiaryLabel),
-                          _buildAttendanceTab(accent),
-                          _buildLeaveTab(accent),
-                          _buildDocsAndPayTab(accent),
-                        ],
-                      ),
-                    ),
+                : PageView(
+                    controller: _pageController,
+                    physics: const BouncingScrollPhysics(),
+                    onPageChanged: (idx) => setState(() => _currentIndex = idx),
+                    children: [
+                      _buildHomeTab(accent, subsidiaryLabel),
+                      _buildAttendanceTab(accent),
+                      _buildLeaveTab(accent),
+                      _buildDocsAndPayTab(accent),
+                    ],
                   ),
       ),
       bottomNavigationBar: Container(

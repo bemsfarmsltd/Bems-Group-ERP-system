@@ -615,19 +615,24 @@ class _DigitalIdCardScreenState extends State<DigitalIdCardScreen> {
                           Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              if (sigUrl != null && sigUrl.isNotEmpty)
-                                SizedBox(height: 26, child: Image.network(StaffApiService.resolveUrl(sigUrl), fit: BoxFit.contain))
-                              else
-                                const Text('Authorized', style: TextStyle(fontStyle: FontStyle.italic, fontSize: 12)),
+                              _buildSafeSignature(sigUrl),
                               const Text('AUTH. SIGNATURE', style: TextStyle(fontSize: 8, fontWeight: FontWeight.w800, color: Color(0xFF64748B))),
                             ],
                           ),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              const Text('SERIAL', style: TextStyle(fontSize: 7.5, fontWeight: FontWeight.w900, color: Color(0xFF94A3B8))),
-                              Text(cardNumber, style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w800, color: Color(0xFF334155))),
-                            ],
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                const Text('SERIAL', style: TextStyle(fontSize: 7.5, fontWeight: FontWeight.w900, color: Color(0xFF94A3B8))),
+                                Text(
+                                  cardNumber,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w800, color: Color(0xFF334155)),
+                                ),
+                              ],
+                            ),
                           ),
                         ],
                       ),
@@ -892,17 +897,7 @@ class _DigitalIdCardScreenState extends State<DigitalIdCardScreen> {
                               style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF334155)),
                             ),
                             const SizedBox(height: 12),
-                            if (sigUrl != null && sigUrl.isNotEmpty)
-                              SizedBox(
-                                height: 34,
-                                child: Image.network(
-                                  StaffApiService.resolveUrl(sigUrl),
-                                  fit: BoxFit.contain,
-                                  errorBuilder: (_, __, ___) => const Text('Authorized', style: TextStyle(fontStyle: FontStyle.italic, fontSize: 13)),
-                                ),
-                              )
-                            else
-                              const Text('Authorized', style: TextStyle(fontStyle: FontStyle.italic, fontSize: 13, color: Color(0xFF0F172A))),
+                            _buildSafeSignature(sigUrl),
                             const Divider(height: 8),
                             const Text(
                               'AUTH. SIGNATURE',
@@ -929,6 +924,35 @@ class _DigitalIdCardScreenState extends State<DigitalIdCardScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildSafeSignature(String? sigUrl) {
+    const fallback = Text(
+      'Authorized',
+      style: TextStyle(fontStyle: FontStyle.italic, fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
+    );
+    if (sigUrl == null || sigUrl.trim().isEmpty) return fallback;
+    final trimmed = sigUrl.trim();
+    if (trimmed.toLowerCase().contains('svg')) return fallback;
+    if (trimmed.startsWith('data:image/') && trimmed.contains(',')) {
+      try {
+        final bytes = base64Decode(trimmed.split(',').last);
+        return SizedBox(
+          height: 28,
+          child: Image.memory(bytes, fit: BoxFit.contain, errorBuilder: (_, __, ___) => fallback),
+        );
+      } catch (_) {
+        return fallback;
+      }
+    }
+    return SizedBox(
+      height: 28,
+      child: Image.network(
+        StaffApiService.resolveUrl(trimmed),
+        fit: BoxFit.contain,
+        errorBuilder: (_, __, ___) => fallback,
       ),
     );
   }
