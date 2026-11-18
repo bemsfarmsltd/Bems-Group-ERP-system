@@ -2554,3 +2554,212 @@ model OpsApprovalDecision {
   @@index([organizationId, decision])
   @@index([workOrderId])
 }
+
+// ============================================================
+// OPERATIONS MANAGEMENT SYSTEM (OMS - PHASES 2, 3 & 4)
+// ============================================================
+
+model OpsSopDocument {
+  id                    String   @id @default(uuid())
+  organizationId        String
+  serviceId             String?
+  code                  String   @unique
+  title                 String
+  version               String   @default("1.0")
+  content               String
+  checklistTemplateJson String?
+  status                String   @default("ACTIVE") // ACTIVE | ARCHIVED
+  createdById           String
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([organizationId, status])
+}
+
+model OpsInspection {
+  id                   String   @id @default(uuid())
+  organizationId       String
+  siteId               String?
+  workOrderId          String?
+  sopId                String?
+  inspectorId          String
+  title                String
+  checklistResultsJson String?
+  scorePct             Int      @default(100)
+  outcome              String   @default("PASS") // PASS | FAIL | CONDITIONAL
+  notes                String?
+  inspectedAt          DateTime @default(now())
+
+  @@index([organizationId, outcome])
+  @@index([siteId])
+}
+
+model OpsIncident {
+  id               String    @id @default(uuid())
+  incidentNumber   String    @unique
+  organizationId   String
+  siteId           String?
+  workOrderId      String?
+  reporterId       String
+  ownerId          String?
+  severity         String    @default("MEDIUM") // LOW | MEDIUM | HIGH | CRITICAL
+  category         String    @default("OPERATIONAL") // OPERATIONAL | SAFETY | SECURITY | DEVICE | QUALITY
+  title            String
+  description      String
+  rootCause        String?
+  correctiveAction String?
+  status           String    @default("OPEN") // OPEN | INVESTIGATING | CONTAINED | RESOLVED | CLOSED
+  reportedAt       DateTime  @default(now())
+  resolvedAt       DateTime?
+
+  @@index([organizationId, status, severity])
+  @@index([siteId])
+}
+
+model OpsAsset {
+  id               String    @id @default(uuid())
+  assetTag         String    @unique
+  organizationId   String
+  siteId           String?
+  name             String
+  category         String    @default("EQUIPMENT") // EQUIPMENT | DEVICE | FACILITY | TOOL
+  serialNumber     String?
+  custodianId      String?
+  condition        String    @default("GOOD") // GOOD | FAIR | FAULTY | OUT_OF_SERVICE
+  status           String    @default("AVAILABLE") // AVAILABLE | ASSIGNED | MAINTENANCE | RETIRED
+  lastServiceAt    DateTime?
+  nextServiceDueAt DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([organizationId, status])
+  @@index([custodianId])
+}
+
+model OpsShiftHandover {
+  id                String    @id @default(uuid())
+  organizationId    String
+  siteId            String?
+  shiftLabel        String
+  outgoingOfficerId String
+  incomingOfficerId String?
+  openItemsSummary  String
+  incidentsSummary  String?
+  criticalRisks     String?
+  acknowledgedAt    DateTime?
+  createdAt         DateTime  @default(now())
+
+  @@index([organizationId, createdAt])
+  @@index([incomingOfficerId])
+}
+
+model OpsStockItem {
+  id             String   @id @default(uuid())
+  organizationId String
+  siteId         String?
+  sku            String   @unique
+  name           String
+  unit           String   @default("PCS")
+  quantityOnHand Int      @default(0)
+  reorderLevel   Int      @default(5)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  movements      OpsStockMovement[]
+
+  @@index([organizationId, siteId])
+}
+
+model OpsStockMovement {
+  id           String       @id @default(uuid())
+  stockItemId  String
+  stockItem    OpsStockItem @relation(fields: [stockItemId], references: [id], onDelete: Cascade)
+  movementType String       // IN | OUT | ADJUST | RETURN
+  quantity     Int
+  workOrderId  String?
+  actorId      String
+  reason       String
+  createdAt    DateTime     @default(now())
+
+  @@index([stockItemId, createdAt])
+}
+
+model OpsFleetVehicle {
+  id               String    @id @default(uuid())
+  plateNumber      String    @unique
+  organizationId   String
+  siteId           String?
+  model            String
+  driverId         String?
+  status           String    @default("AVAILABLE") // AVAILABLE | ON_TRIP | MAINTENANCE | INACTIVE
+  odometerKm       Int       @default(0)
+  nextServiceDueAt DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  logs             OpsFleetLog[]
+
+  @@index([organizationId, status])
+  @@index([driverId])
+}
+
+model OpsFleetLog {
+  id            String          @id @default(uuid())
+  vehicleId     String
+  vehicle       OpsFleetVehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  workOrderId   String?
+  driverId      String
+  tripPurpose   String
+  startKm       Int             @default(0)
+  endKm         Int?
+  fuelCostMinor BigInt          @default(0)
+  createdAt     DateTime        @default(now())
+
+  @@index([vehicleId, createdAt])
+}
+
+model OpsReconciliationRun {
+  id             String   @id @default(uuid())
+  organizationId String
+  period         String
+  sourceSystem   String   // FINANCE | STOCK | FLEET | DEVICE
+  matchedCount   Int      @default(0)
+  exceptionCount Int      @default(0)
+  status         String   @default("OPEN") // OPEN | VERIFIED_BY_FINANCE | CLOSED
+  createdById    String
+  verifiedById   String?
+  createdAt      DateTime @default(now())
+
+  exceptions     OpsReconciliationException[]
+
+  @@index([organizationId, status])
+}
+
+model OpsReconciliationException {
+  id             String               @id @default(uuid())
+  runId          String
+  run            OpsReconciliationRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  exceptionType  String               // MISSING | DUPLICATE | UNMATCHED | DELAYED
+  referenceCode  String
+  ownerId        String?
+  resolutionNote String?
+  status         String               @default("OPEN") // OPEN | RESOLVED
+  createdAt      DateTime             @default(now())
+
+  @@index([runId, status])
+}
+
+model OpsAutomationRule {
+  id             String   @id @default(uuid())
+  organizationId String
+  name           String
+  triggerEvent   String   // WORK_ORDER_OVERDUE | INCIDENT_CRITICAL | STOCK_LOW | HANDOVER_UNACKNOWLEDGED
+  conditionJson  String?
+  actionType     String   // ESCALATE | NOTIFY | ASSIGN_ROLE
+  targetRoleOrId String
+  isActive       Boolean  @default(true)
+  createdById    String
+  createdAt      DateTime @default(now())
+
+  @@index([organizationId, isActive])
+}

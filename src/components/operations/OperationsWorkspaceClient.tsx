@@ -20,8 +20,9 @@ import {
   X,
 } from 'lucide-react';
 import { resolveApiUrl } from '@/lib/api-client';
+import { OperationsPhasesPanel } from '@/components/operations/OperationsPhasesPanel';
 
-type TabKey = 'command' | 'work_orders' | 'dispatch' | 'catalogue' | 'approvals';
+type TabKey = 'command' | 'work_orders' | 'dispatch' | 'assurance' | 'resources' | 'governance' | 'catalogue' | 'approvals';
 
 interface OpsOverviewData {
   lastUpdatedAt: string;
@@ -388,8 +389,11 @@ export default function OperationsWorkspaceClient({ actorName, actorRole }: { ac
               { key: 'command', label: 'Command Centre', icon: Activity },
               { key: 'work_orders', label: 'Work Orders & Requests', icon: ClipboardList },
               { key: 'dispatch', label: 'Dispatch & Daily Plan', icon: CalendarClock },
+              { key: 'assurance', label: 'SOPs, Inspections & Incidents', icon: AlertTriangle },
+              { key: 'resources', label: 'Assets, Stock & Fleet', icon: Wrench },
+              { key: 'governance', label: 'Handovers, Recon & Intelligence', icon: Layers },
               { key: 'catalogue', label: 'Sites & Service Catalogue', icon: Building2 },
-              { key: 'approvals', label: 'Approvals & Governance', icon: ShieldCheck },
+              { key: 'approvals', label: 'Approvals', icon: ShieldCheck },
             ] as const
           ).map((t) => {
             const Icon = t.icon;
@@ -584,6 +588,39 @@ export default function OperationsWorkspaceClient({ actorName, actorRole }: { ac
         )}
 
         {/* TAB 4: SITES & SERVICE CATALOGUE */}
+        {activeTab === 'assurance' && (
+          <OperationsPhasesPanel
+            mode="assurance"
+            actorRole={actorRole}
+            subsidiaries={data?.subsidiaries || []}
+            sites={data?.sites || []}
+            staffOptions={data?.staffOptions || []}
+            onError={setError}
+            onNotice={setNotice}
+          />
+        )}
+        {activeTab === 'resources' && (
+          <OperationsPhasesPanel
+            mode="resources"
+            actorRole={actorRole}
+            subsidiaries={data?.subsidiaries || []}
+            sites={data?.sites || []}
+            staffOptions={data?.staffOptions || []}
+            onError={setError}
+            onNotice={setNotice}
+          />
+        )}
+        {activeTab === 'governance' && (
+          <OperationsPhasesPanel
+            mode="governance"
+            actorRole={actorRole}
+            subsidiaries={data?.subsidiaries || []}
+            sites={data?.sites || []}
+            staffOptions={data?.staffOptions || []}
+            onError={setError}
+            onNotice={setNotice}
+          />
+        )}
         {activeTab === 'catalogue' && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
             <section style={cardStyle}>

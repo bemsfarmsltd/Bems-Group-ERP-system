@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../models/staff_models.dart';
 import '../../services/staff_api_service.dart';
 
@@ -12,17 +14,67 @@ class StaffOperationsScreen extends StatefulWidget {
 }
 
 class _StaffOperationsScreenState extends State<StaffOperationsScreen> {
+  static const _offlineQueueKey = 'bems_ops_offline_drafts';
+
   bool _loading = true;
   String? _error;
   List<dynamic> _workOrders = [];
   List<dynamic> _dispatches = [];
   List<dynamic> _sites = [];
   List<dynamic> _services = [];
+  List<dynamic> _assets = [];
+  List<dynamic> _handovers = [];
+  List<dynamic> _incidents = [];
+  List<Map<String, dynamic>> _offlineDrafts = [];
 
   @override
   void initState() {
     super.initState();
+    _loadOfflineQueue();
     _loadInbox();
+  }
+
+  Future<void> _loadOfflineQueue() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_offlineQueueKey);
+    if (raw != null && raw.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is List && mounted) {
+          setState(() {
+            _offlineDrafts = decoded.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+          });
+        }
+      } catch (_) {}
+    }
+  }
+
+  Future<void> _saveOfflineQueue(List<Map<String, dynamic>> drafts) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_offlineQueueKey, jsonEncode(drafts));
+    if (mounted) setState(() => _offlineDrafts = drafts);
+  }
+
+  Future<void> _syncOfflineDrafts() async {
+    if (_offlineDrafts.isEmpty) return;
+    try {
+      await StaffApiService.syncOperationsDrafts(
+        employeeId: widget.user.id,
+        drafts: _offlineDrafts,
+        token: widget.user.token,
+      );
+      await _saveOfflineQueue([]);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Offline operations drafts synchronized.')),
+      );
+      await _loadInbox();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Sync failed: ${e.toString().replaceFirst('Exception: ', '')}')),
+      );
+    }
   }
 
   Future<void> _loadInbox() async {
@@ -41,6 +93,9 @@ class _StaffOperationsScreenState extends State<StaffOperationsScreen> {
         _dispatches = (data['dispatches'] as List?) ?? [];
         _sites = (data['sites'] as List?) ?? [];
         _services = (data['services'] as List?) ?? [];
+        _assets = (data['assets'] as List?) ?? [];
+        _handovers = (data['handovers'] as List?) ?? [];
+        _incidents = (data['incidents'] as List?) ?? [];
       });
     } catch (e) {
       if (!mounted) return;
@@ -66,13 +121,21 @@ class _StaffOperationsScreenState extends State<StaffOperationsScreen> {
         SnackBar(content: Text('Work order updated to $nextStatus')),
       );
       await _loadInbox();
-    } catch (e) {
+    } catch (_) {
+      final nextQueue = [
+        ..._offlineDrafts,
+        {
+          'clientDraftId': 'draft-${DateTime.now().millisecondsSinceEpoch}',
+          'kind': 'WORK_ORDER_STATUS',
+          'workOrderId': workOrderId,
+          'status': nextStatus,
+          if (reason != null) 'reason': reason,
+        }
+      ];
+      await _saveOfflineQueue(nextQueue);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e.toString().replaceFirst('Exception: ', '')),
-          backgroundColor: const Color(0xFFB91C1C),
-        ),
+        const SnackBar(content: Text('Network offline — saved to Pending Sync queue.')),
       );
     }
   }
@@ -198,6 +261,59 @@ class _StaffOperationsScreenState extends State<StaffOperationsScreen> {
     }
   }
 
+  Future<void> _openIncidentModal() async {
+    final titleCtrl = TextEditingController();
+    final descCtrl = TextEditingController();
+    String severity = 'MEDIUM';
+    String? siteId = _sites.isNotEmpty ? _sites.first['id']?.toString() : null;
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModalState) => AlertDialog(
+          title: const Text('Report Field Incident'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(controller: titleCtrl, decoration: const InputDecoration(labelText: 'Incident Title', border: OutlineInputBorder())),
+                const SizedBox(height: 10),
+                DropdownButtonFormField<String>(
+                  value: severity,
+                  decoration: const InputDecoration(labelText: 'Severity', border: OutlineInputBorder()),
+                  items: const ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'].map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
+                  onChanged: (v) => setModalState(() => severity = v ?? 'MEDIUM'),
+                ),
+                const SizedBox(height: 10),
+                TextField(controller: descCtrl, maxLines: 3, decoration: const InputDecoration(labelText: 'Description', border: OutlineInputBorder())),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626), foregroundColor: Colors.white),
+              onPressed: () async {
+                if (titleCtrl.text.trim().isEmpty || descCtrl.text.trim().isEmpty) return;
+                await StaffApiService.reportOperationsIncident(
+                  employeeId: widget.user.id,
+                  title: titleCtrl.text.trim(),
+                  description: descCtrl.text.trim(),
+                  severity: severity,
+                  siteId: siteId,
+                  token: widget.user.token,
+                );
+                if (ctx.mounted) Navigator.pop(ctx, true);
+              },
+              child: const Text('Report'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (ok == true) await _loadInbox();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -208,6 +324,7 @@ class _StaffOperationsScreenState extends State<StaffOperationsScreen> {
         elevation: 0.5,
         title: const Text('Operations Workspace', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
         actions: [
+          IconButton(icon: const Icon(Icons.report_problem_outlined, color: Color(0xFFDC2626)), tooltip: 'Report Incident', onPressed: _openIncidentModal),
           IconButton(icon: const Icon(Icons.refresh_rounded), onPressed: _loadInbox),
         ],
       ),
@@ -241,6 +358,27 @@ class _StaffOperationsScreenState extends State<StaffOperationsScreen> {
                   child: ListView(
                     padding: const EdgeInsets.fromLTRB(16, 16, 16, 90),
                     children: [
+                      if (_offlineDrafts.isNotEmpty)
+                        Container(
+                          margin: const EdgeInsets.only(bottom: 14),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFF7ED),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: const Color(0xFFFED7AA)),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text('${_offlineDrafts.length} offline draft(s) pending sync', style: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFFC2410C))),
+                              ElevatedButton(
+                                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFEA580C), foregroundColor: Colors.white, visualDensity: VisualDensity.compact),
+                                onPressed: _syncOfflineDrafts,
+                                child: const Text('Sync Now'),
+                              ),
+                            ],
+                          ),
+                        ),
                       if (_dispatches.isNotEmpty) ...[
                         const Text('DISPATCHED VISITS', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFF64748B), letterSpacing: 0.8)),
                         const SizedBox(height: 8),
@@ -267,6 +405,57 @@ class _StaffOperationsScreenState extends State<StaffOperationsScreen> {
                         )
                       else
                         ..._workOrders.map((w) => _buildWorkOrderCard(w)),
+                      if (_handovers.isNotEmpty) ...[
+                        const SizedBox(height: 16),
+                        const Text('SHIFT HANDOVERS', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFF64748B), letterSpacing: 0.8)),
+                        const SizedBox(height: 8),
+                        ..._handovers.map((h) => Container(
+                              margin: const EdgeInsets.only(bottom: 10),
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14), border: Border.all(color: const Color(0xFFE2E8F0))),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(h['shiftLabel']?.toString() ?? 'Shift', style: const TextStyle(fontWeight: FontWeight.w800)),
+                                  Text(h['openItemsSummary']?.toString() ?? '', style: const TextStyle(fontSize: 12.5, color: Color(0xFF475569))),
+                                  if (h['acknowledgedAt'] == null && h['outgoingOfficerId'] != widget.user.id)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 8),
+                                      child: ElevatedButton(
+                                        style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF059669), foregroundColor: Colors.white, visualDensity: VisualDensity.compact),
+                                        onPressed: () async {
+                                          await StaffApiService.acknowledgeOperationsHandover(employeeId: widget.user.id, handoverId: h['id'].toString(), token: widget.user.token);
+                                          await _loadInbox();
+                                        },
+                                        child: const Text('Acknowledge Handover', style: TextStyle(fontSize: 12)),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            )),
+                      ],
+                      if (_assets.isNotEmpty) ...[
+                        const SizedBox(height: 16),
+                        const Text('ASSIGNED ASSETS', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFF64748B), letterSpacing: 0.8)),
+                        const SizedBox(height: 8),
+                        ..._assets.map((a) => ListTile(
+                              tileColor: Colors.white,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: Color(0xFFE2E8F0))),
+                              title: Text(a['name']?.toString() ?? 'Asset', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5)),
+                              subtitle: Text('${a['assetTag']} · ${a['condition']}', style: const TextStyle(fontSize: 11.5)),
+                            )),
+                      ],
+                      if (_incidents.isNotEmpty) ...[
+                        const SizedBox(height: 16),
+                        const Text('MY REPORTED INCIDENTS', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFF64748B), letterSpacing: 0.8)),
+                        const SizedBox(height: 8),
+                        ..._incidents.map((inc) => ListTile(
+                              tileColor: Colors.white,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: Color(0xFFE2E8F0))),
+                              title: Text(inc['title']?.toString() ?? 'Incident', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5)),
+                              subtitle: Text('${inc['incidentNumber']} · ${inc['severity']} · ${inc['status']}', style: const TextStyle(fontSize: 11.5)),
+                            )),
+                      ],
                     ],
                   ),
                 ),

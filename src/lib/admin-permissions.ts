@@ -412,6 +412,34 @@ export const ADMIN_PERMISSION_CATALOG: PermissionModuleDef[] = [
           { key: 'manage_sites_services', label: 'Create & Edit Sites & Services' },
         ],
       },
+      {
+        key: 'operations_assurance',
+        label: 'SOPs, Inspections & Incidents',
+        actions: [
+          { key: 'view_assurance', label: 'View SOPs, Inspections & Incidents' },
+          { key: 'manage_sops_inspections', label: 'Manage SOPs & Record Inspections' },
+          { key: 'manage_incidents', label: 'Log & Investigate Incidents' },
+          { key: 'close_incidents', label: 'Close Critical Incidents' },
+        ],
+      },
+      {
+        key: 'operations_resources',
+        label: 'Assets, Stock & Fleet',
+        actions: [
+          { key: 'view_resources', label: 'View Assets, Stock & Fleet' },
+          { key: 'manage_assets_fleet', label: 'Manage Assets & Fleet Vehicles' },
+          { key: 'manage_stock', label: 'Record Stock Movements' },
+        ],
+      },
+      {
+        key: 'operations_governance',
+        label: 'Handovers, Reconciliations & Rules',
+        actions: [
+          { key: 'manage_handovers', label: 'Manage Shift Handovers' },
+          { key: 'manage_reconciliations', label: 'Manage Reconciliations & Exceptions' },
+          { key: 'manage_automation_rules', label: 'Configure Automation Rules' },
+        ],
+      },
     ],
   },
   {

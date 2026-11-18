@@ -1383,4 +1383,75 @@ class StaffApiService {
     }
     throw Exception(data['error']?.toString() ?? 'Could not update work order.');
   }
+
+  /// Operations Phase 2/3: Sync offline work-order drafts
+  static Future<Map<String, dynamic>> syncOperationsDrafts({
+    required String employeeId,
+    required List<Map<String, dynamic>> drafts,
+    String? token,
+  }) async {
+    final res = await _executeWithFailover(
+      (host) => http.post(
+        Uri.parse('$host/api/operations/staff/sync'),
+        headers: _headers(token: token, employeeId: employeeId),
+        body: jsonEncode({'drafts': drafts}),
+      ),
+      timeout: const Duration(seconds: 15),
+    );
+    final data = jsonDecode(res.body);
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      return data is Map<String, dynamic> ? data : {};
+    }
+    throw Exception(data['error']?.toString() ?? 'Offline sync failed.');
+  }
+
+  /// Operations Phase 2: Report field incident from Staff App
+  static Future<Map<String, dynamic>> reportOperationsIncident({
+    required String employeeId,
+    required String title,
+    required String description,
+    String severity = 'MEDIUM',
+    String? siteId,
+    String? token,
+  }) async {
+    final res = await _executeWithFailover(
+      (host) => http.post(
+        Uri.parse('$host/api/operations/incidents'),
+        headers: _headers(token: token, employeeId: employeeId),
+        body: jsonEncode({
+          'title': title,
+          'description': description,
+          'severity': severity,
+          'siteId': siteId,
+        }),
+      ),
+      timeout: const Duration(seconds: 12),
+    );
+    final data = jsonDecode(res.body);
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      return data is Map<String, dynamic> ? data : {};
+    }
+    throw Exception(data['error']?.toString() ?? 'Could not report incident.');
+  }
+
+  /// Operations Phase 2: Acknowledge shift handover
+  static Future<Map<String, dynamic>> acknowledgeOperationsHandover({
+    required String employeeId,
+    required String handoverId,
+    String? token,
+  }) async {
+    final res = await _executeWithFailover(
+      (host) => http.patch(
+        Uri.parse('$host/api/operations/handovers'),
+        headers: _headers(token: token, employeeId: employeeId),
+        body: jsonEncode({'id': handoverId}),
+      ),
+      timeout: const Duration(seconds: 12),
+    );
+    final data = jsonDecode(res.body);
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      return data is Map<String, dynamic> ? data : {};
+    }
+    throw Exception(data['error']?.toString() ?? 'Could not acknowledge handover.');
+  }
 }

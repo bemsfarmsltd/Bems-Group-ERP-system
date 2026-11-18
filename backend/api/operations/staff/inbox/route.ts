@@ -15,7 +15,7 @@ export async function GET(request: Request) {
       ? { organizationId: { in: ctx.allowedSubIds } }
       : {};
 
-    const [workOrders, dispatches, sites, services] = await Promise.all([
+    const [workOrders, dispatches, sites, services, sops, assets, handovers, incidents] = await Promise.all([
       prisma.opsWorkOrder.findMany({
         where: {
           ...orgWhere,
@@ -50,6 +50,29 @@ export async function GET(request: Request) {
         orderBy: { name: 'asc' },
         select: { id: true, code: true, name: true, category: true, organizationId: true },
       }),
+      prisma.opsSopDocument.findMany({
+        where: { ...orgWhere, status: 'ACTIVE' },
+        orderBy: { title: 'asc' },
+        take: 40,
+      }),
+      prisma.opsAsset.findMany({
+        where: { ...orgWhere, custodianId: ctx.actor.id },
+        orderBy: { name: 'asc' },
+        take: 40,
+      }),
+      prisma.opsShiftHandover.findMany({
+        where: {
+          ...orgWhere,
+          OR: [{ outgoingOfficerId: ctx.actor.id }, { incomingOfficerId: ctx.actor.id }],
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+      }),
+      prisma.opsIncident.findMany({
+        where: { ...orgWhere, reporterId: ctx.actor.id },
+        orderBy: { reportedAt: 'desc' },
+        take: 20,
+      }),
     ]);
 
     return NextResponse.json({
@@ -57,6 +80,10 @@ export async function GET(request: Request) {
       dispatches,
       sites,
       services,
+      sops,
+      assets,
+      handovers,
+      incidents,
     });
   } catch (error) {
     console.error('Operations staff inbox error:', error);
