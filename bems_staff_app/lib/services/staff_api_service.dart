@@ -125,12 +125,7 @@ class StaffApiService {
 
   static List<String> get _candidateHosts {
     if (kIsWeb) {
-      final webOrigin = Uri.base.origin;
-      return [
-        webOrigin,
-        _activeBaseUrl,
-        if (_activeBaseUrl == primaryBaseUrl) fallbackBaseUrl else primaryBaseUrl,
-      ];
+      return [Uri.base.origin];
     }
     return [
       _activeBaseUrl,

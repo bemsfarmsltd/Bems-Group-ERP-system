@@ -24,64 +24,73 @@ class _StaffSplashScreenState extends State<StaffSplashScreen> {
 
   Future<void> _bootstrap() async {
     final startTime = DateTime.now();
-    final gateFuture = StaffApiService.checkVersionGate();
-    final user = await StaffStorageService.getUser();
-    final hasSeenOnboarding = await StaffStorageService.hasSeenOnboardingCarousel(
-      version: StaffApiService.appVersion,
-    );
-    final isBioConfigured = await StaffStorageService.isBiometricConfigured();
-    final isBioEnabled = await StaffStorageService.isBiometricEnabled();
+    Widget nextScreen = const StaffLoginScreen();
 
-    bool isSessionValid = false;
-    if (user != null) {
-      if (user.token.isNotEmpty) {
-        StaffApiService.sessionToken = user.token;
+    try {
+      final gateFuture = StaffApiService.checkVersionGate()
+          .timeout(const Duration(seconds: 4), onTimeout: () => null)
+          .catchError((_) => null);
+      final user = await StaffStorageService.getUser();
+      final hasSeenOnboarding = await StaffStorageService.hasSeenOnboardingCarousel(
+        version: StaffApiService.appVersion,
+      ).catchError((_) => true);
+      final isBioConfigured = await StaffStorageService.isBiometricConfigured().catchError((_) => false);
+      final isBioEnabled = await StaffStorageService.isBiometricEnabled().catchError((_) => false);
+
+      bool isSessionValid = false;
+      if (user != null) {
+        if (user.token.isNotEmpty) {
+          StaffApiService.sessionToken = user.token;
+        }
+        isSessionValid = await StaffApiService.verifySession(user)
+            .timeout(const Duration(seconds: 6), onTimeout: () => false)
+            .catchError((_) => false);
+        if (!isSessionValid) {
+          await StaffStorageService.clearUser();
+        }
       }
-      isSessionValid = await StaffApiService.verifySession(user);
-      if (!isSessionValid) {
-        await StaffStorageService.clearUser();
+
+      final gateInfo = await gateFuture;
+
+      if (gateInfo != null && gateInfo['upgradeRequired'] == true) {
+        nextScreen = StaffAppUpgradeScreen(
+          currentVersion: StaffApiService.appVersion,
+          requiredVersion: gateInfo['minimumAllowedVersion']?.toString() ?? '1.0.0',
+          downloadUrl: gateInfo['directDownloadUrl']?.toString() ?? 'https://bemserp.work/download/staff-app.apk',
+          notes: gateInfo['upgradePromptNotes']?.toString() ?? 'A critical update is required to continue.',
+        );
+      } else {
+        final Widget postOnboardingScreen;
+        if (user == null || !isSessionValid) {
+          postOnboardingScreen = const StaffLoginScreen();
+        } else if (isBioConfigured && isBioEnabled) {
+          postOnboardingScreen = StaffBiometricAuthScreen(user: user);
+        } else {
+          postOnboardingScreen = StaffModuleGalleryScreen(user: user);
+        }
+
+        if (!hasSeenOnboarding) {
+          nextScreen = StaffOnboardingCarouselScreen(nextScreen: postOnboardingScreen);
+        } else {
+          nextScreen = postOnboardingScreen;
+        }
       }
+    } catch (_) {
+      nextScreen = const StaffLoginScreen();
     }
 
-    final gateInfo = await gateFuture;
-
     final elapsed = DateTime.now().difference(startTime);
-    final remaining = const Duration(milliseconds: 3200) - elapsed;
+    final remaining = const Duration(milliseconds: 2200) - elapsed;
     if (remaining > Duration.zero) {
       await Future.delayed(remaining);
     }
 
     if (!mounted) return;
 
-    Widget nextScreen;
-    if (gateInfo != null && gateInfo['upgradeRequired'] == true) {
-      nextScreen = StaffAppUpgradeScreen(
-        currentVersion: StaffApiService.appVersion,
-        requiredVersion: gateInfo['minimumAllowedVersion']?.toString() ?? '1.0.0',
-        downloadUrl: gateInfo['directDownloadUrl']?.toString() ?? 'https://bemserp.work/download/staff-app.apk',
-        notes: gateInfo['upgradePromptNotes']?.toString() ?? 'A critical update is required to continue.',
-      );
-    } else {
-      final Widget postOnboardingScreen;
-      if (user == null || !isSessionValid) {
-        postOnboardingScreen = const StaffLoginScreen();
-      } else if (isBioConfigured && isBioEnabled) {
-        postOnboardingScreen = StaffBiometricAuthScreen(user: user);
-      } else {
-        postOnboardingScreen = StaffModuleGalleryScreen(user: user);
-      }
-
-      if (!hasSeenOnboarding) {
-        nextScreen = StaffOnboardingCarouselScreen(nextScreen: postOnboardingScreen);
-      } else {
-        nextScreen = postOnboardingScreen;
-      }
-    }
-
     Navigator.pushReplacement(
       context,
       PageRouteBuilder(
-        transitionDuration: const Duration(milliseconds: 700),
+        transitionDuration: const Duration(milliseconds: 500),
         pageBuilder: (context, animation, secondaryAnimation) => nextScreen,
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
           return FadeTransition(opacity: animation, child: child);

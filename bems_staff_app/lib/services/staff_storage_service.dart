@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -6,12 +7,63 @@ import '../theme/subsidiary_theme.dart';
 
 class StaffStorageService {
   static const _secure = FlutterSecureStorage(aOptions: AndroidOptions(encryptedSharedPreferences: true));
-  static Future<Map<String,dynamic>> walletIntent(String employeeId,Map<String,dynamic> input) async {
-    final key='wallet-intent:$employeeId';final old=await _secure.read(key:key);
-    if(old!=null){final parsed=jsonDecode(old) as Map<String,dynamic>;if(parsed['amountMinor']==input['amountMinor']&&parsed['bankAccountId']==input['bankAccountId']&&jsonEncode(parsed['creditAllocations'])==jsonEncode(input['creditAllocations']))return parsed;}
-    await _secure.write(key:key,value:jsonEncode(input));return input;
+
+  static Future<String?> _readSafe(String key) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (kIsWeb) {
+      final v = prefs.getString(key);
+      if (v != null) return v;
+      try {
+        final legacy = await _secure.read(key: key);
+        if (legacy != null) {
+          await prefs.setString(key, legacy);
+          return legacy;
+        }
+      } catch (_) {}
+      return null;
+    }
+    try {
+      final secureVal = await _secure.read(key: key);
+      if (secureVal != null) return secureVal;
+    } catch (_) {}
+    return prefs.getString(key);
   }
-  static Future<void> clearWalletIntent(String employeeId) => _secure.delete(key:'wallet-intent:$employeeId');
+
+  static Future<void> _writeSafe(String key, String value) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (kIsWeb) {
+      await prefs.setString(key, value);
+      return;
+    }
+    try {
+      await _secure.write(key: key, value: value);
+      await prefs.remove(key);
+    } catch (_) {
+      await prefs.setString(key, value);
+    }
+  }
+
+  static Future<void> _deleteSafe(String key) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(key);
+    if (!kIsWeb) {
+      try {
+        await _secure.delete(key: key);
+      } catch (_) {}
+    } else {
+      try {
+        await _secure.delete(key: key);
+      } catch (_) {}
+    }
+  }
+
+  static Future<Map<String,dynamic>> walletIntent(String employeeId,Map<String,dynamic> input) async {
+    final key='wallet-intent:$employeeId';
+    final old=await _readSafe(key);
+    if(old!=null){final parsed=jsonDecode(old) as Map<String,dynamic>;if(parsed['amountMinor']==input['amountMinor']&&parsed['bankAccountId']==input['bankAccountId']&&jsonEncode(parsed['creditAllocations'])==jsonEncode(input['creditAllocations']))return parsed;}
+    await _writeSafe(key,jsonEncode(input));return input;
+  }
+  static Future<void> clearWalletIntent(String employeeId) => _deleteSafe('wallet-intent:$employeeId');
   static const _keyUser = 'bems_staff_user';
   static const _keySeenOnboardingCarousel = 'bems_staff_seen_onboarding_carousel_v1';
   static const _keyLastSeenJourneyVersion = 'bems_staff_last_seen_journey_version';
@@ -22,22 +74,19 @@ class StaffStorageService {
   static const _keySavedPassword = 'bems_staff_saved_password';
 
   static Future<void> saveUser(StaffUser user) async {
-    final prefs = await SharedPreferences.getInstance();
-    await _secure.write(key: _keyUser, value: jsonEncode(user.toJson()));
-    await prefs.remove(_keyUser);
+    await _writeSafe(_keyUser, jsonEncode(user.toJson()));
     SubsidiaryTheme.applyUser(user);
   }
 
   static Future<StaffUser?> getUser() async {
-    final prefs = await SharedPreferences.getInstance();
-    final legacyUser = prefs.getString(_keyUser);
-    if (legacyUser != null) {
-      await _secure.write(key: _keyUser, value: legacyUser);
-      await prefs.remove(_keyUser);
-    }
-    final data = await _secure.read(key: _keyUser);
-    if (data == null) return null;
     try {
+      final prefs = await SharedPreferences.getInstance();
+      final legacyUser = !kIsWeb ? prefs.getString(_keyUser) : null;
+      if (legacyUser != null) {
+        await _writeSafe(_keyUser, legacyUser);
+      }
+      final data = await _readSafe(_keyUser);
+      if (data == null) return null;
       final user = StaffUser.fromJson(jsonDecode(data));
       SubsidiaryTheme.applyUser(user);
       return user;
@@ -47,9 +96,7 @@ class StaffStorageService {
   }
 
   static Future<void> clearUser() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_keyUser);
-    await _secure.delete(key: _keyUser);
+    await _deleteSafe(_keyUser);
     SubsidiaryTheme.applyUser(null);
   }
 
