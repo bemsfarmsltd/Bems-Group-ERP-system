@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Plus, RefreshCw, X } from 'lucide-react';
+import { Bell, Plus, RefreshCw, X } from 'lucide-react';
 import { resolveApiUrl } from '@/lib/api-client';
 import { OperationsPhasesPanel } from '@/components/operations/OperationsPhasesPanel';
 import { useGmdAccess } from '@/components/ai/useGmdAccess';
@@ -117,11 +117,31 @@ export default function OperationsWorkspaceClient({
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
-  // Global Filters
+  // Global Filters (initialized from ?org=...&tab=... if present)
   const [orgFilter, setOrgFilter] = useState('');
   const [siteFilter, setSiteFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [priorityFilter, setPriorityFilter] = useState('');
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const sp = new URLSearchParams(window.location.search);
+    const orgParam = sp.get('org');
+    const tabParam = sp.get('tab') as TabKey | null;
+    if (orgParam) setOrgFilter(orgParam);
+    if (tabParam && OPS_NAV_GROUPS.some((g) => g.items.some((i) => i.id === tabParam))) {
+      setActiveTab(tabParam);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    if (orgFilter) url.searchParams.set('org', orgFilter);
+    else url.searchParams.delete('org');
+    url.searchParams.set('tab', activeTab);
+    window.history.replaceState({}, '', url.toString());
+  }, [orgFilter, activeTab]);
 
   // Modals / Drawers
   const [showNewWoModal, setShowNewWoModal] = useState(false);
@@ -698,17 +718,25 @@ export default function OperationsWorkspaceClient({
                     style={{
                       width: '100%',
                       padding: '8px 10px',
-                      borderRadius: 8,
+                      borderRadius: 10,
                       background: !orgFilter ? '#fff7ed' : 'transparent',
                       border: !orgFilter ? '1px solid #fed7aa' : '1px solid transparent',
                       textAlign: 'left',
                       cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 10,
                       fontSize: 12.5,
                       fontWeight: 700,
                       color: '#0f172a',
                     }}
                   >
-                    BEMS Group (All Subsidiaries)
+                    <img src="/bems-group-logo.png?v=20261024" alt="BEMS Group" style={{ width: 24, height: 24, borderRadius: 6, objectFit: 'contain', background: '#fff', border: '1px solid #e2e8f0' }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 800 }}>BEMS Group</div>
+                      <div style={{ fontSize: 10.5, color: '#64748b', fontWeight: 500 }}>All Subsidiaries · Holding</div>
+                    </div>
+                    {!orgFilter && <span style={{ color: '#ea580c', fontWeight: 900 }}>✓</span>}
                   </button>
                   {(data?.subsidiaries || []).map((sub) => (
                     <button
@@ -721,17 +749,47 @@ export default function OperationsWorkspaceClient({
                       style={{
                         width: '100%',
                         padding: '8px 10px',
-                        borderRadius: 8,
-                        background: orgFilter === sub.id ? '#fff7ed' : 'transparent',
-                        border: orgFilter === sub.id ? '1px solid #fed7aa' : '1px solid transparent',
+                        borderRadius: 10,
+                        background: orgFilter === sub.id ? `${sub.brandColor || '#ea580c'}14` : 'transparent',
+                        border: orgFilter === sub.id ? `1px solid ${sub.brandColor || '#ea580c'}55` : '1px solid transparent',
                         textAlign: 'left',
                         cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 10,
                         fontSize: 12.5,
                         fontWeight: 700,
                         color: '#0f172a',
                       }}
                     >
-                      {sub.legalName}
+                      <span
+                        style={{
+                          width: 24,
+                          height: 24,
+                          borderRadius: 6,
+                          background: sub.logoUrl ? '#ffffff' : (sub.brandColor || '#ea580c'),
+                          border: '1px solid #e2e8f0',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          overflow: 'hidden',
+                          color: '#ffffff',
+                          fontSize: 10,
+                          fontWeight: 800,
+                          flexShrink: 0,
+                        }}
+                      >
+                        {sub.logoUrl ? (
+                          <img src={sub.logoUrl} alt={sub.legalName} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                        ) : (
+                          sub.code?.slice(0, 2) || sub.legalName.slice(0, 2).toUpperCase()
+                        )}
+                      </span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sub.legalName}</div>
+                        <div style={{ fontSize: 10.5, color: '#64748b', fontWeight: 500 }}>{sub.type} · {sub.code}</div>
+                      </div>
+                      {orgFilter === sub.id && <span style={{ color: sub.brandColor || '#ea580c', fontWeight: 900 }}>✓</span>}
                     </button>
                   ))}
                 </div>
@@ -866,7 +924,8 @@ export default function OperationsWorkspaceClient({
                 aria-expanded={topPanel === 'notifications'}
                 onClick={() => setTopPanel(topPanel === 'notifications' ? null : 'notifications')}
               >
-                ♧{unreadNotificationCount > 0 && <i style={{ background: '#ef4444' }} />}
+                <Bell size={14} />
+                {unreadNotificationCount > 0 && <i style={{ background: '#ef4444' }} />}
               </button>
               {topPanel === 'notifications' && (
                 <div className={unreadNotificationCount === 0 ? 'top-popover notifications-panel read' : 'top-popover notifications-panel'}>

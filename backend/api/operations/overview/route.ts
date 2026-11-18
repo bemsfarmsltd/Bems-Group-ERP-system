@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { resolveOperationsContext } from '@/lib/opsRouteHelper';
 import { ensureOperationsSchema } from '@/lib/ops-ensure-schema';
+import { resolveOrganizationBranding } from '@/lib/subsidiary-branding';
 
 export const dynamic = 'force-dynamic';
 
@@ -83,7 +84,11 @@ export async function GET(request: Request) {
       prisma.organization.findMany({
         where: ctx.useSubFilter ? { id: { in: ctx.allowedSubIds } } : { status: 'ACTIVE' },
         orderBy: { legalName: 'asc' },
-        select: { id: true, legalName: true, code: true, type: true },
+        include: {
+          settings: {
+            where: { key: { in: ['BRAND_COLOR', 'BRAND_LOGO_URL'] } },
+          },
+        },
       }),
       prisma.employee.findMany({
         where: { status: 'ACTIVE', approvalStatus: 'APPROVED' },
@@ -144,7 +149,17 @@ export async function GET(request: Request) {
       sites,
       services,
       recentFeed: scopedLogs,
-      subsidiaries,
+      subsidiaries: subsidiaries.map((sub) => {
+        const b = resolveOrganizationBranding(sub);
+        return {
+          id: sub.id,
+          legalName: sub.legalName,
+          code: sub.code,
+          type: sub.type,
+          brandColor: b.subsidiaryBrandColor,
+          logoUrl: b.subsidiaryLogoUrl,
+        };
+      }),
       staffOptions: employees,
     });
   } catch (error) {
