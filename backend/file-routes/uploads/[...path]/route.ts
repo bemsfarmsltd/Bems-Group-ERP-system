@@ -91,7 +91,7 @@ export async function GET(
 
     let meta = fileMetaCache.get(filename);
     if (!meta || meta.expiresAt <= Date.now()) {
-      const [attachment, brand] = await Promise.all([
+      const [attachment, brand, settingBrand, avatarOwner] = await Promise.all([
         prisma.attachment.findFirst({
           where: {
             OR: [
@@ -103,15 +103,27 @@ export async function GET(
           include: { request: { select: { requestedById: true, disbursementAssigneeId: true } } },
         }),
         prisma.organization.findFirst({ where: { logoUrl: { endsWith: '/' + filename } }, select: { id: true } }),
+        prisma.workspaceSetting.findFirst({
+          where: {
+            key: { in: ['BRAND_LOGO_URL', 'HR_MGMT_SIGNATURE_URL'] },
+            value: { contains: filename },
+          },
+          select: { id: true },
+        }),
+        prisma.employee.findFirst({
+          where: { avatarUrl: { endsWith: '/' + filename } },
+          select: { id: true },
+        }),
       ]);
       const ownerIds = [
         attachment?.uploadedById,
         attachment?.ownerId,
         attachment?.request?.requestedById,
         attachment?.request?.disbursementAssigneeId,
+        avatarOwner?.id,
       ].filter((id): id is string => Boolean(id));
       meta = {
-        isPublicBrandAsset: Boolean(brand || attachment?.ownerType === 'PUBLIC_AVATAR'),
+        isPublicBrandAsset: Boolean(brand || settingBrand || attachment?.ownerType === 'PUBLIC_AVATAR'),
         ownerIds,
         expiresAt: Date.now() + 5 * 60 * 1000,
       };
@@ -123,9 +135,11 @@ export async function GET(
     if (!isPublicBrandAsset) {
       const actor = await getAuthenticatedEmployee(request, { disallowServiceToken: true });
       if (!actor) return new NextResponse('Authentication required.', { status: 401 });
-      const isExecutive = hasAnyRole(actor, ['GMD', 'SYSTEM_ADMIN', 'SUPER_ADMIN']);
+      const isAuthorizedViewer =
+        hasAnyRole(actor, ['GMD', 'SYSTEM_ADMIN', 'SUPER_ADMIN', 'CUSTOM_ADMIN']) ||
+        isAvatarPath;
       const ownsAttachment = meta.ownerIds.includes(actor.id);
-      if (!isExecutive && !ownsAttachment) {
+      if (!isAuthorizedViewer && !ownsAttachment) {
         const ownsProfile = await prisma.employee.findFirst({
           where: { id: actor.id, avatarUrl: { endsWith: '/' + filename } },
           select: { id: true },
@@ -152,7 +166,7 @@ export async function GET(
       });
     }
 
-    // 1. Primary storage check: Durable Supabase PostgreSQL database (with retry)
+    // 1. Primary storage check: Durable Supabase PostgreSQL database (StoredFile -> Attachment.fileData fallback)
     try {
       const dbFile = await findStoredFileWithRetry(filename, 3);
       if (dbFile && dbFile.data) {
@@ -160,6 +174,29 @@ export async function GET(
         const resolvedMime = dbFile.mimeType || defaultContentType;
         setInMemoryCache(filename, buf, resolvedMime);
 
+        return new NextResponse(new Uint8Array(buf), {
+          headers: {
+            'Content-Type': resolvedMime,
+            'Cache-Control': cacheControlHeader,
+            'X-Content-Type-Options': 'nosniff',
+          },
+        });
+      }
+
+      const attachFallback = await prisma.attachment.findFirst({
+        where: {
+          OR: [
+            { fileUrl: { endsWith: '/' + filename } },
+            { fileUrl: { endsWith: filename } },
+            { fileName: filename },
+          ],
+        },
+        select: { fileData: true, contentType: true },
+      });
+      if (attachFallback?.fileData) {
+        const buf = Buffer.from(attachFallback.fileData);
+        const resolvedMime = attachFallback.contentType || defaultContentType;
+        setInMemoryCache(filename, buf, resolvedMime);
         return new NextResponse(new Uint8Array(buf), {
           headers: {
             'Content-Type': resolvedMime,
