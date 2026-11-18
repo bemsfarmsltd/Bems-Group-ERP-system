@@ -99,10 +99,14 @@ export default function OperationsWorkspaceClient({
 }) {
   const isAiAuthorized = useGmdAccess(actorRole);
   const [activeTab, setActiveTab] = useState<TabKey>('command');
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);
   const [switcher, setSwitcher] = useState(false);
   const [topPanel, setTopPanel] = useState<'notifications' | 'account' | null>(null);
   const [search, setSearch] = useState('');
+  const [woTabFilter, setWoTabFilter] = useState<'ALL' | 'OPEN' | 'IN_PROGRESS' | 'BLOCKED' | 'REVIEW' | 'COMPLETED'>('ALL');
+  const [woSearch, setWoSearch] = useState('');
+  const [approvalFilter, setApprovalFilter] = useState<'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED'>('ALL');
+  const [logoFailed, setLogoFailed] = useState(false);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const [showWelcome, setShowWelcome] = useState(false);
   const [aiDrawerOpen, setAiDrawerOpen] = useState(false);
@@ -408,7 +412,27 @@ export default function OperationsWorkspaceClient({
   const activeBusinessName = activeSub ? activeSub.legalName : 'BEMS Group';
   const activeBrandColor = activeSub?.brandColor || '#ea580c';
   const activeTintHex = activeBrandColor === '#ea580c' ? '#f97316' : activeBrandColor;
-  const activeLogoUrl = activeSub?.logoUrl || '/bems-group-logo.png?v=20261024';
+  const rawLogo = activeSub?.logoUrl || '/bems-group-logo.png?v=20261024';
+  const activeLogoUrl = rawLogo.startsWith('http') || rawLogo.startsWith('data:') ? rawLogo : resolveApiUrl(rawLogo);
+  const brandPrimaryBtn: React.CSSProperties = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    padding: '9px 14px',
+    borderRadius: 9,
+    border: 'none',
+    background: activeBrandColor,
+    color: '#ffffff',
+    fontSize: 12.5,
+    fontWeight: 700,
+    cursor: 'pointer',
+    boxShadow: `0 6px 14px -4px ${activeBrandColor}55`,
+  };
+
+  useEffect(() => {
+    setLogoFailed(false);
+  }, [activeLogoUrl]);
   const initials = safeActorName
     .split(/\s+/)
     .filter(Boolean)
@@ -578,17 +602,34 @@ export default function OperationsWorkspaceClient({
               width: 38,
               height: 38,
               borderRadius: 8,
-              background: '#ffffff',
+              background: logoFailed ? activeBrandColor : '#ffffff',
               border: `1.5px solid ${activeBrandColor}50`,
               display: 'inline-flex',
               alignItems: 'center',
               justifyContent: 'center',
               overflow: 'hidden',
-              padding: 2,
+              padding: logoFailed ? 0 : 2,
               flexShrink: 0,
+              color: '#ffffff',
+              fontWeight: 850,
+              fontSize: 13,
             }}
           >
-            <img src={activeLogoUrl} alt={activeBusinessName} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+            {!logoFailed ? (
+              <img
+                src={activeLogoUrl}
+                alt={activeBusinessName}
+                onError={() => setLogoFailed(true)}
+                style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+              />
+            ) : (
+              activeBusinessName
+                .split(/\s+/)
+                .filter(Boolean)
+                .slice(0, 2)
+                .map((p) => p[0]?.toUpperCase())
+                .join('') || 'BM'
+            )}
           </span>
           <div className="brand-title-wrap" style={{ display: 'inline-flex', alignItems: 'center', minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap' }}>
             <span
@@ -1076,15 +1117,59 @@ export default function OperationsWorkspaceClient({
           )}
 
           {/* TAB 1: COMMAND CENTRE */}
-          {activeTab === 'command' && (
+          {activeTab === 'command' && (() => {
+            const totalWo = data?.workOrders?.length ?? 0;
+            const overdueWo = data?.kpis?.overdueCount ?? 0;
+            const slaPct = totalWo > 0 ? Math.max(0, Math.round(((totalWo - overdueWo) / totalWo) * 100)) : 100;
+            const critCount = (data?.workOrders || []).filter((w) => w.priority === 'CRITICAL').length;
+            const highCount = (data?.workOrders || []).filter((w) => w.priority === 'HIGH').length;
+            const medCount = (data?.workOrders || []).filter((w) => w.priority === 'MEDIUM').length;
+            return (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(175px, 1fr))', gap: 12 }}>
                 <KpiCard label="Open Work Orders" value={data?.kpis?.openCount ?? 0} sub="Awaiting execution" color={activeBrandColor} featured />
                 <KpiCard label="In Progress" value={data?.kpis?.inProgressCount ?? 0} sub="Active field/office work" color={activeBrandColor} />
-                <KpiCard label="SLA Overdue" value={data?.kpis?.overdueCount ?? 0} sub="Past due target" color="#dc2626" />
+                <KpiCard label="SLA Overdue" value={overdueWo} sub="Past due target" color="#dc2626" />
                 <KpiCard label="Blocked" value={data?.kpis?.blockedCount ?? 0} sub="Needs escalation" color="#b91c1c" />
                 <KpiCard label="Today's Dispatches" value={data?.kpis?.todayDispatchesCount ?? 0} sub={`${data?.kpis?.activeSitesCount ?? 0} active sites`} color="#4f46e5" />
                 <KpiCard label="Completed / Closed" value={data?.kpis?.completedCount ?? 0} sub={`${data?.kpis?.pendingApprovalsCount ?? 0} pending approvals`} color="#059669" />
+              </div>
+
+              {/* Operational Pulse & SLA Readiness Strip */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>
+                <div style={cardStyle}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                    <span style={{ fontSize: 11.5, fontWeight: 800, color: '#64748b', textTransform: 'uppercase' }}>SLA Compliance Health</span>
+                    <span style={{ fontSize: 13, fontWeight: 850, color: slaPct >= 90 ? '#059669' : '#dc2626' }}>{slaPct}%</span>
+                  </div>
+                  <div style={{ height: 8, borderRadius: 999, background: '#e2e8f0', overflow: 'hidden' }}>
+                    <div style={{ width: `${slaPct}%`, height: '100%', background: activeBrandColor, transition: 'width 0.3s ease' }} />
+                  </div>
+                  <div style={{ fontSize: 11.5, color: '#64748b', marginTop: 8 }}>
+                    {overdueWo === 0 ? 'All active work orders are within SLA targets.' : `${overdueWo} work order(s) require immediate escalation.`}
+                  </div>
+                </div>
+
+                <div style={cardStyle}>
+                  <div style={{ fontSize: 11.5, fontWeight: 800, color: '#64748b', textTransform: 'uppercase', marginBottom: 8 }}>Priority Distribution</div>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <span style={{ padding: '4px 10px', borderRadius: 999, fontSize: 11.5, fontWeight: 700, background: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca' }}>Critical: {critCount}</span>
+                    <span style={{ padding: '4px 10px', borderRadius: 999, fontSize: 11.5, fontWeight: 700, background: `${activeBrandColor}15`, color: activeBrandColor, border: `1px solid ${activeBrandColor}40` }}>High: {highCount}</span>
+                    <span style={{ padding: '4px 10px', borderRadius: 999, fontSize: 11.5, fontWeight: 700, background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe' }}>Medium: {medCount}</span>
+                  </div>
+                  <div style={{ fontSize: 11.5, color: '#64748b', marginTop: 8 }}>
+                    {data?.kpis?.activeSitesCount ?? 0} active site(s) · {data?.kpis?.activeServicesCount ?? 0} SLA service(s) configured
+                  </div>
+                </div>
+
+                <div style={cardStyle}>
+                  <div style={{ fontSize: 11.5, fontWeight: 800, color: '#64748b', textTransform: 'uppercase', marginBottom: 8 }}>Command Quick Actions</div>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <button type="button" onClick={() => setShowNewWoModal(true)} style={brandPrimaryBtn}>+ New Work Order</button>
+                    <button type="button" onClick={() => setActiveTab('dispatch')} style={linkBtnStyle}>Dispatch Board</button>
+                    <button type="button" onClick={() => setActiveTab('catalogue')} style={linkBtnStyle}>Sites &amp; SLAs</button>
+                  </div>
+                </div>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.5fr) minmax(300px, 1fr)', gap: 16 }}>
@@ -1093,7 +1178,7 @@ export default function OperationsWorkspaceClient({
                     <h2 style={cardTitleStyle}>Active Work Orders Queue</h2>
                     <button type="button" onClick={() => setActiveTab('work_orders')} style={linkBtnStyle}>View All</button>
                   </div>
-                  <WorkOrderTable workOrders={(data?.workOrders || []).slice(0, 10)} onSelect={(id) => void loadWoDetail(id)} />
+                  <WorkOrderTable workOrders={(data?.workOrders || []).slice(0, 10)} brandColor={activeBrandColor} onSelect={(id) => void loadWoDetail(id)} />
                 </section>
 
                 <section style={cardStyle}>
@@ -1112,7 +1197,7 @@ export default function OperationsWorkspaceClient({
                           onClick={() => void loadWoDetail(item.workOrderId)}
                           style={{ textAlign: 'left', padding: 10, borderRadius: 10, border: '1px solid #e2e8f0', background: '#f8fafc', cursor: 'pointer' }}
                         >
-                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, fontWeight: 700, color: '#ea580c' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, fontWeight: 700, color: activeBrandColor }}>
                             <span>{item.workOrderNumber} · {item.entryType}</span>
                             <span style={{ color: '#64748b' }}>{new Date(item.createdAt).toLocaleTimeString()}</span>
                           </div>
@@ -1125,79 +1210,172 @@ export default function OperationsWorkspaceClient({
                 </section>
               </div>
             </div>
-          )}
+            );
+          })()}
 
           {/* TAB 2: WORK ORDERS */}
-          {activeTab === 'work_orders' && (
-            <section style={cardStyle}>
-              <div style={cardHeaderStyle}>
-                <h2 style={cardTitleStyle}>Operational Work Orders &amp; Service Requests</h2>
-                <button type="button" onClick={() => setShowNewWoModal(true)} style={primaryBtnStyle}>
-                  <Plus size={13} /> New Work Order
-                </button>
+          {activeTab === 'work_orders' && (() => {
+            const allWos = data?.workOrders || [];
+            const q = woSearch.trim().toLowerCase();
+            const filteredWos = allWos.filter((w) => {
+              const matchesSearch = !q || `${w.workOrderNumber} ${w.title} ${w.assigneeName || ''} ${w.site?.name || ''}`.toLowerCase().includes(q);
+              if (!matchesSearch) return false;
+              if (woTabFilter === 'ALL') return true;
+              if (woTabFilter === 'OPEN') return ['NEW', 'TRIAGED', 'ASSIGNED', 'SCHEDULED', 'AWAITING_INPUT'].includes(w.status);
+              if (woTabFilter === 'COMPLETED') return ['COMPLETED', 'CLOSED'].includes(w.status);
+              return w.status === woTabFilter;
+            });
+            const exportCsv = () => {
+              const rows = [['Code', 'Title', 'Subsidiary', 'Site', 'Priority', 'Status', 'Assignee'].join(',')];
+              for (const w of filteredWos) {
+                rows.push([
+                  w.workOrderNumber,
+                  `"${String(w.title || '').replace(/"/g, '""')}"`,
+                  `"${String(w.organizationName || '').replace(/"/g, '""')}"`,
+                  `"${String(w.site?.name || '').replace(/"/g, '""')}"`,
+                  w.priority,
+                  w.status,
+                  `"${String(w.assigneeName || 'Unassigned').replace(/"/g, '""')}"`,
+                ].join(','));
+              }
+              const blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `operations-work-orders-${new Date().toISOString().slice(0, 10)}.csv`;
+              a.click();
+              URL.revokeObjectURL(url);
+            };
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <div style={{ display: 'inline-flex', gap: 4, padding: 4, borderRadius: 12, background: '#ffffff', border: '1px solid #e2e8f0', flexWrap: 'wrap' }}>
+                    {(['ALL', 'OPEN', 'IN_PROGRESS', 'BLOCKED', 'REVIEW', 'COMPLETED'] as const).map((st) => (
+                      <button
+                        key={st}
+                        type="button"
+                        onClick={() => setWoTabFilter(st)}
+                        style={{
+                          padding: '6px 12px',
+                          borderRadius: 8,
+                          border: 'none',
+                          background: woTabFilter === st ? activeBrandColor : 'transparent',
+                          color: woTabFilter === st ? '#ffffff' : '#475569',
+                          fontSize: 11.5,
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {st.replace('_', ' ')}
+                      </button>
+                    ))}
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <input
+                      value={woSearch}
+                      onChange={(e) => setWoSearch(e.target.value)}
+                      placeholder="Search code, title, assignee..."
+                      style={{ ...inputStyle, width: 220, padding: '7px 10px' }}
+                    />
+                    <button type="button" onClick={exportCsv} style={linkBtnStyle}>Export CSV</button>
+                    <button type="button" onClick={() => setShowNewWoModal(true)} style={brandPrimaryBtn}>
+                      <Plus size={13} /> New Work Order
+                    </button>
+                  </div>
+                </div>
+                <section style={cardStyle}>
+                  <div style={cardHeaderStyle}>
+                    <h2 style={cardTitleStyle}>Operational Work Orders &amp; Service Requests ({filteredWos.length})</h2>
+                  </div>
+                  <WorkOrderTable workOrders={filteredWos} brandColor={activeBrandColor} onSelect={(id) => void loadWoDetail(id)} />
+                </section>
               </div>
-              <WorkOrderTable workOrders={data?.workOrders || []} onSelect={(id) => void loadWoDetail(id)} />
-            </section>
-          )}
+            );
+          })()}
 
           {/* TAB 3: DISPATCH */}
           {activeTab === 'dispatch' && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(290px, 360px) minmax(0, 1fr)', gap: 16 }}>
-              <section style={cardStyle}>
-                <h2 style={{ ...cardTitleStyle, marginBottom: 12 }}>Schedule Dispatch</h2>
-                <form onSubmit={handleCreateDispatch} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  <select required value={dispatchForm.workOrderId} onChange={(e) => setDispatchForm({ ...dispatchForm, workOrderId: e.target.value })} style={inputStyle}>
-                    <option value="">Select Work Order…</option>
-                    {openWorkOrders.map((w) => (
-                      <option key={w.id} value={w.id}>{w.workOrderNumber} — {w.title}</option>
-                    ))}
-                  </select>
-                  <select required value={dispatchForm.assigneeId} onChange={(e) => setDispatchForm({ ...dispatchForm, assigneeId: e.target.value })} style={inputStyle}>
-                    <option value="">Select Staff Assignee…</option>
-                    {(data?.staffOptions || []).map((s) => (
-                      <option key={s.id} value={s.id}>{s.legalName} ({s.employeeNumber})</option>
-                    ))}
-                  </select>
-                  <input type="date" value={dispatchForm.plannedDate} onChange={(e) => setDispatchForm({ ...dispatchForm, plannedDate: e.target.value })} style={inputStyle} />
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                    <input type="time" value={dispatchForm.windowStart} onChange={(e) => setDispatchForm({ ...dispatchForm, windowStart: e.target.value })} style={inputStyle} />
-                    <input type="time" value={dispatchForm.windowEnd} onChange={(e) => setDispatchForm({ ...dispatchForm, windowEnd: e.target.value })} style={inputStyle} />
-                  </div>
-                  <textarea placeholder="Dispatch instructions…" rows={3} value={dispatchForm.notes} onChange={(e) => setDispatchForm({ ...dispatchForm, notes: e.target.value })} style={inputStyle} />
-                  <button type="submit" style={primaryBtnStyle}>Assign &amp; Dispatch</button>
-                </form>
-              </section>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(175px, 1fr))', gap: 12 }}>
+                <KpiCard label="Scheduled Dispatches" value={dispatches.length} sub="Total roster assignments" color={activeBrandColor} />
+                <KpiCard label="Unassigned Open WOs" value={openWorkOrders.length} sub="Ready for field dispatch" color="#0284c7" />
+                <KpiCard label="Field Staff Pool" value={(data?.staffOptions || []).length} sub="Approved active personnel" color="#059669" />
+                <KpiCard label="Operating Sites" value={(data?.sites || []).length} sub="Dispatch destinations" color="#4f46e5" />
+              </div>
 
-              <section style={cardStyle}>
-                <h2 style={{ ...cardTitleStyle, marginBottom: 12 }}>Daily Dispatch Board</h2>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  {dispatches.length === 0 ? (
-                    <div style={{ fontSize: 13, color: '#64748b' }}>No dispatches scheduled yet.</div>
-                  ) : (
-                    dispatches.map((d) => (
-                      <div key={d.id} style={{ padding: 12, borderRadius: 10, border: '1px solid #e2e8f0', background: '#f8fafc', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-                        <div>
-                          <div style={{ fontSize: 12, fontWeight: 800, color: '#ea580c' }}>
-                            {d.workOrder?.workOrderNumber} · {d.dispatchStatus}
-                          </div>
-                          <div style={{ fontSize: 13.5, fontWeight: 700, color: '#0f172a' }}>{d.workOrder?.title}</div>
-                          <div style={{ fontSize: 11.5, color: '#475569', marginTop: 2 }}>
-                            Assignee: <strong>{d.assigneeName}</strong> · Date: {new Date(d.plannedDate).toLocaleDateString()} {d.windowStart ? `(${d.windowStart}–${d.windowEnd || ''})` : ''}
-                          </div>
-                        </div>
-                        <button type="button" onClick={() => void loadWoDetail(d.workOrderId)} style={linkBtnStyle}>Open</button>
+              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(300px, 370px) minmax(0, 1fr)', gap: 16 }}>
+                <section style={cardStyle}>
+                  <h2 style={{ ...cardTitleStyle, marginBottom: 12 }}>Schedule Dispatch</h2>
+                  <form onSubmit={handleCreateDispatch} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <LabeledField label="Work Order">
+                      <select required value={dispatchForm.workOrderId} onChange={(e) => setDispatchForm({ ...dispatchForm, workOrderId: e.target.value })} style={inputStyle}>
+                        <option value="">Select Work Order…</option>
+                        {openWorkOrders.map((w) => (
+                          <option key={w.id} value={w.id}>{w.workOrderNumber} — {w.title}</option>
+                        ))}
+                      </select>
+                    </LabeledField>
+                    <LabeledField label="Field / Office Assignee">
+                      <select required value={dispatchForm.assigneeId} onChange={(e) => setDispatchForm({ ...dispatchForm, assigneeId: e.target.value })} style={inputStyle}>
+                        <option value="">Select Staff Assignee…</option>
+                        {(data?.staffOptions || []).map((s) => (
+                          <option key={s.id} value={s.id}>{s.legalName} ({s.employeeNumber})</option>
+                        ))}
+                      </select>
+                    </LabeledField>
+                    <LabeledField label="Planned Date">
+                      <input type="date" value={dispatchForm.plannedDate} onChange={(e) => setDispatchForm({ ...dispatchForm, plannedDate: e.target.value })} style={inputStyle} />
+                    </LabeledField>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                      <LabeledField label="Window Start">
+                        <input type="time" value={dispatchForm.windowStart} onChange={(e) => setDispatchForm({ ...dispatchForm, windowStart: e.target.value })} style={inputStyle} />
+                      </LabeledField>
+                      <LabeledField label="Window End">
+                        <input type="time" value={dispatchForm.windowEnd} onChange={(e) => setDispatchForm({ ...dispatchForm, windowEnd: e.target.value })} style={inputStyle} />
+                      </LabeledField>
+                    </div>
+                    <LabeledField label="Dispatch Instructions">
+                      <textarea placeholder="Site access instructions, tools required…" rows={3} value={dispatchForm.notes} onChange={(e) => setDispatchForm({ ...dispatchForm, notes: e.target.value })} style={inputStyle} />
+                    </LabeledField>
+                    <button type="submit" style={brandPrimaryBtn}>Assign &amp; Dispatch</button>
+                  </form>
+                </section>
+
+                <section style={cardStyle}>
+                  <h2 style={{ ...cardTitleStyle, marginBottom: 12 }}>Daily Dispatch Board</h2>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {dispatches.length === 0 ? (
+                      <div style={{ padding: '24px 12px', textAlign: 'center', fontSize: 13, color: '#64748b', background: '#f8fafc', borderRadius: 10, border: '1px dashed #cbd5e1' }}>
+                        No dispatches scheduled yet. Select an open work order and staff member to schedule a dispatch.
                       </div>
-                    ))
-                  )}
-                </div>
-              </section>
+                    ) : (
+                      dispatches.map((d) => (
+                        <div key={d.id} style={{ padding: 12, borderRadius: 10, border: '1px solid #e2e8f0', background: '#f8fafc', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                          <div>
+                            <div style={{ fontSize: 12, fontWeight: 800, color: activeBrandColor }}>
+                              {d.workOrder?.workOrderNumber} · {d.dispatchStatus}
+                            </div>
+                            <div style={{ fontSize: 13.5, fontWeight: 700, color: '#0f172a' }}>{d.workOrder?.title}</div>
+                            <div style={{ fontSize: 11.5, color: '#475569', marginTop: 2 }}>
+                              Assignee: <strong>{d.assigneeName}</strong> · Date: {new Date(d.plannedDate).toLocaleDateString()} {d.windowStart ? `(${d.windowStart}–${d.windowEnd || ''})` : ''}
+                            </div>
+                          </div>
+                          <button type="button" onClick={() => void loadWoDetail(d.workOrderId)} style={linkBtnStyle}>Open Dossier</button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </section>
+              </div>
             </div>
           )}
 
           {activeTab === 'assurance' && (
             <OperationsPhasesPanel
               mode="assurance"
-              actorRole={actorRole}
+              actorRole={safeActorRole}
+              brandColor={activeBrandColor}
+              selectedOrgId={orgFilter}
               subsidiaries={data?.subsidiaries || []}
               sites={data?.sites || []}
               staffOptions={data?.staffOptions || []}
@@ -1208,7 +1386,9 @@ export default function OperationsWorkspaceClient({
           {activeTab === 'resources' && (
             <OperationsPhasesPanel
               mode="resources"
-              actorRole={actorRole}
+              actorRole={safeActorRole}
+              brandColor={activeBrandColor}
+              selectedOrgId={orgFilter}
               subsidiaries={data?.subsidiaries || []}
               sites={data?.sites || []}
               staffOptions={data?.staffOptions || []}
@@ -1219,7 +1399,9 @@ export default function OperationsWorkspaceClient({
           {activeTab === 'governance' && (
             <OperationsPhasesPanel
               mode="governance"
-              actorRole={actorRole}
+              actorRole={safeActorRole}
+              brandColor={activeBrandColor}
+              selectedOrgId={orgFilter}
               subsidiaries={data?.subsidiaries || []}
               sites={data?.sites || []}
               staffOptions={data?.staffOptions || []}
@@ -1229,89 +1411,167 @@ export default function OperationsWorkspaceClient({
           )}
 
           {activeTab === 'catalogue' && (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-              <section style={cardStyle}>
-                <h2 style={{ ...cardTitleStyle, marginBottom: 12 }}>Sites &amp; Operating Units</h2>
-                <form onSubmit={handleCreateSite} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 14 }}>
-                  <select required value={siteForm.organizationId} onChange={(e) => setSiteForm({ ...siteForm, organizationId: e.target.value })} style={inputStyle}>
-                    {(data?.subsidiaries || []).map((s) => <option key={s.id} value={s.id}>{s.legalName}</option>)}
-                  </select>
-                  <input placeholder="Site Code (e.g. OPS-ABJ-01)" value={siteForm.code} onChange={(e) => setSiteForm({ ...siteForm, code: e.target.value })} style={inputStyle} />
-                  <input required placeholder="Site Name" value={siteForm.name} onChange={(e) => setSiteForm({ ...siteForm, name: e.target.value })} style={inputStyle} />
-                  <select value={siteForm.siteType} onChange={(e) => setSiteForm({ ...siteForm, siteType: e.target.value })} style={inputStyle}>
-                    {['OFFICE', 'BRANCH', 'WAREHOUSE', 'FIELD_SITE', 'HUB'].map((t) => <option key={t} value={t}>{t}</option>)}
-                  </select>
-                  <input placeholder="State / Region" value={siteForm.stateRegion} onChange={(e) => setSiteForm({ ...siteForm, stateRegion: e.target.value })} style={inputStyle} />
-                  <button type="submit" style={primaryBtnStyle}>Register Site</button>
-                </form>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {(data?.sites || []).map((s) => (
-                    <div key={s.id} style={{ padding: 10, borderRadius: 9, border: '1px solid #e2e8f0', background: '#f8fafc', display: 'flex', justifyContent: 'space-between' }}>
-                      <div>
-                        <div style={{ fontSize: 13, fontWeight: 700 }}>{s.name} <span style={{ color: '#64748b', fontSize: 11 }}>({s.code})</span></div>
-                        <div style={{ fontSize: 11.5, color: '#64748b' }}>{s.siteType} · {s.stateRegion || 'Nigeria'}</div>
-                      </div>
-                      <span style={{ fontSize: 11, fontWeight: 700, color: '#059669' }}>{s.status}</span>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
+                <KpiCard label="Registered Sites" value={(data?.sites || []).length} sub="Offices, hubs & warehouses" color={activeBrandColor} />
+                <KpiCard label="Service Definitions" value={(data?.services || []).length} sub="SLA-backed service types" color="#0284c7" />
+                <KpiCard label="Subsidiaries" value={(data?.subsidiaries || []).length} sub="Operating entities" color="#059669" />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 16 }}>
+                <section style={cardStyle}>
+                  <h2 style={{ ...cardTitleStyle, marginBottom: 12 }}>Sites &amp; Operating Units</h2>
+                  <form onSubmit={handleCreateSite} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
+                    <LabeledField label="Subsidiary">
+                      <select required value={siteForm.organizationId} onChange={(e) => setSiteForm({ ...siteForm, organizationId: e.target.value })} style={inputStyle}>
+                        {(data?.subsidiaries || []).map((s) => <option key={s.id} value={s.id}>{s.legalName}</option>)}
+                      </select>
+                    </LabeledField>
+                    <LabeledField label="Site Code">
+                      <input placeholder="e.g. OPS-ABJ-01" value={siteForm.code} onChange={(e) => setSiteForm({ ...siteForm, code: e.target.value })} style={inputStyle} />
+                    </LabeledField>
+                    <LabeledField label="Site Name">
+                      <input required placeholder="e.g. Abuja Central Hub" value={siteForm.name} onChange={(e) => setSiteForm({ ...siteForm, name: e.target.value })} style={inputStyle} />
+                    </LabeledField>
+                    <LabeledField label="Site Type">
+                      <select value={siteForm.siteType} onChange={(e) => setSiteForm({ ...siteForm, siteType: e.target.value })} style={inputStyle}>
+                        {['OFFICE', 'BRANCH', 'WAREHOUSE', 'FIELD_SITE', 'HUB'].map((t) => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                    </LabeledField>
+                    <LabeledField label="State / Region">
+                      <input placeholder="e.g. FCT Abuja" value={siteForm.stateRegion} onChange={(e) => setSiteForm({ ...siteForm, stateRegion: e.target.value })} style={inputStyle} />
+                    </LabeledField>
+                    <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+                      <button type="submit" style={{ ...brandPrimaryBtn, width: '100%' }}>Register Site</button>
                     </div>
-                  ))}
-                </div>
-              </section>
+                  </form>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {(data?.sites || []).length === 0 ? (
+                      <div style={{ fontSize: 12.5, color: '#64748b', padding: 12, background: '#f8fafc', borderRadius: 9 }}>No operating sites registered yet.</div>
+                    ) : (
+                      (data?.sites || []).map((s) => (
+                        <div key={s.id} style={{ padding: 10, borderRadius: 9, border: '1px solid #e2e8f0', background: '#f8fafc', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div>
+                            <div style={{ fontSize: 13, fontWeight: 700 }}>{s.name} <span style={{ color: '#64748b', fontSize: 11 }}>({s.code})</span></div>
+                            <div style={{ fontSize: 11.5, color: '#64748b' }}>{s.siteType} · {s.stateRegion || 'Nigeria'}</div>
+                          </div>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: '#059669' }}>{s.status}</span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </section>
 
-              <section style={cardStyle}>
-                <h2 style={{ ...cardTitleStyle, marginBottom: 12 }}>Service Catalogue &amp; SLA Targets</h2>
-                <form onSubmit={handleCreateService} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 14 }}>
-                  <select required value={serviceForm.organizationId} onChange={(e) => setServiceForm({ ...serviceForm, organizationId: e.target.value })} style={inputStyle}>
-                    {(data?.subsidiaries || []).map((s) => <option key={s.id} value={s.id}>{s.legalName}</option>)}
-                  </select>
-                  <input placeholder="Service Code (e.g. SRV-MNT-01)" value={serviceForm.code} onChange={(e) => setServiceForm({ ...serviceForm, code: e.target.value })} style={inputStyle} />
-                  <input required placeholder="Service Name" value={serviceForm.name} onChange={(e) => setServiceForm({ ...serviceForm, name: e.target.value })} style={inputStyle} />
-                  <select value={serviceForm.category} onChange={(e) => setServiceForm({ ...serviceForm, category: e.target.value })} style={inputStyle}>
-                    {['FIELD_SERVICE', 'MAINTENANCE', 'LOGISTICS', 'ADMIN_SUPPORT', 'CLIENT_DELIVERY'].map((c) => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                  <input type="number" min={1} placeholder="Resolve SLA (hrs)" value={serviceForm.slaResolveHours} onChange={(e) => setServiceForm({ ...serviceForm, slaResolveHours: Number(e.target.value) })} style={inputStyle} />
-                  <button type="submit" style={primaryBtnStyle}>Add Service</button>
-                </form>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {(data?.services || []).map((srv) => (
-                    <div key={srv.id} style={{ padding: 10, borderRadius: 9, border: '1px solid #e2e8f0', background: '#f8fafc', display: 'flex', justifyContent: 'space-between' }}>
-                      <div>
-                        <div style={{ fontSize: 13, fontWeight: 700 }}>{srv.name} <span style={{ color: '#64748b', fontSize: 11 }}>({srv.code})</span></div>
-                        <div style={{ fontSize: 11.5, color: '#64748b' }}>{srv.category} · SLA {srv.slaResolveHours}h {srv.requiresVerification ? '· Independent Verification' : ''}</div>
-                      </div>
-                      <span style={{ fontSize: 11, fontWeight: 700, color: '#059669' }}>{srv.status}</span>
+                <section style={cardStyle}>
+                  <h2 style={{ ...cardTitleStyle, marginBottom: 12 }}>Service Catalogue &amp; SLA Targets</h2>
+                  <form onSubmit={handleCreateService} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
+                    <LabeledField label="Subsidiary">
+                      <select required value={serviceForm.organizationId} onChange={(e) => setServiceForm({ ...serviceForm, organizationId: e.target.value })} style={inputStyle}>
+                        {(data?.subsidiaries || []).map((s) => <option key={s.id} value={s.id}>{s.legalName}</option>)}
+                      </select>
+                    </LabeledField>
+                    <LabeledField label="Service Code">
+                      <input placeholder="e.g. SRV-MNT-01" value={serviceForm.code} onChange={(e) => setServiceForm({ ...serviceForm, code: e.target.value })} style={inputStyle} />
+                    </LabeledField>
+                    <LabeledField label="Service Name">
+                      <input required placeholder="e.g. Preventive Generator Maintenance" value={serviceForm.name} onChange={(e) => setServiceForm({ ...serviceForm, name: e.target.value })} style={inputStyle} />
+                    </LabeledField>
+                    <LabeledField label="Category">
+                      <select value={serviceForm.category} onChange={(e) => setServiceForm({ ...serviceForm, category: e.target.value })} style={inputStyle}>
+                        {['FIELD_SERVICE', 'MAINTENANCE', 'LOGISTICS', 'ADMIN_SUPPORT', 'CLIENT_DELIVERY'].map((c) => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    </LabeledField>
+                    <LabeledField label="Resolve SLA (Hours)">
+                      <input type="number" min={1} value={serviceForm.slaResolveHours} onChange={(e) => setServiceForm({ ...serviceForm, slaResolveHours: Number(e.target.value) })} style={inputStyle} />
+                    </LabeledField>
+                    <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+                      <button type="submit" style={{ ...brandPrimaryBtn, width: '100%' }}>Add Service</button>
                     </div>
-                  ))}
-                </div>
-              </section>
+                  </form>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {(data?.services || []).length === 0 ? (
+                      <div style={{ fontSize: 12.5, color: '#64748b', padding: 12, background: '#f8fafc', borderRadius: 9 }}>No services defined in the SLA catalogue yet.</div>
+                    ) : (
+                      (data?.services || []).map((srv) => (
+                        <div key={srv.id} style={{ padding: 10, borderRadius: 9, border: '1px solid #e2e8f0', background: '#f8fafc', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div>
+                            <div style={{ fontSize: 13, fontWeight: 700 }}>{srv.name} <span style={{ color: '#64748b', fontSize: 11 }}>({srv.code})</span></div>
+                            <div style={{ fontSize: 11.5, color: '#64748b' }}>{srv.category} · SLA {srv.slaResolveHours}h {srv.requiresVerification ? '· Independent Verification' : ''}</div>
+                          </div>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: '#059669' }}>{srv.status}</span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </section>
+              </div>
             </div>
           )}
 
-          {activeTab === 'approvals' && (
-            <section style={cardStyle}>
-              <h2 style={{ ...cardTitleStyle, marginBottom: 12 }}>Operational Approvals &amp; Decision Register</h2>
-              {approvals.length === 0 ? (
-                <div style={{ fontSize: 13, color: '#64748b' }}>No operational approvals pending or recorded.</div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  {approvals.map((a) => (
-                    <div key={a.id} style={{ padding: 12, borderRadius: 10, border: '1px solid #e2e8f0', background: '#f8fafc', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-                      <div>
-                        <div style={{ fontSize: 12, fontWeight: 800, color: '#ea580c' }}>{a.workOrder?.workOrderNumber} · {a.decision}</div>
-                        <div style={{ fontSize: 13.5, fontWeight: 700 }}>{a.workOrder?.title}</div>
-                        <div style={{ fontSize: 11.5, color: '#64748b' }}>Initiator: {a.initiatorName} {a.approverName ? `· Decided by ${a.approverName}` : ''}</div>
-                      </div>
-                      {a.decision === 'PENDING' && (
-                        <div style={{ display: 'flex', gap: 8 }}>
-                          <button type="button" onClick={() => void handleApprovalDecision(a.id, 'APPROVED')} style={{ ...primaryBtnStyle, background: '#059669' }}>Approve</button>
-                          <button type="button" onClick={() => void handleApprovalDecision(a.id, 'REJECTED')} style={{ ...primaryBtnStyle, background: '#dc2626' }}>Reject</button>
-                        </div>
-                      )}
-                    </div>
-                  ))}
+          {activeTab === 'approvals' && (() => {
+            const pendingCount = approvals.filter((a) => a.decision === 'PENDING').length;
+            const approvedCount = approvals.filter((a) => a.decision === 'APPROVED').length;
+            const rejectedCount = approvals.filter((a) => a.decision === 'REJECTED' || a.decision === 'REVISION_REQUESTED').length;
+            const filteredApprovals = approvals.filter((a) => approvalFilter === 'ALL' || a.decision === approvalFilter);
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
+                  <KpiCard label="Pending Decisions" value={pendingCount} sub="Awaiting executive action" color={activeBrandColor} />
+                  <KpiCard label="Approved" value={approvedCount} sub="Authorized work orders" color="#059669" />
+                  <KpiCard label="Rejected / Revision" value={rejectedCount} sub="Returned or declined" color="#dc2626" />
                 </div>
-              )}
-            </section>
-          )}
+                <section style={cardStyle}>
+                  <div style={cardHeaderStyle}>
+                    <h2 style={cardTitleStyle}>Operational Approvals &amp; Decision Register</h2>
+                    <div style={{ display: 'inline-flex', gap: 4 }}>
+                      {(['ALL', 'PENDING', 'APPROVED', 'REJECTED'] as const).map((st) => (
+                        <button
+                          key={st}
+                          type="button"
+                          onClick={() => setApprovalFilter(st)}
+                          style={{
+                            padding: '5px 10px',
+                            borderRadius: 8,
+                            border: '1px solid #e2e8f0',
+                            background: approvalFilter === st ? activeBrandColor : '#ffffff',
+                            color: approvalFilter === st ? '#ffffff' : '#475569',
+                            fontSize: 11.5,
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          {st}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  {filteredApprovals.length === 0 ? (
+                    <div style={{ padding: '24px 12px', textAlign: 'center', fontSize: 13, color: '#64748b', background: '#f8fafc', borderRadius: 10, border: '1px dashed #cbd5e1' }}>
+                      No operational approvals match this filter.
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      {filteredApprovals.map((a) => (
+                        <div key={a.id} style={{ padding: 12, borderRadius: 10, border: '1px solid #e2e8f0', background: '#f8fafc', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                          <div>
+                            <div style={{ fontSize: 12, fontWeight: 800, color: activeBrandColor }}>{a.workOrder?.workOrderNumber} · {a.decision}</div>
+                            <div style={{ fontSize: 13.5, fontWeight: 700 }}>{a.workOrder?.title}</div>
+                            <div style={{ fontSize: 11.5, color: '#64748b' }}>Initiator: {a.initiatorName} {a.approverName ? `· Decided by ${a.approverName}` : ''}</div>
+                          </div>
+                          {a.decision === 'PENDING' && (
+                            <div style={{ display: 'flex', gap: 8 }}>
+                              <button type="button" onClick={() => void handleApprovalDecision(a.id, 'APPROVED')} style={{ ...brandPrimaryBtn, background: '#059669' }}>Approve</button>
+                              <button type="button" onClick={() => void handleApprovalDecision(a.id, 'REVISION_REQUESTED')} style={linkBtnStyle}>Revision</button>
+                              <button type="button" onClick={() => void handleApprovalDecision(a.id, 'REJECTED')} style={{ ...brandPrimaryBtn, background: '#dc2626' }}>Reject</button>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </section>
+              </div>
+            );
+          })()}
         </main>
       </section>
 
@@ -1510,7 +1770,24 @@ function KpiCard({
   );
 }
 
-function WorkOrderTable({ workOrders, onSelect }: { workOrders: any[]; onSelect: (id: string) => void }) {
+function LabeledField({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <span style={{ fontSize: 11, fontWeight: 750, color: '#475569' }}>{label}</span>
+      {children}
+    </label>
+  );
+}
+
+function WorkOrderTable({
+  workOrders,
+  brandColor = '#ea580c',
+  onSelect,
+}: {
+  workOrders: any[];
+  brandColor?: string;
+  onSelect: (id: string) => void;
+}) {
   if (workOrders.length === 0) {
     return <div style={{ fontSize: 13, color: '#64748b', padding: '16px 0' }}>No work orders match the current filters.</div>;
   }
@@ -1533,7 +1810,7 @@ function WorkOrderTable({ workOrders, onSelect }: { workOrders: any[]; onSelect:
             const sBadge = STATUS_BADGE[w.status] || STATUS_BADGE.NEW;
             return (
               <tr key={w.id} onClick={() => onSelect(w.id)} style={{ borderBottom: '1px solid #f1f5f9', cursor: 'pointer' }}>
-                <td style={{ padding: '10px 6px', fontWeight: 800, color: '#ea580c' }}>{w.workOrderNumber}</td>
+                <td style={{ padding: '10px 6px', fontWeight: 800, color: brandColor }}>{w.workOrderNumber}</td>
                 <td style={{ padding: '10px 6px', fontWeight: 700, color: '#0f172a' }}>{w.title}</td>
                 <td style={{ padding: '10px 6px', color: '#475569' }}>{w.site?.name || '—'}</td>
                 <td style={{ padding: '10px 6px' }}>
