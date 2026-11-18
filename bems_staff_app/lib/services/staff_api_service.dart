@@ -261,7 +261,19 @@ class StaffApiService {
       ),
     );
 
-    final data = jsonDecode(response.body);
+    Map<String, dynamic> data = {};
+    if (response.body.trim().isNotEmpty) {
+      try {
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map<String, dynamic>) {
+          data = decoded;
+        }
+      } catch (_) {
+        throw Exception('Server returned an unexpected response (${response.statusCode}). Please try again.');
+      }
+    } else if (response.statusCode != 200) {
+      throw Exception('Server is temporarily unavailable (${response.statusCode}). Please retry in a moment.');
+    }
 
     if (response.statusCode == 200 && data['user'] != null) {
       final userMap = Map<String, dynamic>.from(data['user'] as Map);
@@ -318,7 +330,19 @@ class StaffApiService {
         final streamedResponse =
             await request.send().timeout(const Duration(seconds: 25));
         final response = await http.Response.fromStream(streamedResponse);
-        final data = jsonDecode(response.body);
+        Map<String, dynamic> data = {};
+    if (response.body.trim().isNotEmpty) {
+      try {
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map<String, dynamic>) {
+          data = decoded;
+        }
+      } catch (_) {
+        throw Exception('Server returned an unexpected response (${response.statusCode}). Please try again.');
+      }
+    } else if (response.statusCode != 200) {
+      throw Exception('Server is temporarily unavailable (${response.statusCode}). Please retry in a moment.');
+    }
 
         if (response.statusCode >= 200 &&
             response.statusCode < 300 &&
@@ -795,7 +819,19 @@ class StaffApiService {
       timeout: const Duration(seconds: 25),
     );
 
-    final data = jsonDecode(response.body);
+    Map<String, dynamic> data = {};
+    if (response.body.trim().isNotEmpty) {
+      try {
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map<String, dynamic>) {
+          data = decoded;
+        }
+      } catch (_) {
+        throw Exception('Server returned an unexpected response (${response.statusCode}). Please try again.');
+      }
+    } else if (response.statusCode != 200) {
+      throw Exception('Server is temporarily unavailable (${response.statusCode}). Please retry in a moment.');
+    }
 
     if (response.statusCode == 200 || response.statusCode == 201) {
       return {
@@ -822,7 +858,19 @@ class StaffApiService {
       ),
     );
 
-    final data = jsonDecode(response.body);
+    Map<String, dynamic> data = {};
+    if (response.body.trim().isNotEmpty) {
+      try {
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map<String, dynamic>) {
+          data = decoded;
+        }
+      } catch (_) {
+        throw Exception('Server returned an unexpected response (${response.statusCode}). Please try again.');
+      }
+    } else if (response.statusCode != 200) {
+      throw Exception('Server is temporarily unavailable (${response.statusCode}). Please retry in a moment.');
+    }
 
     if (response.statusCode >= 200 && response.statusCode < 300) {
       return {
