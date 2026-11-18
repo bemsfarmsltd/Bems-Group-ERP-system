@@ -5,6 +5,7 @@ import { walletMoney } from './WalletView';
 
 type FundingSummary = {
   walletMode: boolean;
+  scopedReadOnly?: boolean;
   funding: null | { availableMinor: string; envelopeMinor: string; liabilityMinor: string; observedAt: string; paused: boolean; freeMinor: string; feeReserveMinor: string; fresh: boolean; configured: boolean };
 };
 
@@ -42,7 +43,7 @@ export default function WalletDashboardSummary({ onOpen }: { onOpen: () => void 
         {free < BigInt(0) && <p role="alert" style={{ color: '#9f1239', fontWeight: 700 }}>Monnify funding is short by {walletMoney((-free).toString())}. Open Wallet Funding to review commitments and reconciliation.</p>}
         {!data.funding.fresh && <p role="status">The last observed balance needs refreshing.</p>}
         <p style={{ marginTop: 12 }}>Last provider observation: {new Date(data.funding.observedAt).toLocaleString()}. The funding dashboard checks freshness before any new commitment.</p>
-      </> : <p style={{ marginTop: 12 }}>Monnify funding is not connected yet. No provider balance or withdrawable funds have been assumed.</p>}
+      </> : data.scopedReadOnly ? <p>View wallets and funded budgets for your assigned subsidiaries.</p> : <p style={{ marginTop: 12 }}>Monnify funding is not connected yet. No provider balance or withdrawable funds have been assumed.</p>}
     </>}
   </section>;
 }

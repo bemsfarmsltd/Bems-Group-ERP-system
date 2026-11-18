@@ -1,3 +1,4 @@
+import { requireCustomAdminHrAction } from '@/lib/hrRouteHelper';
 import { executeDashboardCommand } from '@/lib/staged-actions';
 import { dispatchNotificationBridge, resolveGmdNotificationTarget } from '@/lib/notifications/bridge';
 import { NextResponse } from 'next/server';
@@ -108,6 +109,10 @@ export async function POST(req: Request) {
     const actions: Record<string, string> = { CREATE: 'CREATE_LEAVE', APPROVE: 'APPROVE_LEAVE', REJECT: 'REJECT_LEAVE' };
     const sub_action = actions[String(body.action || '').toUpperCase()];
     if (!sub_action) return NextResponse.json({ error: 'Unknown leave action.' }, { status: 400 });
+    if (sub_action !== 'CREATE_LEAVE') {
+      const denied = requireCustomAdminHrAction(actor, 'leave', 'approve_reject_leave');
+      if (denied) return denied;
+    }
     const leave = await executeDashboardCommand(actor, 'leave_action', { ...body, sub_action, rejectionReason: body.reviewNote });
     if (sub_action === 'CREATE_LEAVE') {
       resolveGmdNotificationTarget()

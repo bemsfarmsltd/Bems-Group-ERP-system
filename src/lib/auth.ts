@@ -11,7 +11,7 @@ import {
 } from '@/lib/admin-permissions';
 import {
   type StaffAppModuleKey,
-  hasStaffAppModuleAccess,
+  staffModuleForApiPath,
   resolveStaffAppModules,
 } from '@/lib/staff-modules';
 import { createHash, randomBytes, scrypt as nodeScrypt, timingSafeEqual } from 'node:crypto';
@@ -244,7 +244,9 @@ export async function getAuthenticatedEmployee(
   if (cookieToken) {
     try {
       const tHash = hashToken(cookieToken);
-      const cached = SESSION_CACHE.get(tHash);
+      const path = req ? new URL(req.url).pathname : '';
+      const needsCurrentAccess = path === '/api/auth/session' || path === '/api/v1/ssr/page-data' || Boolean(staffModuleForApiPath(path));
+      const cached = needsCurrentAccess ? undefined : SESSION_CACHE.get(tHash);
       if (cached && cached.exp > Date.now()) {
         return cached.emp;
       }
@@ -272,7 +274,7 @@ export async function getAuthenticatedEmployee(
         if (canAccessEmployeePortal(employee) && !(await isApprovalLoginLocked(employee))) {
           const authEmp = buildAuthenticatedEmployee(employee);
           // Administrative grants and executive seat changes must be read on each request.
-          if (authEmp.role === 'STAFF' && !authEmp.customAdminProfileId) {
+          if (!needsCurrentAccess && authEmp.role === 'STAFF' && !authEmp.customAdminProfileId) {
             SESSION_CACHE.set(tHash, { emp: authEmp, exp: Date.now() + SESSION_CACHE_TTL_MS });
           }
           return authEmp;

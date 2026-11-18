@@ -21,9 +21,10 @@ export async function POST(request: Request, context: { params: Promise<{ reques
     }
     const autoPay = Boolean(body.autoPay);
 
-    return walletTransaction(async (tx) => {
+    const result = await walletTransaction(async (tx) => {
       const employee = await liveWalletActor(tx, actor, 'GMD');
-      await checkApprovalPin(tx, employee, body.pin);
+      const confirmation = await checkApprovalPin(tx, employee, body.pin);
+      if (confirmation instanceof WalletError) return confirmation;
 
       const target = await tx.expenditureRequest.findFirst({
         where: { OR: [{ id: requestNumber }, { requestNumber }] },
@@ -57,5 +58,7 @@ export async function POST(request: Request, context: { params: Promise<{ reques
 
       return { success: true, requestNumber: target.requestNumber, recurringAutoPay: autoPay };
     });
+    if (result instanceof WalletError) throw result;
+    return result;
   });
 }

@@ -50,20 +50,23 @@ export async function checkApprovalPin(tx: Tx, actor: WalletActor, pin: unknown)
   await tx.$executeRaw`UPDATE "WalletApprovalCredential" SET "failedAttempts"=${attempts},"lockedAt"=CASE WHEN ${attempts} >= 3 THEN now() ELSE NULL END WHERE "employeeId"=${actor.id}`;
   if (attempts < 3) return new WalletError('APPROVAL_PIN_INVALID', `Incorrect approval PIN. ${3 - attempts} attempt(s) remaining.`, 403);
 
+  if (actor.role === 'GMD') {
+    await tx.authSession.deleteMany({ where: { employeeId: actor.id } });
+  }
   await invalidateApprovalChallenges(tx, actor.id);
   await approvalSecurityAudit(tx, actor, actor.id, 'APPROVAL_PIN_LOCKED');
   const recipients = await tx.employee.findMany({
     where: { approvalStatus: 'APPROVED', status: 'ACTIVE', OR: [
-      { id: actor.id }, { id: process.env.BEMS_FINANCIAL_GMD_ID || '' }, { role: 'SUPER_ADMIN' },
+      { id: actor.id }, { id: process.env.BEMS_FINANCIAL_GMD_ID || '' }, { role: { in: ['SYSTEM_ADMIN', 'SUPER_ADMIN'] } },
     ] },
     select: { id: true },
   });
   await tx.systemNotification.createMany({ data: recipients.map(({ id }) => ({
     employeeId: id, category: 'SECURITY', priority: 'CRITICAL', kind: 'APPROVAL_PIN_LOCKED', title: 'Wallet approval PIN locked',
-    body: `${actor.legalName} entered an incorrect approval PIN three times. Financial approvals are locked until PIN recovery is completed.`,
+    body: `${actor.legalName} entered an incorrect approval PIN three times. ${actor.role === 'GMD' ? 'Sign-in and financial approvals are' : 'Financial approvals are'} locked until recovery is authorized.`,
     linkUrl: '/control-center?section=wallet-approval',
   })) });
-  return new WalletError('APPROVAL_PIN_LOCKED', 'Financial approval locked after three incorrect PIN entries.', 423);
+  return new WalletError('APPROVAL_PIN_LOCKED', actor.role === 'GMD' ? 'Sign-in and financial approval locked after three incorrect PIN entries. Contact your System Admin.' : 'Financial approval locked after three incorrect PIN entries.', 423);
 }
 
 export function releaseOtpDigest(challengeId: string, otp: string) {

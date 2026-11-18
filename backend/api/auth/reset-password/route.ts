@@ -1,7 +1,8 @@
+import { findPasswordRecoveryAccount, passwordRecoveryTokenKey } from '@/lib/password-recovery';
 import crypto from 'node:crypto';
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { hashPassword, invalidateSessionCache, normalizeSystemRole } from '@/lib/auth';
+import { hashPassword, invalidateSessionCache, passwordMatchesApprovalPin } from '@/lib/auth';
 import { checkRateLimit } from '@/lib/rate-limiter';
 
 export const dynamic = 'force-dynamic';
@@ -43,22 +44,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'New password must be at least 10 characters long.' }, { status: 400 });
     }
 
-    const requestedRole = typeof body.role === 'string' ? body.role.trim().toUpperCase() : '';
-    const [candidates, tokenRecord] = await Promise.all([
-      prisma.employee.findMany({ where: { workEmail: { equals: email, mode: 'insensitive' } }, take: 2 }),
-      prisma.emailVerificationToken.findFirst({
-        where: { email },
-        orderBy: { createdAt: 'desc' },
-      }),
-    ]);
-    const employee = candidates.length === 1 ? candidates[0] : null;
-    const validRole = !requestedRole || (employee && ['GMD','SYSTEM_ADMIN','SUPER_ADMIN','CUSTOM_ADMIN','STAFF'].includes(requestedRole) &&
-      normalizeSystemRole(employee.role, employee.customAdminProfileId) === normalizeSystemRole(requestedRole));
+    const employee = await findPasswordRecoveryAccount(email, body.role, body.portal);
+    const tokenKey = employee ? passwordRecoveryTokenKey(employee.id) : null;
+    const tokenRecord = tokenKey ? await prisma.emailVerificationToken.findFirst({
+      where: { email: tokenKey },
+      orderBy: { createdAt: 'desc' },
+    }) : null;
 
     if (
-      !employee || !validRole ||
-      employee.approvalStatus !== 'APPROVED' ||
-      employee.status !== 'ACTIVE' ||
+      !employee || !tokenKey ||
       !tokenRecord ||
       tokenRecord.expiresAt < new Date() ||
       tokenRecord.attempts >= 5
@@ -90,15 +84,16 @@ export async function POST(request: Request) {
     const passwordHash = await hashPassword(newPassword);
 
     // Consume single-use token, update password, and revoke all existing sessions atomically
-    await prisma.$transaction(async (tx) => {
+    const changed = await prisma.$transaction(async (tx) => {
       const consumed = await tx.emailVerificationToken.deleteMany({
-        where: { id: tokenRecord.id, email },
+        where: { id: tokenRecord.id, email: tokenKey, expiresAt: { gt: new Date() }, attempts: { lt: 5 } },
       });
       if (consumed.count === 0) {
         throw new Error('Verification code has already been consumed.');
       }
 
-      await tx.emailVerificationToken.deleteMany({ where: { email } });
+      await tx.emailVerificationToken.deleteMany({ where: { email: tokenKey } });
+      if (await passwordMatchesApprovalPin(tx, employee.id, newPassword)) return false;
 
       await tx.employee.update({
         where: { id: employee.id },
@@ -108,7 +103,11 @@ export async function POST(request: Request) {
       await tx.authSession.deleteMany({
         where: { employeeId: employee.id },
       });
+      return true;
     });
+    if (!changed) {
+      return NextResponse.json({ error: 'Choose a password different from your approval PIN and request a fresh reset code.' }, { status: 400 });
+    }
 
     invalidateSessionCache();
 

@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 import { getSsrActor } from '@/lib/ssr-api';
-import { hasCategoryAccess, type CustomAdminPermissionsMap } from '@/lib/admin-permissions';
+import { hasActionPermission, type CustomAdminPermissionsMap } from '@/lib/admin-permissions';
 import { ConnectAppShell } from '@/components/layout/ConnectAppShell';
 import FundingView from '@/components/wallet/FundingView';
 
@@ -16,7 +16,7 @@ export default async function FundingPage({ searchParams }: { searchParams: Prom
   }
   if (
     actor.role === 'CUSTOM_ADMIN' &&
-    !hasCategoryAccess(actor.role, actor.customAdminPermissions as CustomAdminPermissionsMap | null, 'finance', 'Wallets & funded budgets')
+    !hasActionPermission(actor.role, actor.customAdminPermissions as CustomAdminPermissionsMap | null, 'finance', 'Wallets & funded budgets', 'view_wallets')
   ) {
     redirect('/finance');
   }

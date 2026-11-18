@@ -77,12 +77,27 @@ export function resolveStaffAppModules(staffAppModulesJson?: string | null): Sta
   }
 }
 
-export function normalizeStaffAppModulesInput(input: unknown): StaffAppModuleKey[] {
-  if (!Array.isArray(input)) return [...DEFAULT_STAFF_APP_MODULES];
-  const filtered = input
-    .map((item) => String(item || '').trim().toLowerCase())
-    .filter((item): item is StaffAppModuleKey => VALID_KEYS.has(item));
-  return Array.from(new Set(filtered));
+export function normalizeStaffAppModulesInput(input: unknown): StaffAppModuleKey[] | null {
+  if (!Array.isArray(input) || input.some((key) => typeof key !== 'string' || !VALID_KEYS.has(key))) return null;
+  return Array.from(new Set(input as StaffAppModuleKey[]));
+}
+
+const MODULE_BY_API_ROOT: Record<string, StaffAppModuleKey> = {
+  requests: 'finance', wallet: 'finance', accountability: 'finance', approvals: 'finance',
+  projects: 'projects', hr: 'hr', attendance: 'hr', leave: 'hr',
+  operations: 'operations', media: 'media', innovation: 'innovation',
+};
+
+export function staffModuleForApiPath(path: string): StaffAppModuleKey | undefined {
+  const [, prefix, root, section] = path.split('?')[0].split('/');
+  if (prefix !== 'api') return;
+  if (root === 'staff') {
+    if (section === 'projects') return 'projects';
+    if (section === 'disbursements') return 'finance';
+    if (section === 'leave' || section === 'attendance') return 'hr';
+    return;
+  }
+  return Object.hasOwn(MODULE_BY_API_ROOT, root) ? MODULE_BY_API_ROOT[root] : undefined;
 }
 
 export function hasStaffAppModuleAccess(

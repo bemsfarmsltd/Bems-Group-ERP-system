@@ -189,6 +189,7 @@ export async function approveEmployeeOnboarding(params: {
   actor: AuthenticatedEmployee;
   targetEmployeeId: string;
   assignedRole?: string;
+  staffAppModules?: import('@/lib/staff-modules').StaffAppModuleKey[];
   subsidiaryId?: string | null;
   departmentId?: string | null;
   positionName?: string | null;
@@ -267,6 +268,8 @@ export async function approveEmployeeOnboarding(params: {
       data: {
         employeeNumber: officialEmpNum,
         role: finalRole,
+        ...(finalRole === 'STAFF' && params.staffAppModules !== undefined
+          ? { staffAppModulesJson: JSON.stringify(params.staffAppModules) } : {}),
         approvalStatus: 'APPROVED',
         status: 'ACTIVE',
       },

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import {
+  requireCustomAdminHrAction,
   resolveHrContext,
   logHrAudit,
   serializeBigInt,
@@ -106,6 +107,9 @@ export async function POST(req: Request) {
     const ctx = await resolveHrContext(req);
     if ('error' in ctx) return ctx.error;
     const { actor, hrScope, defaultOrgId } = ctx;
+
+    const denied = requireCustomAdminHrAction(actor, 'payroll', 'manage_compensation_loans');
+    if (denied) return denied;
 
     const body = await req.json();
     const action = String(body.action || '');

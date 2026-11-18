@@ -148,62 +148,62 @@ export async function POST(
         select: messageSelect,
       });
 
-      // Dispatch in-app notifications and real-time emails to all active conversation counterparts
-      (async () => {
-        try {
-          const targetIds: string[] = [];
-          if (visibility === 'PRIVATE' && recipientId) {
-            targetIds.push(recipientId);
-          } else {
-            for (const p of participantMap.values()) {
-              if (p.id !== actor.id) {
-                targetIds.push(p.id);
-              }
+      // Dispatch in-app notifications and real-time emails (awaiting requester notification & email so delivery is guaranteed)
+      try {
+        const targetIds: string[] = [];
+        if (visibility === 'PRIVATE' && recipientId) {
+          targetIds.push(recipientId);
+        } else {
+          for (const p of participantMap.values()) {
+            if (p.id !== actor.id) {
+              targetIds.push(p.id);
             }
           }
-
-          if (targetIds.length > 0) {
-            // 1. In-app notifications
-            await prisma.systemNotification.createMany({
-              data: targetIds.map((tid) => ({
-                employeeId: tid,
-                kind: 'CHAT',
-                title: `New message on ${req.requestNumber} from ${actor.legalName}`,
-                body: messageText.length > 120 ? `${messageText.slice(0, 120)}...` : messageText,
-                linkUrl: `/requests/${req.requestNumber}`,
-              })),
-            });
-
-            // 2. Immediate corporate email notifications
-            const targetEmployees = await prisma.employee.findMany({
-              where: { id: { in: targetIds } },
-              select: { id: true, legalName: true, workEmail: true },
-            });
-
-            for (let i = 0; i < targetEmployees.length; i++) {
-              const emp = targetEmployees[i];
-              if (emp.workEmail) {
-                if (i > 0) {
-                  await new Promise((r) => setTimeout(r, 600));
-                }
-                await sendChatMessageEmail({
-                  to: emp.workEmail,
-                  recipientName: emp.legalName,
-                  senderName: actor.legalName,
-                  senderRole: actor.role,
-                  messageText,
-                  attachmentName,
-                  requestNumber: req.requestNumber,
-                  contextTitle: `Requisition: ${req.title} (${req.requestNumber})`,
-                  actionUrl: `https://bemserp.work/requests/${req.requestNumber}`,
-                }).catch((err) => console.error(`Failed to email chat recipient ${emp.workEmail}:`, err));
-              }
-            }
-          }
-        } catch (notifErr) {
-          console.error('Chat notification dispatch error:', notifErr);
         }
-      })();
+
+        if (targetIds.length > 0) {
+          // 1. In-app notifications
+          await prisma.systemNotification.createMany({
+            data: targetIds.map((tid) => ({
+              employeeId: tid,
+              category: 'REQUESTS_APPROVALS',
+              kind: 'CHAT',
+              title: `New message on ${req.requestNumber} from ${actor.legalName}`,
+              body: messageText.length > 120 ? `${messageText.slice(0, 120)}...` : messageText,
+              linkUrl: `/requests/${req.requestNumber}`,
+            })),
+          });
+
+          // 2. Immediate corporate email notifications (prioritize requester first)
+          const targetEmployees = await prisma.employee.findMany({
+            where: { id: { in: targetIds } },
+            select: { id: true, legalName: true, workEmail: true },
+          });
+          targetEmployees.sort((a, b) => (a.id === req.requester.id ? -1 : b.id === req.requester.id ? 1 : 0));
+
+          for (let i = 0; i < targetEmployees.length; i++) {
+            const emp = targetEmployees[i];
+            if (emp.workEmail) {
+              if (i > 0) {
+                await new Promise((r) => setTimeout(r, 450));
+              }
+              await sendChatMessageEmail({
+                to: emp.workEmail,
+                recipientName: emp.legalName,
+                senderName: actor.legalName,
+                senderRole: actor.role,
+                messageText,
+                attachmentName,
+                requestNumber: req.requestNumber,
+                contextTitle: `Requisition: ${req.title} (${req.requestNumber})`,
+                actionUrl: `https://bemserp.work/requests/${req.requestNumber}`,
+              }).catch((err) => console.error(`Failed to email chat recipient ${emp.workEmail}:`, err));
+            }
+          }
+        }
+      } catch (notifErr) {
+        console.error('Chat notification dispatch error:', notifErr);
+      }
 
       return NextResponse.json({ success: true, message });
     }

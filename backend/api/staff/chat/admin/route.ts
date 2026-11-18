@@ -339,7 +339,7 @@ export async function POST(req: Request) {
       });
 
       if (employee.workEmail) {
-        sendChatMessageEmail({
+        await sendChatMessageEmail({
           to: employee.workEmail,
           recipientName: employee.legalName,
           senderName: actor.legalName,

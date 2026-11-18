@@ -1,3 +1,4 @@
+import { normalizeStaffAppModulesInput, resolveStaffAppModules } from '@/lib/staff-modules';
 import { NextResponse } from 'next/server';
 import { getAuthenticatedEmployee, hasAnyRole } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
@@ -89,10 +90,13 @@ export async function POST(request: Request) {
     }
 
     if (decision === 'APPROVE') {
+      const modules = body.staffAppModules === undefined ? undefined : normalizeStaffAppModulesInput(body.staffAppModules);
+      if (modules === null) return NextResponse.json({ error: 'Choose valid Staff App modules.' }, { status: 400 });
       const updated = await approveEmployeeOnboarding({
         actor,
         targetEmployeeId: employeeId,
         assignedRole,
+        staffAppModules: modules,
         subsidiaryId,
         departmentId,
         positionName: body.positionName || null,
@@ -118,7 +122,7 @@ export async function POST(request: Request) {
       return NextResponse.json({
         success: true,
         message: `Account for ${updated.legalName} approved as ${updated.role}.`,
-        employee: updated,
+        employee: { ...updated, staffAppModules: modules ?? resolveStaffAppModules() },
       });
     } else {
       const updated = await rejectEmployeeOnboarding({

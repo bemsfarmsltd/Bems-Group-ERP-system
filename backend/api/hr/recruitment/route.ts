@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { resolveHrContext, logHrAudit, canUseSubFilter } from '@/lib/hrRouteHelper';
+import { requireCustomAdminHrAction, resolveHrContext, logHrAudit, canUseSubFilter } from '@/lib/hrRouteHelper';
 
 export async function GET(req: Request) {
   try {
@@ -140,6 +140,9 @@ export async function POST(req: Request) {
     if ('error' in ctx) return ctx.error;
     const { actor, hrScope, defaultOrgId } = ctx;
 
+    const denied = requireCustomAdminHrAction(actor, 'performance', 'manage_hiring_training');
+    if (denied) return denied;
+
     const body = await req.json();
     const action = String(body.action || '');
 
@@ -174,6 +177,10 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: 'Vacancy, applicant name, and email are required.' }, { status: 400 });
       }
 
+      const vacancy = await prisma.jobVacancy.findUnique({ where: { id: vacancyId }, select: { organizationId: true } });
+      if (!vacancy || !canUseSubFilter(hrScope, vacancy.organizationId)) {
+        return NextResponse.json({ error: 'Vacancy not found.' }, { status: 404 });
+      }
       const applicant = await prisma.jobApplicant.create({
         data: { vacancyId, fullName, email, phone, stage: 'APPLIED' },
       });
@@ -188,11 +195,11 @@ export async function POST(req: Request) {
         where: { id },
         include: { vacancy: true },
       });
-      if (!applicant) return NextResponse.json({ error: 'Applicant not found.' }, { status: 404 });
+      if (!applicant || !canUseSubFilter(hrScope, applicant.vacancy.organizationId)) return NextResponse.json({ error: 'Applicant not found.' }, { status: 404 });
 
       let hiredEmployeeId = applicant.hiredEmployeeId;
       if (stage === 'HIRED' && !hiredEmployeeId) {
-        const existingEmp = await prisma.employee.findFirst({ where: { workEmail: applicant.email, role: 'STAFF' } });
+        const existingEmp = await prisma.employee.findFirst({ where: { workEmail: { equals: applicant.email, mode: 'insensitive' }, role: { in: ['STAFF', 'CUSTOM_ADMIN'] } } });
         if (existingEmp) {
           hiredEmployeeId = existingEmp.id;
         } else {

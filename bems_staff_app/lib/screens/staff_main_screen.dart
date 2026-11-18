@@ -152,6 +152,7 @@ class _StaffMainScreenState extends State<StaffMainScreen> {
     super.initState();
     _pageController = PageController(initialPage: _currentIndex);
     _currentUser = widget.user;
+    if (!_currentUser.staffAppModules.contains('finance')) return;
     _loadData();
     _loadBiometricSettings();
     StaffNotificationService().startPeriodicSync(_currentUser);
@@ -224,16 +225,24 @@ class _StaffMainScreenState extends State<StaffMainScreen> {
   }
 
   Future<void> _loadData() async {
+    final sessionUser = await StaffApiService.fetchFreshSessionUser(_currentUser);
+    if (!mounted) return;
+    if (sessionUser != null) {
+      setState(() => _currentUser = sessionUser);
+      if (!sessionUser.staffAppModules.contains('finance')) return;
+    }
     final results = await Future.wait([
       StaffApiService.fetchStaffDashboard(
         userEmail: _currentUser.email,
         employeeId: _currentUser.id,
         token: _currentUser.token,
       ),
-      StaffApiService.fetchTodayAttendanceBundle(
-        employeeId: _currentUser.id,
-        token: _currentUser.token,
-      ),
+      _currentUser.staffAppModules.contains('hr')
+          ? StaffApiService.fetchTodayAttendanceBundle(
+              employeeId: _currentUser.id,
+              token: _currentUser.token,
+            )
+          : Future.value(<String, dynamic>{}),
       StaffApiService.fetchMyProfile(_currentUser),
     ]);
     final data = results[0] as Map<String, dynamic>;
@@ -257,7 +266,7 @@ class _StaffMainScreenState extends State<StaffMainScreen> {
         _isLoading = false;
       });
       _checkProfileUpdateGate();
-      _evaluateAttendancePrompt();
+      if (refreshedUser.staffAppModules.contains('hr')) _evaluateAttendancePrompt();
       StaffNotificationService().syncAndNotify(refreshedUser);
     }
   }
@@ -2922,6 +2931,21 @@ class _StaffMainScreenState extends State<StaffMainScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (!_currentUser.staffAppModules.contains('finance')) {
+      return Scaffold(
+        backgroundColor: const Color(0xFFF8FAFC),
+        appBar: AppBar(title: const Text('Financial Management')),
+        body: const Center(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: Text(
+              'Financial Management is not assigned to your account. Contact your System Admin or HR.',
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ),
+      );
+    }
     final formatter = NumberFormat.currency(locale: 'en_NG', symbol: '₦', decimalDigits: 0);
 
     return Scaffold(

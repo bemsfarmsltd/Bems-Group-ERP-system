@@ -8,30 +8,7 @@ export const revalidate = 0;
 
 export async function GET(req: Request) {
   try {
-    let employee = await getAuthenticatedEmployee(req);
-
-    // Resilient fallback for mobile client passing x-employee-id header with active token
-    if (!employee) {
-      const empIdHeader = req.headers.get('x-employee-id');
-      const authHeader = req.headers.get('authorization');
-      const token = authHeader?.replace(/^Bearer\s+/i, '').trim();
-
-      if (empIdHeader) {
-        const found = await prisma.employee.findUnique({
-          where: { id: empIdHeader },
-        });
-        if (found && found.status === 'ACTIVE') {
-          employee = found as any;
-        }
-      } else if (token) {
-        const directEmp = await prisma.employee.findUnique({
-          where: { id: token },
-        });
-        if (directEmp && directEmp.status === 'ACTIVE') {
-          employee = directEmp as any;
-        }
-      }
-    }
+    const employee = await getAuthenticatedEmployee(req);
 
     if (!employee) {
       return NextResponse.json({ error: 'Sign in to access staff profile.' }, { status: 401 });

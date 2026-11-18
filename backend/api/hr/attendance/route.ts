@@ -1,3 +1,4 @@
+import { requireCustomAdminHrAction } from '@/lib/hrRouteHelper';
 import { NextResponse } from 'next/server';
 import { getAuthenticatedEmployee, getHrAuthorizationScope } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
@@ -145,6 +146,9 @@ export async function POST(req: Request) {
     if (!hrScope.authorized) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
+
+    const denied = requireCustomAdminHrAction(actor, 'attendance', 'override_attendance');
+    if (denied) return denied;
 
     const body = await req.json();
     const { action, attendanceRecordId } = body;

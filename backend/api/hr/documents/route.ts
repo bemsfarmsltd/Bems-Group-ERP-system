@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { resolveHrContext, logHrAudit, canUseSubFilter } from '@/lib/hrRouteHelper';
+import { requireCustomAdminHrAction, resolveHrContext, logHrAudit, canUseSubFilter } from '@/lib/hrRouteHelper';
 
 export async function GET(req: Request) {
   try {
@@ -56,6 +56,9 @@ export async function POST(req: Request) {
     if ('error' in ctx) return ctx.error;
     const { actor, hrScope, defaultOrgId } = ctx;
 
+    const denied = requireCustomAdminHrAction(actor, 'governance', 'manage_contracts_docs');
+    if (denied) return denied;
+
     const body = await req.json();
     const action = String(body.action || '');
 
@@ -63,7 +66,7 @@ export async function POST(req: Request) {
       const docType = String(body.docType || 'OFFER_LETTER');
       const title = String(body.title || '').trim();
       const bodyTemplate = String(body.bodyTemplate || '').trim();
-      const organizationId = body.organizationId ? String(body.organizationId) : null;
+      const organizationId = body.organizationId ? String(body.organizationId) : hrScope.isGlobal ? null : defaultOrgId;
 
       if (!title || !bodyTemplate) {
         return NextResponse.json({ error: 'Template title and body are required.' }, { status: 400 });
@@ -131,7 +134,7 @@ export async function POST(req: Request) {
       const id = String(body.id || '');
       const signatureNote = body.signatureNote ? String(body.signatureNote) : 'Acknowledged digitally';
       const existing = await prisma.employeeDocument.findUnique({ where: { id } });
-      if (!existing) return NextResponse.json({ error: 'Document not found.' }, { status: 404 });
+      if (!existing || !canUseSubFilter(hrScope, existing.organizationId)) return NextResponse.json({ error: 'Document not found.' }, { status: 404 });
 
       const updated = await prisma.employeeDocument.update({
         where: { id },

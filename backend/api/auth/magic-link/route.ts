@@ -1,4 +1,4 @@
-import { canAccessEmployeePortal } from '@/lib/portal-access';
+import { findPasswordRecoveryAccount, passwordRecoveryTokenKey } from '@/lib/password-recovery';
 import crypto from 'node:crypto';
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
@@ -37,22 +37,18 @@ export async function POST(request: Request) {
       );
     }
 
-    const candidates = await prisma.employee.findMany({
-      where: { workEmail: { equals: email, mode: 'insensitive' } }, take: 2,
-    });
-    const employee = candidates.length === 1 ? candidates[0] : null;
-
-    // Only issue a single-use hashed OTP for active, approved accounts; always return a generic response to prevent account enumeration
-    if (employee && canAccessEmployeePortal(employee)) {
+    const employee = await findPasswordRecoveryAccount(email, body.role, body.portal);
+    if (employee) {
+      const tokenKey = passwordRecoveryTokenKey(employee.id);
       const code = crypto.randomInt(100000, 999999).toString();
       const codeHash = crypto.createHash('sha256').update(code).digest('hex');
       const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
 
       await prisma.$transaction([
-        prisma.emailVerificationToken.deleteMany({ where: { email } }),
+        prisma.emailVerificationToken.deleteMany({ where: { email: tokenKey } }),
         prisma.emailVerificationToken.create({
           data: {
-            email,
+            email: tokenKey,
             codeHash,
             expiresAt,
             attempts: 0,

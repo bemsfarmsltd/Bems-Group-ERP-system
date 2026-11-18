@@ -223,10 +223,10 @@ export default function FundingView({
     return list;
   }, [data?.transfers, searchQuery]);
 
-  // Filtered Staff Wallets (Strictly STAFF role only; Admins and GMD do not have wallets)
+  // Staff retain their wallets after a Custom Admin grant.
   const filteredStaffWallets = useMemo(() => {
     if (!data?.staffWallets) return [];
-    let list = data.staffWallets.filter((s: any) => s.role === 'STAFF');
+    let list = data.staffWallets.filter((s: any) => ['STAFF', 'CUSTOM_ADMIN'].includes(s.role));
     if (activeSubsidiary) {
       list = list.filter((s: any) => s.subsidiaryId === activeSubsidiary.id);
     }
@@ -455,13 +455,13 @@ export default function FundingView({
             Wallets & Funded Budgets
           </h1>
           <p style={{ fontSize: '11px', color: '#64748b', margin: 0, lineHeight: 1.4 }}>
-            Central Monnify funding account and subsidiary budgets. Payments require {data.approvalLabel || 'an authorized executive'} approval.
+            {data.scopedReadOnly ? 'Read-only wallets and funded budgets for your assigned subsidiaries.' : `Central Monnify funding account and subsidiary budgets. Payments require ${data.approvalLabel || 'an authorized executive'} approval.`}
           </p>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
           <button
-            disabled={busy || !data.walletMode}
+            disabled={busy || !data.walletMode || data.scopedReadOnly}
             onClick={() =>
               run(async () => {
                 await api('funding/refresh', {});
@@ -488,7 +488,7 @@ export default function FundingView({
           </button>
 
           <button
-            disabled={busy || !data.walletMode}
+            disabled={busy || !data.walletMode || data.scopedReadOnly}
             onClick={() =>
               run(async () => {
                 const result = await api('reconcile', {});
@@ -1377,7 +1377,7 @@ export default function FundingView({
                 </thead>
                 <tbody>
                   {filteredStaffWallets.map((staff: any) => (
-                    <tr key={staff.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                    <tr key={`${staff.id}:${staff.subsidiaryId}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
                       <td style={{ padding: '10px 14px' }}>
                         <div style={{ fontWeight: 650, color: '#17253d' }}>{staff.legalName}</div>
                         <span style={{ fontSize: 9, color: '#94a3b8', fontFamily: 'monospace' }}>

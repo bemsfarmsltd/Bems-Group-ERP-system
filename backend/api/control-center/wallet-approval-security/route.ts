@@ -46,6 +46,9 @@ export async function POST(request: Request) {
     }
     const pinHash = body.action === 'SET_PIN' ? await hashPassword(body.pin) : null;
     const result = await walletTransaction(async tx => {
+      if (body.action === 'SET_PIN') {
+        await tx.$queryRaw`SELECT "id" FROM "Employee" WHERE "id"=${actor.id} FOR UPDATE`;
+      }
       const employee = await liveWalletActor(tx, actor, isRecovery ? false : body.action === 'SET_OTP_POLICY' ? 'GMD' : true);
       if (hash(employee.passwordHash) !== credentialHash) throw new WalletError('CREDENTIAL_CHANGED', 'Sign in again and retry.', 403);
       if (isRecovery) {

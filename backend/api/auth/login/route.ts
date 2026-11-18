@@ -1,6 +1,6 @@
 import { canAccessEmployeePortal } from '@/lib/portal-access';
 import { NextResponse } from 'next/server';
-import { createEmployeeSession, getSessionCookieOptions, publicEmployee, verifyPassword } from '@/lib/auth';
+import { createEmployeeSession, getSessionCookieOptions, isApprovalLoginLocked, publicEmployee, verifyPassword } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { checkRateLimit, resetRateLimit } from '@/lib/rate-limiter';
 import { resolveOrganizationBranding } from '@/lib/subsidiary-branding';
@@ -73,6 +73,9 @@ export async function POST(request: Request) {
     }
 
     if (!['STAFF', 'GMD', 'SYSTEM_ADMIN', 'SUPER_ADMIN', 'CUSTOM_ADMIN'].includes(employee.role)) return NextResponse.json({ error: 'This account has an unsupported role. Contact a Super Admin.' }, { status: 403 });
+    if (await isApprovalLoginLocked(employee)) {
+      return NextResponse.json({ error: 'Sign-in is locked after three incorrect approval PIN attempts. Ask your System Admin to authorize recovery.' }, { status: 423 });
+    }
     const session = await createEmployeeSession(employee.id);
     const primaryAssignment = employee.assignments?.[0];
     const branding = resolveOrganizationBranding(primaryAssignment?.subsidiary);

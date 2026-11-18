@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { resolveHrContext, logHrAudit, canUseSubFilter } from '@/lib/hrRouteHelper';
+import { requireCustomAdminHrAction, resolveHrContext, logHrAudit, canUseSubFilter } from '@/lib/hrRouteHelper';
 
 export async function GET(req: Request) {
   try {
@@ -153,6 +153,9 @@ export async function POST(req: Request) {
     if ('error' in ctx) return ctx.error;
     const { actor, hrScope, defaultOrgId } = ctx;
 
+    const denied = requireCustomAdminHrAction(actor, 'performance', 'manage_appraisals_pips');
+    if (denied) return denied;
+
     const body = await req.json();
     const action = String(body.action || '');
 
@@ -208,6 +211,10 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: 'Review cycle and employee are required.' }, { status: 400 });
       }
 
+      const cycle = await prisma.performanceReviewCycle.findUnique({ where: { id: cycleId }, select: { organizationId: true } });
+      if (!cycle || !canUseSubFilter(hrScope, cycle.organizationId)) {
+        return NextResponse.json({ error: 'Review cycle not found.' }, { status: 404 });
+      }
       const evaluation = await prisma.performanceEvaluation.create({
         data: {
           cycleId,
@@ -245,6 +252,7 @@ export async function POST(req: Request) {
       if (!employeeId || !startDate || !endDate || !goalsSummary) {
         return NextResponse.json({ error: 'All PIP fields are required.' }, { status: 400 });
       }
+      if (!canUseSubFilter(hrScope, organizationId)) return NextResponse.json({ error: 'Forbidden.' }, { status: 403 });
       const pip = await prisma.performanceImprovementPlan.create({
         data: {
           organizationId,
@@ -261,6 +269,7 @@ export async function POST(req: Request) {
 
     if (action === 'SEED_STANDARD_KPIS') {
       const organizationId = String(body.organizationId || defaultOrgId);
+      if (!canUseSubFilter(hrScope, organizationId)) return NextResponse.json({ error: 'Forbidden.' }, { status: 403 });
       const defaults = [
         { title: 'Attendance & Punctuality', targetMetric: '≥ 95% On-Time Check-ins', weightPercent: 25, reviewPeriod: 'MONTHLY' },
         { title: 'Operational Delivery & SLA', targetMetric: '≥ 90% Tasks Delivered on Schedule', weightPercent: 35, reviewPeriod: 'QUARTERLY' },

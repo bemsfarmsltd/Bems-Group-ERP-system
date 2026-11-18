@@ -1,3 +1,4 @@
+import { hasStaffAppModuleAccess } from '@/lib/staff-modules';
 import { isStaffAccount } from '@/lib/portal-access';
 import { prisma } from '@/lib/prisma';
 import { getAuthenticatedEmployee, hasAnyRole, hasEmployeePermission } from '@/lib/auth';
@@ -37,6 +38,11 @@ export async function loadSsrPageData(
 
   if (page === 'session') {
     return { status: 200, body: { actor } };
+  }
+
+  if (['accountability', 'requests', 'requests-new', 'request-detail'].includes(page) &&
+      !hasStaffAppModuleAccess(actor, 'finance')) {
+    return { status: 403, body: { error: 'Financial Management is not assigned to your Staff App account.' } };
   }
 
   if (page === 'vendors') {
@@ -355,6 +361,7 @@ export async function loadSsrPageData(
       fullName: actor.legalName,
       email: actor.workEmail,
       role: actor.role,
+      staffAppModules: actor.staffAppModules ?? ['finance'],
       employeeNumber: actor.employeeNumber,
       phone: actor.phone || currentStaff?.phone || '',
       avatarUrl: actor.avatarUrl || currentStaff?.avatarUrl || '',

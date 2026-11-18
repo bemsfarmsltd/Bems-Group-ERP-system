@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { resolveHrContext, logHrAudit } from '@/lib/hrRouteHelper';
+import { requireCustomAdminHrAction, resolveHrContext, logHrAudit } from '@/lib/hrRouteHelper';
 
 const POLICY_KEY = 'HR_STATUTORY_POLICY';
 const GRANTS_KEY = 'HR_CAPABILITY_GRANTS';
@@ -60,6 +60,9 @@ export async function POST(req: Request) {
     const ctx = await resolveHrContext(req);
     if ('error' in ctx) return ctx.error;
     const { actor, defaultOrgId } = ctx;
+
+    const denied = requireCustomAdminHrAction(actor, 'governance', 'manage_hr_config');
+    if (denied) return denied;
 
     const body = await req.json();
     const action = String(body.action || '');

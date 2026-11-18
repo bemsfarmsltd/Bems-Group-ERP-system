@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { resolveHrContext, logHrAudit, canUseSubFilter } from '@/lib/hrRouteHelper';
+import { requireCustomAdminHrAction, resolveHrContext, logHrAudit, canUseSubFilter } from '@/lib/hrRouteHelper';
 
 export async function GET(req: Request) {
   try {
@@ -60,6 +60,9 @@ export async function POST(req: Request) {
     const ctx = await resolveHrContext(req);
     if ('error' in ctx) return ctx.error;
     const { actor, hrScope, defaultOrgId } = ctx;
+
+    const denied = requireCustomAdminHrAction(actor, 'performance', 'manage_grievances_discipline');
+    if (denied) return denied;
 
     const body = await req.json();
     const action = String(body.action || '');
@@ -141,6 +144,7 @@ export async function POST(req: Request) {
       if (!summary) {
         return NextResponse.json({ error: 'Grievance summary is required.' }, { status: 400 });
       }
+      if (!canUseSubFilter(hrScope, organizationId)) return NextResponse.json({ error: 'Forbidden.' }, { status: 403 });
       const ticketCode = `GRV-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
       const created = await prisma.employeeGrievanceCase.create({
         data: {
@@ -163,7 +167,7 @@ export async function POST(req: Request) {
       const status = String(body.status || 'INVESTIGATING');
       const resolutionNote = body.resolutionNote ? String(body.resolutionNote) : undefined;
       const existing = await prisma.employeeGrievanceCase.findUnique({ where: { id } });
-      if (!existing) return NextResponse.json({ error: 'Grievance not found.' }, { status: 404 });
+      if (!existing || !canUseSubFilter(hrScope, existing.organizationId)) return NextResponse.json({ error: 'Grievance not found.' }, { status: 404 });
       if (existing.againstEmployeeId === actor.id) {
         return NextResponse.json({ error: 'Anti-retaliation policy blocks access.' }, { status: 403 });
       }

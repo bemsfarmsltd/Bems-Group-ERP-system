@@ -1,3 +1,4 @@
+import { hasStaffAppModuleAccess, staffModuleForApiPath } from '@/lib/staff-modules';
 import { Readable } from 'node:stream';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { NextRequest, NextResponse } from 'next/server';
@@ -60,6 +61,20 @@ export async function evaluateReadOnlyGuard(
       { error: 'Read-only compliance account: write operations are disabled.' },
       { status: 403 }
     );
+  }
+  return null;
+}
+
+export async function evaluateStaffModuleGuard(
+  path: string,
+  request: NextRequest,
+  resolveActor: (request: NextRequest) => Promise<AuthenticatedEmployee | null> = getAuthenticatedEmployee
+): Promise<Response | null> {
+  const module = staffModuleForApiPath(path);
+  if (!module) return null;
+  const actor = await resolveActor(request);
+  if (actor && !hasStaffAppModuleAccess(actor, module)) {
+    return NextResponse.json({ error: 'This module is not assigned to your Staff App account.', code: 'STAFF_MODULE_DISABLED' }, { status: 403 });
   }
   return null;
 }
@@ -167,7 +182,7 @@ export function mountNextRoute(
       url: fastifyPath,
       handler: async (req: FastifyRequest, reply: FastifyReply) => {
         const nextReq = buildNextRequest(req);
-        const blockedRes = await evaluateReadOnlyGuard(method, nextPath, nextReq);
+        const blockedRes = await evaluateStaffModuleGuard(nextPath, nextReq) ?? await evaluateReadOnlyGuard(method, nextPath, nextReq);
         if (blockedRes) {
           await sendWebResponse(reply, blockedRes);
           return;

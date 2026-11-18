@@ -5,6 +5,7 @@ import {
   hasAnyRole,
   hashPassword,
   invalidateSessionCache,
+  passwordMatchesApprovalPin,
   verifyPassword,
 } from '@/lib/auth';
 import { walletEnabled } from '@/lib/wallet/core';
@@ -77,11 +78,13 @@ export async function POST(
     }
 
     const newHash = await hashPassword(newPassword);
-    await prisma.$transaction(async (tx) => {
-      await tx.employee.update({
-        where: { id: employeeId },
+    const result = await prisma.$transaction(async (tx) => {
+      if (await passwordMatchesApprovalPin(tx, employeeId, newPassword)) return 'MATCHES_PIN';
+      const updated = await tx.employee.updateMany({
+        where: { id: employeeId, passwordHash: employee.passwordHash },
         data: { passwordHash: newHash },
       });
+      if (updated.count === 0) return 'CREDENTIAL_CHANGED';
 
       // Invalidate any unused wallet challenges and revoke other sessions on password change
       await tx.$executeRaw`UPDATE "WalletChallenge" SET "usedAt" = now() WHERE "actorId" = ${employeeId} AND "usedAt" IS NULL`;
@@ -90,7 +93,14 @@ export async function POST(
           where: { employeeId },
         });
       }
+      return 'UPDATED';
     });
+    if (result === 'MATCHES_PIN') {
+      return NextResponse.json({ error: 'Choose a password different from your approval PIN.' }, { status: 400 });
+    }
+    if (result === 'CREDENTIAL_CHANGED') {
+      return NextResponse.json({ error: 'Your password changed. Sign in again and retry.' }, { status: 409 });
+    }
 
     invalidateSessionCache();
 
