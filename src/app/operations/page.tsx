@@ -31,5 +31,16 @@ export default async function OperationsPage() {
     actor.legalName ||
     'Operations User';
 
-  return <OperationsWorkspaceClient actorName={resolvedActorName} actorRole={actor.role || 'ADMIN'} />;
+  const resolvedActorEmail =
+    (actor as unknown as { email?: string; workEmail?: string }).email ||
+    actor.workEmail ||
+    '';
+
+  return (
+    <OperationsWorkspaceClient
+      actorName={resolvedActorName}
+      actorRole={actor.role || 'ADMIN'}
+      actorEmail={resolvedActorEmail}
+    />
+  );
 }

@@ -5,6 +5,14 @@ import Link from 'next/link';
 import { Plus, RefreshCw, X } from 'lucide-react';
 import { resolveApiUrl } from '@/lib/api-client';
 import { OperationsPhasesPanel } from '@/components/operations/OperationsPhasesPanel';
+import { useGmdAccess } from '@/components/ai/useGmdAccess';
+import { useAiFinancialManager } from '@/components/ai/useAiFinancialManager';
+import { AiFinancialManagerDrawer } from '@/components/ai/AiFinancialManagerDrawer';
+import { AmbientBottomAiBar } from '@/components/ai/AmbientBottomAiBar';
+import { AiChatHistoryDrawer } from '@/components/ai/AiChatHistoryDrawer';
+import { AiScreenEdgeGlow, notifyAiInteraction } from '@/components/ai/AiScreenEdgeGlow';
+import { AiMotionEntryScreen } from '@/components/ai/AiMotionEntryScreen';
+import { UniversalClickToAskProvider } from '@/components/ai/UniversalClickToAskProvider';
 
 type TabKey = 'command' | 'work_orders' | 'dispatch' | 'assurance' | 'resources' | 'governance' | 'catalogue' | 'approvals';
 
@@ -80,12 +88,27 @@ const STATUS_BADGE: Record<string, { bg: string; fg: string }> = {
   CANCELLED: { bg: '#f8fafc', fg: '#64748b' },
 };
 
-export default function OperationsWorkspaceClient({ actorName, actorRole }: { actorName: string; actorRole: string }) {
+export default function OperationsWorkspaceClient({
+  actorName,
+  actorRole,
+  actorEmail = '',
+}: {
+  actorName: string;
+  actorRole: string;
+  actorEmail?: string;
+}) {
+  const isAiAuthorized = useGmdAccess(actorRole);
   const [activeTab, setActiveTab] = useState<TabKey>('command');
   const [collapsed, setCollapsed] = useState(false);
   const [switcher, setSwitcher] = useState(false);
+  const [topPanel, setTopPanel] = useState<'notifications' | 'account' | null>(null);
   const [search, setSearch] = useState('');
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const [showWelcome, setShowWelcome] = useState(false);
+  const [aiDrawerOpen, setAiDrawerOpen] = useState(false);
+  const [isInspectMode, setIsInspectMode] = useState(false);
+  const [liveNotifications, setLiveNotifications] = useState<any[]>([]);
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
 
   const [data, setData] = useState<OpsOverviewData | null>(null);
   const [dispatches, setDispatches] = useState<any[]>([]);
@@ -360,9 +383,11 @@ export default function OperationsWorkspaceClient({ actorName, actorRole }: { ac
 
   const safeActorName = String(actorName || 'Operations User').trim() || 'Operations User';
   const safeActorRole = String(actorRole || 'ADMIN');
+  const firstName = safeActorName.split(/\s+/)[0] || safeActorName;
   const activeSub = (data?.subsidiaries || []).find((s) => s.id === orgFilter) || null;
   const activeBusinessName = activeSub ? activeSub.legalName : 'BEMS Group';
   const activeBrandColor = activeSub?.brandColor || '#ea580c';
+  const activeTintHex = activeBrandColor === '#ea580c' ? '#f97316' : activeBrandColor;
   const activeLogoUrl = activeSub?.logoUrl || '/bems-group-logo.png?v=20261024';
   const initials = safeActorName
     .split(/\s+/)
@@ -384,13 +409,141 @@ export default function OperationsWorkspaceClient({ actorName, actorRole }: { ac
     [data]
   );
 
+  const aiManager = useAiFinancialManager({
+    userName: safeActorName,
+    userRole: safeActorRole.toUpperCase(),
+    businessId: activeSub?.id || 'BEMS-GROUP',
+    currentPage: `Operations · ${currentNavItem.label}`,
+    businessName: activeBusinessName,
+    moduleDomain: 'operations',
+  });
+
+  const fetchLiveNotifications = useCallback(async () => {
+    try {
+      const res = await fetch(resolveApiUrl('/api/notifications?limit=15'), {
+        credentials: 'include',
+        cache: 'no-store',
+      });
+      if (res.ok) {
+        const d = await res.json();
+        setLiveNotifications(d.notifications || []);
+        setUnreadNotificationCount(Number(d.unreadCount || 0));
+      }
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    void fetchLiveNotifications();
+    const timer = setInterval(() => void fetchLiveNotifications(), 20000);
+    return () => clearInterval(timer);
+  }, [fetchLiveNotifications]);
+
+  const markAllNotificationsRead = async () => {
+    try {
+      setUnreadNotificationCount(0);
+      setLiveNotifications((prev) => prev.map((n) => ({ ...n, readAt: n.readAt || new Date().toISOString(), status: 'READ' })));
+      await fetch(resolveApiUrl('/api/notifications'), {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ markAllRead: true }),
+      });
+    } catch {}
+  };
+
+  const handleSignOut = async () => {
+    try {
+      await fetch(resolveApiUrl('/api/auth/logout'), { method: 'POST', credentials: 'include' });
+    } catch {}
+    if (typeof window !== 'undefined') window.location.href = '/';
+  };
+
+  const hour = new Date().getHours();
+  const timeGreeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+
   return (
+    <UniversalClickToAskProvider
+      currentPage={`Operations · ${currentNavItem.label}`}
+      businessName={activeBusinessName}
+      isInspectMode={isInspectMode}
+      onToggleInspectMode={() => setIsInspectMode((v) => !v)}
+      onAskContextualQuestion={(question, elementContext) => {
+        if (!isAiAuthorized) return;
+        notifyAiInteraction();
+        aiManager.sendMessage(question, elementContext);
+      }}
+    >
+      <style>{`
+        :root, .app-shell, body {
+          --brand-primary: ${activeBrandColor} !important;
+          --brand-gradient: linear-gradient(135deg, ${activeTintHex} 0%, ${activeBrandColor} 100%) !important;
+          --brand-soft: ${activeBrandColor}14 !important;
+          --brand-border: ${activeBrandColor}55 !important;
+        }
+        .sidebar {
+          background-color: #070c16 !important;
+          background: radial-gradient(circle at 18% 10%, ${activeBrandColor}30, transparent 42%),
+                      linear-gradient(180deg, #070c16 0%, #0b111e 50%, #050811 100%) !important;
+          position: sticky !important;
+          top: 0 !important;
+          height: 100vh !important;
+          overflow: hidden !important;
+        }
+        .sidebar-circuit {
+          position: absolute;
+          inset: 0;
+          pointer-events: none;
+          opacity: 0.35 !important;
+          overflow: hidden;
+          z-index: 1;
+        }
+        .sidebar-circuit:before {
+          content: '';
+          position: absolute;
+          left: -90px;
+          top: 165px;
+          width: 250px;
+          height: 250px;
+          border: 1.5px solid ${activeBrandColor}70 !important;
+          border-radius: 50%;
+          box-shadow: 0 0 0 35px ${activeBrandColor}12, 0 0 0 85px ${activeBrandColor}05 !important;
+        }
+        .nav-item.active {
+          background: linear-gradient(90deg, ${activeBrandColor}, ${activeBrandColor}cc) !important;
+          box-shadow: inset 3px 0 #ffffff, 0 6px 16px ${activeBrandColor}40 !important;
+        }
+        .nav-group > p {
+          color: ${activeBrandColor} !important;
+        }
+        .help-button > span {
+          background: ${activeBrandColor} !important;
+        }
+        .topbar .avatar, .avatar {
+          background: ${activeBrandColor}18 !important;
+          color: ${activeBrandColor} !important;
+          border-color: ${activeBrandColor}45 !important;
+        }
+        .account-panel > div > span {
+          background: ${activeBrandColor}20 !important;
+          color: ${activeBrandColor} !important;
+        }
+      `}</style>
+      {isAiAuthorized && showWelcome && (
+        <AiMotionEntryScreen
+          userName={safeActorName}
+          userRole={safeActorRole}
+          businessName={activeBusinessName}
+          brandColor={activeBrandColor}
+          onComplete={() => setShowWelcome(false)}
+        />
+      )}
     <div
-      className={`app-shell ${collapsed ? 'collapsed' : ''}`}
+      className={`app-shell ${collapsed ? 'collapsed' : ''} ${safeActorRole.toUpperCase() === 'GMD' ? 'gmd-view' : ''}`}
       style={{ '--brand-accent': activeBrandColor } as React.CSSProperties}
     >
-      {/* LEFT DARK ENTERPRISE SIDEBAR (matching HR / Finance / Projects) */}
+      {/* LEFT DARK ENTERPRISE SIDEBAR (matching Finance / HR) */}
       <aside className="sidebar">
+        <div className="sidebar-circuit" aria-hidden="true" />
         <div className="sidebar-glow" aria-hidden="true">
           <i /><i /><i /><i /><i /><i />
         </div>
@@ -625,6 +778,31 @@ export default function OperationsWorkspaceClient({ actorName, actorRole }: { ac
 
           {/* Top Actions */}
           <div className="top-actions">
+            {isAiAuthorized && (
+              <button
+                type="button"
+                onClick={() => setShowWelcome(true)}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  padding: '4px 10px',
+                  height: '28px',
+                  borderRadius: '8px',
+                  background: `${activeBrandColor}14`,
+                  border: `1px solid ${activeBrandColor}40`,
+                  color: activeBrandColor,
+                  fontSize: '11.5px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                <span style={{ fontSize: '12px' }}>🔊</span>
+                <span>AI Welcome</span>
+              </button>
+            )}
+
             <button
               type="button"
               onClick={() => setShowNewWoModal(true)}
@@ -635,7 +813,7 @@ export default function OperationsWorkspaceClient({ actorName, actorRole }: { ac
                 padding: '4px 10px',
                 height: '28px',
                 borderRadius: '8px',
-                background: '#ea580c',
+                background: activeBrandColor,
                 border: 'none',
                 color: '#ffffff',
                 fontSize: '11.5px',
@@ -680,49 +858,130 @@ export default function OperationsWorkspaceClient({ actorName, actorRole }: { ac
               <RefreshCw size={13} />
             </button>
 
-            <div
-              className="user-pill"
-              title={`${safeActorName} (${safeActorRole})`}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: 30,
-                height: 30,
-                borderRadius: 999,
-                background: '#fff7ed',
-                border: '1px solid #fed7aa',
-                color: '#c2410c',
-                fontSize: 11,
-                fontWeight: 800,
-              }}
-            >
-              {initials}
+            <div className="top-popover-wrap">
+              <button
+                type="button"
+                className="top-icon notification"
+                aria-label="Notifications"
+                aria-expanded={topPanel === 'notifications'}
+                onClick={() => setTopPanel(topPanel === 'notifications' ? null : 'notifications')}
+              >
+                ♧{unreadNotificationCount > 0 && <i style={{ background: '#ef4444' }} />}
+              </button>
+              {topPanel === 'notifications' && (
+                <div className={unreadNotificationCount === 0 ? 'top-popover notifications-panel read' : 'top-popover notifications-panel'}>
+                  <header>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <strong>Notifications</strong>
+                      {unreadNotificationCount > 0 && (
+                        <span style={{ fontSize: '10px', background: '#fee2e2', color: '#b91c1c', padding: '1px 6px', borderRadius: '10px', fontWeight: 700 }}>
+                          {unreadNotificationCount} unread
+                        </span>
+                      )}
+                    </div>
+                    <button type="button" onClick={() => setTopPanel(null)}>×</button>
+                  </header>
+                  <div style={{ maxHeight: '340px', overflowY: 'auto' }}>
+                    {liveNotifications.length === 0 ? (
+                      <div style={{ padding: '24px 16px', textAlign: 'center', color: '#64748b', fontSize: '12px' }}>
+                        No notifications for {activeBusinessName}
+                      </div>
+                    ) : (
+                      liveNotifications.map((notif: any) => (
+                        <button
+                          type="button"
+                          key={notif.id}
+                          onClick={() => {
+                            setTopPanel(null);
+                            if (typeof window !== 'undefined') window.location.href = '/control-center?section=notifications';
+                          }}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'flex-start',
+                            gap: '10px',
+                            padding: '10px 14px',
+                            textAlign: 'left',
+                            background: !notif.readAt ? '#fff7ed' : 'transparent',
+                            borderBottom: '1px solid #f1f5f9',
+                            width: '100%',
+                            border: 'none',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <strong style={{ fontSize: '12px', color: '#0f172a', display: 'block' }}>{notif.title}</strong>
+                            <small style={{ display: 'block', fontSize: '11px', color: '#475569', marginTop: '2px' }}>{notif.body}</small>
+                          </div>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                  <footer onClick={() => void markAllNotificationsRead()} style={{ cursor: 'pointer', textAlign: 'center', padding: '10px', fontWeight: 600, fontSize: '12px', borderTop: '1px solid #f1f5f9' }}>
+                    Mark all as read
+                  </footer>
+                </div>
+              )}
+            </div>
+
+            <div className="top-popover-wrap">
+              <button
+                type="button"
+                className="avatar"
+                aria-label="Account menu"
+                aria-expanded={topPanel === 'account'}
+                onClick={() => setTopPanel(topPanel === 'account' ? null : 'account')}
+              >
+                {initials}
+              </button>
+              {topPanel === 'account' && (
+                <div className="top-popover account-panel">
+                  <div>
+                    <span>{initials}</span>
+                    <strong>{safeActorName}</strong>
+                    <small>{actorEmail || safeActorRole}</small>
+                  </div>
+                  <button type="button" onClick={() => { setActiveTab('catalogue'); setTopPanel(null); }}>Sites &amp; Service Catalogue</button>
+                  <button type="button" onClick={() => { setActiveTab('approvals'); setTopPanel(null); }}>Operational Approvals</button>
+                  <button type="button" onClick={() => { if (typeof window !== 'undefined') window.location.href = '/control-center?section=notifications'; }}>Notification Centre</button>
+                  <button type="button" onClick={() => void handleSignOut()}>Sign out</button>
+                </div>
+              )}
             </div>
           </div>
         </header>
 
         {/* STAGE CONTENT */}
-        <main className="stage" style={{ padding: '20px 24px 48px' }}>
-          {/* Page Header Banner matching HR module */}
+        <main className="stage" style={{ padding: '20px 24px 104px' }}>
+          {/* Finance-matching Executive Greeting & Filter Strip */}
           <div
             style={{
-              background: '#ffffff',
-              border: '1px solid #e2e8f0',
-              borderRadius: 16,
-              padding: '16px 20px',
               marginBottom: 18,
               display: 'flex',
-              alignItems: 'center',
+              alignItems: 'flex-end',
               justifyContent: 'space-between',
               gap: 14,
               flexWrap: 'wrap',
             }}
           >
             <div>
-              <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: '#0f172a' }}>{currentNavItem.label}</h1>
-              <p style={{ margin: '2px 0 0', fontSize: 12.5, color: '#64748b' }}>
-                {currentNavItem.subtitle} across <strong>{activeBusinessName}</strong>
+              <div
+                className="kicker"
+                style={{
+                  fontSize: 10.5,
+                  fontWeight: 800,
+                  letterSpacing: '0.1em',
+                  textTransform: 'uppercase',
+                  color: activeBrandColor,
+                  marginBottom: 4,
+                }}
+              >
+                OPERATIONS MANAGEMENT SYSTEM · {currentNavItem.label.toUpperCase()} · {safeActorRole}
+              </div>
+              <h1 style={{ margin: 0, fontSize: 26, fontWeight: 850, color: '#0f172a', letterSpacing: '-0.02em' }}>
+                {activeTab === 'command' ? `${timeGreeting}, ${firstName}.` : currentNavItem.label}
+              </h1>
+              <p style={{ margin: '4px 0 0', fontSize: 13, color: '#64748b' }}>
+                {currentNavItem.subtitle} across <strong>{activeBusinessName}</strong>.
               </p>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -761,8 +1020,8 @@ export default function OperationsWorkspaceClient({ actorName, actorRole }: { ac
           {activeTab === 'command' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(175px, 1fr))', gap: 12 }}>
-                <KpiCard label="Open Work Orders" value={data?.kpis?.openCount ?? 0} sub="Awaiting execution" color="#0284c7" />
-                <KpiCard label="In Progress" value={data?.kpis?.inProgressCount ?? 0} sub="Active field/office work" color="#ea580c" />
+                <KpiCard label="Open Work Orders" value={data?.kpis?.openCount ?? 0} sub="Awaiting execution" color={activeBrandColor} featured />
+                <KpiCard label="In Progress" value={data?.kpis?.inProgressCount ?? 0} sub="Active field/office work" color={activeBrandColor} />
                 <KpiCard label="SLA Overdue" value={data?.kpis?.overdueCount ?? 0} sub="Past due target" color="#dc2626" />
                 <KpiCard label="Blocked" value={data?.kpis?.blockedCount ?? 0} sub="Needs escalation" color="#b91c1c" />
                 <KpiCard label="Today's Dispatches" value={data?.kpis?.todayDispatchesCount ?? 0} sub={`${data?.kpis?.activeSitesCount ?? 0} active sites`} color="#4f46e5" />
@@ -1090,16 +1349,104 @@ export default function OperationsWorkspaceClient({ actorName, actorRole }: { ac
           </div>
         </div>
       )}
+      {isAiAuthorized && (
+        <>
+          <AiScreenEdgeGlow isActive={true} isProcessing={aiManager.isTyping} brandColor={activeBrandColor} />
+          <AmbientBottomAiBar
+            currentPage={`Operations · ${currentNavItem.label}`}
+            businessName={activeBusinessName}
+            userName={safeActorName}
+            userRole={safeActorRole}
+            messages={aiManager.messages}
+            isTyping={aiManager.isTyping}
+            isInspectMode={isInspectMode}
+            agentMode={aiManager.agentMode}
+            onSetAgentMode={aiManager.setAgentMode}
+            onToggleInspectMode={() => setIsInspectMode((v) => !v)}
+            onSendMessage={aiManager.sendMessage}
+            onConfirmAction={aiManager.handleConfirmAction}
+            onCancelAction={aiManager.handleCancelAction}
+            onNewChat={aiManager.startNewChat}
+            onOpenHistory={() => aiManager.setIsHistoryOpen(true)}
+            onOpenFullCockpit={() => setAiDrawerOpen(true)}
+            onNavigate={(tab) => {
+              const found = allNavItems.find((i) => i.label.toLowerCase() === tab.toLowerCase() || i.id === tab);
+              if (found) setActiveTab(found.id);
+            }}
+          />
+          <AiChatHistoryDrawer
+            isOpen={aiManager.isHistoryOpen}
+            onClose={() => aiManager.setIsHistoryOpen(false)}
+            sessions={aiManager.sessions}
+            activeSessionId={aiManager.activeSessionId}
+            onSelectSession={(session) => aiManager.loadSession(session)}
+            onNewChat={aiManager.startNewChat}
+            onDeleteSession={(id) => aiManager.deleteSession(id)}
+          />
+          <AiFinancialManagerDrawer
+            isOpen={aiDrawerOpen}
+            onClose={() => setAiDrawerOpen(false)}
+            userRole={safeActorRole}
+            userName={safeActorName}
+            businessName={activeBusinessName}
+            businessId={activeSub?.id || 'BEMS-GROUP'}
+            currentPage={`Operations · ${currentNavItem.label}`}
+            onNavigate={(tab) => {
+              const found = allNavItems.find((i) => i.label.toLowerCase() === tab.toLowerCase() || i.id === tab);
+              if (found) setActiveTab(found.id);
+              setAiDrawerOpen(false);
+            }}
+            sharedMessages={aiManager.messages}
+            sharedIsTyping={aiManager.isTyping}
+            onSendMessage={aiManager.sendMessage}
+            onConfirmAction={aiManager.handleConfirmAction}
+            onCancelAction={aiManager.handleCancelAction}
+            onNewChat={aiManager.startNewChat}
+            agentMode={aiManager.agentMode}
+            onSetAgentMode={aiManager.setAgentMode}
+          />
+        </>
+      )}
     </div>
+    </UniversalClickToAskProvider>
   );
 }
 
-function KpiCard({ label, value, sub, color }: { label: string; value: number; sub: string; color: string }) {
+function KpiCard({
+  label,
+  value,
+  sub,
+  color,
+  featured = false,
+}: {
+  label: string;
+  value: number;
+  sub: string;
+  color: string;
+  featured?: boolean;
+}) {
+  if (featured) {
+    return (
+      <div
+        style={{
+          background: `linear-gradient(135deg, ${color} 0%, ${color}dd 100%)`,
+          borderRadius: 16,
+          padding: 16,
+          color: '#ffffff',
+          boxShadow: `0 12px 24px -8px ${color}66`,
+        }}
+      >
+        <div style={{ fontSize: 11, fontWeight: 700, opacity: 0.9, textTransform: 'uppercase' }}>{label}</div>
+        <div style={{ fontSize: 28, fontWeight: 850, marginTop: 6 }}>{value}</div>
+        <div style={{ fontSize: 11.5, opacity: 0.9, marginTop: 4 }}>{sub}</div>
+      </div>
+    );
+  }
   return (
-    <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderTop: `3px solid ${color}`, borderRadius: 12, padding: 14 }}>
+    <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderTop: `3px solid ${color}`, borderRadius: 16, padding: 16 }}>
       <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>{label}</div>
-      <div style={{ fontSize: 24, fontWeight: 800, color: '#0f172a', marginTop: 4 }}>{value}</div>
-      <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>{sub}</div>
+      <div style={{ fontSize: 26, fontWeight: 800, color: '#0f172a', marginTop: 6 }}>{value}</div>
+      <div style={{ fontSize: 11.5, color: '#64748b', marginTop: 4 }}>{sub}</div>
     </div>
   );
 }
