@@ -246,6 +246,16 @@ const DEFAULT_CONTROL_ITEM: TelemetryItem = {
   actionPrompt: 'Give me a cross-module status overview across BEMS Group.',
 };
 
+const DEFAULT_OPERATIONS_ITEM: TelemetryItem = {
+  id: 'def-ops-1',
+  badge: 'AI OPERATIONS MANAGER',
+  topic: 'FIELD & SLA COMMAND',
+  fullText: 'Operations AI live for {businessName}. Monitoring work orders, SLA compliance, dispatches, incidents, and store inventory.',
+  severity: 'info',
+  actionLabel: 'Operations Briefing ➔',
+  actionPrompt: 'Give me an executive Operations briefing on open work orders, overdue SLAs, dispatches, incidents, and low-stock alerts.',
+};
+
 export function useAmbientTelemetry({
   currentPage = 'Overview',
   businessName = 'BEMS Group Holdings Ltd',
@@ -262,6 +272,8 @@ export function useAmbientTelemetry({
     ? DEFAULT_HR_ITEM
     : currentPage.startsWith('Projects')
     ? DEFAULT_PROJECTS_ITEM
+    : currentPage.startsWith('Operations')
+    ? DEFAULT_OPERATIONS_ITEM
     : currentPage.startsWith('Control Center')
     ? DEFAULT_CONTROL_ITEM
     : DEFAULT_ITEM;

@@ -464,7 +464,12 @@ export default function OperationsWorkspaceClient({
 
   const fetchLiveNotifications = useCallback(async () => {
     try {
-      const res = await fetch(resolveApiUrl('/api/notifications?limit=15'), {
+      const qs = new URLSearchParams({
+        limit: '15',
+        excludeCategories: 'ATTENDANCE,PAYROLL_DEDUCTIONS,LEAVE',
+      });
+      if (orgFilter) qs.set('subsidiary', orgFilter);
+      const res = await fetch(resolveApiUrl(`/api/notifications?${qs.toString()}`), {
         credentials: 'include',
         cache: 'no-store',
       });
@@ -474,7 +479,7 @@ export default function OperationsWorkspaceClient({
         setUnreadNotificationCount(Number(d.unreadCount || 0));
       }
     } catch {}
-  }, []);
+  }, [orgFilter]);
 
   useEffect(() => {
     void fetchLiveNotifications();

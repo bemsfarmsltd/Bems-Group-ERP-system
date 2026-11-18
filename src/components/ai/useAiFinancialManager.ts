@@ -22,17 +22,20 @@ export function useAiFinancialManager({ userRole, userName, businessName, busine
   // Scoped executive keys ensure each workspace has clean, isolated conversation memory
   const [accountId, setAccountId] = useState<string>('');
   useEffect(() => { if(!canUseAi){setAccountId('');return;} fetch('/api/auth/session', { cache: 'no-store' }).then(r => r.json()).then(data => { if (data.user?.id) setAccountId(data.user.id); }).catch(() => {}); }, [userRole,canUseAi]);
-  const storageKey = `bems_executive_chat_history_v4_${accountId}_${scopeKey}`;
-  const sessionsKey = `bems_executive_chat_sessions_v4_${accountId}_${scopeKey}`;
+  const domainKey = moduleDomain || 'financial';
+  const storageKey = `bems_executive_chat_history_v5_${accountId}_${domainKey}_${scopeKey}`;
+  const sessionsKey = `bems_executive_chat_sessions_v5_${accountId}_${domainKey}_${scopeKey}`;
 
   const firstName = userName ? userName.split(' ')[0] : 'Executive';
   const defaultWelcomeText =
     moduleDomain === 'master'
       ? `Good afternoon, ${firstName}. I am the **BEMS Root AI** inside the Enterprise Control Center. I route and govern across Finance, HR, Projects, Operations, and system-wide controls.\n\nHow can I assist your enterprise governance today?`
+      : moduleDomain === 'operations'
+      ? `Good afternoon, ${firstName}. I am your **AI Operations Manager** for ${businessName}. I am strictly scoped to work orders, field dispatches, operating sites, SLAs, incidents, inspections, SOPs, assets, stock, fleet, and shift handovers.\n\nHow can I assist your operations today?`
       : moduleDomain === 'hr'
       ? `Good afternoon, ${firstName}. I am your **AI HR Manager** for ${businessName}. I am scoped to staff directory, attendance, leave, recruitment, performance, and HR operations.\n\nHow can I assist your HR team today?`
       : moduleDomain === 'projects'
-      ? `Good afternoon, ${firstName}. I am your **AI Projects Manager** for ${businessName}. I am scoped to portfolios, OKRs, sprints, work items, milestones, and project risks.\n\nHow can I assist your project delivery today?`
+      ? `Good afternoon, ${firstName}. I am your **AI Projects Manager** for ${businessName}. I am strictly scoped to portfolios, OKRs, sprints, work items, milestones, and project risks.\n\nHow can I assist your project delivery today?`
       : isGroupScope
       ? `Good afternoon, ${firstName}. I am your BEMS AI Group Financial Manager. I monitor real-time expenditure, approvals, cash runway, and compliance across BEMS Group.\n\nHow can I assist your financial oversight today?`
       : `Good afternoon, ${firstName}. I am your dedicated AI Financial Manager for ${businessName}. I am strictly scoped to ${businessName}'s budgets, bank accounts, staff, and requisitions.\n\nHow can I assist your financial oversight for ${businessName} today?`;
@@ -51,7 +54,9 @@ export function useAiFinancialManager({ userRole, userName, businessName, busine
   const [sessions, setSessions] = useState<any[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string>('active');
   const [hydratedStorageKey, setHydratedStorageKey] = useState('');
-  const [agentMode, setAgentMode] = useState<'financial' | 'hr' | 'projects' | 'operations' | 'media' | 'innovation' | 'master' | 'both' | 'auto'>('auto');
+  const [agentMode, setAgentMode] = useState<'financial' | 'hr' | 'projects' | 'operations' | 'media' | 'innovation' | 'master' | 'both' | 'auto'>(
+    moduleDomain && moduleDomain !== 'master' ? moduleDomain : 'auto'
+  );
   const [threadDomain, setThreadDomain] = useState<'financial' | 'hr' | 'both' | null>(null);
 
   // Load archived sessions

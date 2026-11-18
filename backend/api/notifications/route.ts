@@ -20,6 +20,10 @@ export async function GET(request: Request) {
   }
   const subsidiary = searchParams.get('subsidiary') || searchParams.get('orgId');
   const category = searchParams.get('category') || undefined;
+  const excludeCategories = (searchParams.get('excludeCategories') || '')
+    .split(',')
+    .map((c) => c.trim().toUpperCase())
+    .filter(Boolean);
   const priority = searchParams.get('priority') || undefined;
   const status = searchParams.get('status') || undefined; // 'UNREAD' | 'READ' | 'ALL'
   const search = (searchParams.get('search') || '').trim();
@@ -40,6 +44,8 @@ export async function GET(request: Request) {
   // Category filter
   if (category && category !== 'ALL') {
     whereClause.category = category.toUpperCase();
+  } else if (excludeCategories.length > 0) {
+    whereClause.category = { notIn: excludeCategories };
   }
 
   // Priority filter
@@ -80,7 +86,13 @@ export async function GET(request: Request) {
         },
       },
     }),
-    prisma.systemNotification.count({ where: { employeeId: actor.id, readAt: null } }),
+    prisma.systemNotification.count({
+      where: {
+        employeeId: actor.id,
+        readAt: null,
+        ...(excludeCategories.length > 0 ? { category: { notIn: excludeCategories } } : {}),
+      },
+    }),
     prisma.systemNotification.count({ where: whereClause }),
     getStaffNotificationPreferences(actor.id),
   ]);

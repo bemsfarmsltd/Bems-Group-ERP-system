@@ -123,21 +123,33 @@ export async function POST(req: NextRequest) {
       body.context?.is_tag_locked === true ||
       body.is_tag_locked === true;
     const moduleDomain = (body.context?.module_domain || body.moduleDomain || null) as AiAgentDomain | null;
-    const routeDecision = await resolveAiAgentRouteSmart({
+    const isLockedModule = Boolean(moduleDomain && moduleDomain !== 'master');
+    const rawRouteDecision = await resolveAiAgentRouteSmart({
       message,
-      explicitMode: explicitAgentMode,
+      explicitMode: isLockedModule ? moduleDomain! : explicitAgentMode,
       moduleDomain,
-      isTagLocked: explicitTagLocked,
+      isTagLocked: isLockedModule ? true : explicitTagLocked,
       threadDomain: body.context?.thread_domain || body.thread_domain,
       history: body.history || [],
       targetElement: body.context?.target_element,
       currentPage: body.context?.target_element?.page || '',
     });
+    const routeDecision = isLockedModule
+      ? { ...rawRouteDecision, domain: moduleDomain as AiAgentDomain, isCrossDomain: false }
+      : rawRouteDecision;
 
     const activeAgentMode: AiAgentDomain = routeDecision.domain;
     const cleanUserMessage = routeDecision.cleanMessage || message;
-    let n8nWebhookUrl = activeAgentMode === 'hr' ? n8nHrWebhookUrl : n8nFinancialWebhookUrl;
-    if (!n8nWebhookUrl) n8nWebhookUrl = n8nFinancialWebhookUrl || n8nHrWebhookUrl;
+    const supportsN8nWebhook =
+      activeAgentMode === 'financial' ||
+      activeAgentMode === 'hr' ||
+      activeAgentMode === 'both' ||
+      activeAgentMode === 'master';
+    let n8nWebhookUrl = supportsN8nWebhook
+      ? activeAgentMode === 'hr'
+        ? n8nHrWebhookUrl
+        : n8nFinancialWebhookUrl
+      : '';
 
     if (n8nWebhookUrl && actor) {
       try {
@@ -2107,6 +2119,8 @@ title: "<Chart Title>"
       normalized.includes('off day') ||
       normalized.includes('roster') ||
       normalized.includes('unexcused') ||
+      normalized.includes('clockin') ||
+      normalized.includes('clock-in') ||
       normalized.includes('late')
     ) {
       const todayWat = new Intl.DateTimeFormat('en-CA', {
@@ -2207,7 +2221,37 @@ title: "<Chart Title>"
     } else {
       // General mode-aware intelligence fallback
       const hasSpecificQuery = message.length > 15 && !normalized.includes('hello') && !normalized.includes('hi');
-      if (activeAgentMode === 'hr') {
+      if (activeAgentMode === 'operations') {
+        const orgIds = scopedOrgId ? [scopedOrgId] : authorizedScope.organizationIds;
+        const [woCount, openWoCount, overdueWoCount, siteCount, openIncCount, stockItems] = await Promise.all([
+          prisma.opsWorkOrder.count({ where: { organizationId: { in: orgIds } } }).catch(() => 0),
+          prisma.opsWorkOrder.count({ where: { organizationId: { in: orgIds }, status: { in: ['NEW', 'TRIAGED', 'ASSIGNED', 'SCHEDULED', 'IN_PROGRESS', 'BLOCKED', 'REVIEW'] } } }).catch(() => 0),
+          prisma.opsWorkOrder.count({ where: { organizationId: { in: orgIds }, dueAt: { lt: new Date() }, status: { notIn: ['COMPLETED', 'CLOSED', 'CANCELLED'] } } }).catch(() => 0),
+          prisma.opsSite.count({ where: { organizationId: { in: orgIds }, status: 'ACTIVE' } }).catch(() => 0),
+          prisma.opsIncident.count({ where: { organizationId: { in: orgIds }, status: { not: 'CLOSED' } } }).catch(() => 0),
+          prisma.opsStockItem.findMany({ where: { organizationId: { in: orgIds } }, select: { quantityOnHand: true, reorderLevel: true } }).catch(() => []),
+        ]);
+        const lowStockCount = stockItems.filter((s) => Number(s.quantityOnHand) <= Number(s.reorderLevel)).length;
+        reply =
+          `**AI Operations Manager${!isGroupScope ? ` — ${scopedOrgName}` : ' — BEMS Group'}:**\n\n` +
+          `• **Total Work Orders:** ${woCount} (${openWoCount} active, ${overdueWoCount} SLA overdue)\n` +
+          `• **Active Operating Sites:** ${siteCount}\n` +
+          `• **Open Incidents:** ${openIncCount}\n` +
+          `• **Low-Stock Store Alerts:** ${lowStockCount}\n\n` +
+          `I am strictly scoped to Operations (work orders, field dispatches, sites, SLAs, incidents, inspections, SOPs, assets, stock, fleet, and shift handovers). Ask me for a live operational briefing, SLA overdue breakdown, or low-stock summary.`;
+      } else if (activeAgentMode === 'projects') {
+        const orgIds = scopedOrgId ? [scopedOrgId] : authorizedScope.organizationIds;
+        const [projCount, activeProjCount, taskCount] = await Promise.all([
+          prisma.project.count({ where: { organizationId: { in: orgIds } } }).catch(() => 0),
+          prisma.project.count({ where: { organizationId: { in: orgIds }, status: { notIn: ['COMPLETED', 'ARCHIVED', 'CANCELLED'] } } }).catch(() => 0),
+          prisma.projectWorkItem.count({ where: { project: { organizationId: { in: orgIds } } } }).catch(() => 0),
+        ]);
+        reply =
+          `**AI Projects Manager${!isGroupScope ? ` — ${scopedOrgName}` : ' — BEMS Group'}:**\n\n` +
+          `• **Projects:** ${projCount} total (${activeProjCount} active)\n` +
+          `• **Tracked Tasks / Work Items:** ${taskCount}\n\n` +
+          `I am strictly scoped to Projects (portfolios, OKRs, sprints, work items, milestones, and delivery risks). Ask me about active project progress, blockers, or overdue tasks.`;
+      } else if (activeAgentMode === 'hr') {
         reply =
           `I am your **BEMS AI HR & Workforce Copilot**${!isGroupScope ? ` for **${scopedOrgName}**` : ' across **BEMS Group**'}, connected to live attendance and staff records.\n\n` +
           (hasSpecificQuery ? `I noted your instruction: *"${message}"*.\n\n` : '') +
@@ -2248,7 +2292,7 @@ title: "<Chart Title>"
           financial: 'You are the BEMS AI Financial Manager, scoped to treasury, budgets, fund requests, approvals, Monnify wallets, payroll, and 3-way matching.',
           hr: 'You are the BEMS AI HR Manager, scoped to staff directory, attendance, leave, recruitment, performance, and payroll preparation.',
           projects: 'You are the BEMS AI Projects Manager, scoped to portfolios, OKRs, sprints, work items, milestones, and risks.',
-          operations: 'You are the BEMS AI Operations Manager, scoped to field coordination, fleet, and logistics.',
+          operations: 'You are the BEMS AI Operations Manager, strictly scoped to work orders, field dispatches, operating sites, SLAs, incidents, inspections, SOPs, assets, store inventory, fleet, and shift handovers.',
           media: 'You are the BEMS AI Media Manager, scoped to studio production and media assets.',
           innovation: 'You are the BEMS AI Innovation Manager, scoped to software platforms and R&D.',
           both: 'You are the BEMS Dual-Agent Copilot synthesizing Finance and HR intelligence.',
