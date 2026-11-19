@@ -5462,11 +5462,6 @@ class _StaffMainScreenState extends State<StaffMainScreen> {
 
         const SizedBox(height: 16),
 
-        // Shift Attendance Card (Moved from Home under Profile)
-        _buildShiftAttendanceCard(),
-
-        const SizedBox(height: 20),
-
         // 2. Personal Information Section
         _buildProfileSectionHeader('PERSONAL IDENTITY & CONTACT'),
         const SizedBox(height: 8),
