@@ -129,7 +129,7 @@ class StaffApiService {
       if (origin.contains('127.0.0.1') || origin.contains('localhost')) {
         return ['http://127.0.0.1:4000'];
       }
-      return [origin];
+      return [primaryBaseUrl, origin];
     }
     return [
       _activeBaseUrl,

@@ -10321,45 +10321,45 @@ if(a!=null&&a.length!==0)r.p(0,"x-employee-id",a)
 return r},
 b1G(){var s=A.wj(),r=s.gpb(s)
 if(B.c.n(r,"127.0.0.1")||B.c.n(r,"localhost"))return A.a(["http://127.0.0.1:4000"],t.s)
-return A.a([r],t.s)},
+return A.a(["https://api.bemserp.work",r],t.s)},
 cv(a,b,c){return A.bmB(a,b,c)},
-bmB(a0,a1,a2){var s=0,r=A.w(t.Wd),q,p=2,o,n,m,l,k,j,i,h,g,f,e,d,c,b,a
-var $async$cv=A.r(function(a4,a5){if(a4===1){o=a5
-s=p}while(true)switch(s){case 0:b=null
-j=A.b1G(),i=t.N,h=t.z,g=t.P,f=0
-case 3:if(!(f<1)){s=5
-break}n=j[f]
+bmB(a1,a2,a3){var s=0,r=A.w(t.Wd),q,p=2,o,n,m,l,k,j,i,h,g,f,e,d,c,b,a,a0
+var $async$cv=A.r(function(a5,a6){if(a5===1){o=a6
+s=p}while(true)switch(s){case 0:a=null
+j=A.b1G(),i=j.length,h=t.N,g=t.z,f=t.P,e=0
+case 3:if(!(e<j.length)){s=5
+break}n=j[e]
 p=7
 s=10
-return A.l(J.bgr(a0.$1(n),a2),$async$cv)
-case 10:m=a5
+return A.l(J.bgr(a1.$1(n),a3),$async$cv)
+case 10:m=a6
 $.b1F=n
-if(m.b===426)try{e=m
-l=B.E.bF(0,A.c5(A.c3(e.e)).aT(0,e.w),null)
-e=$.b1H
-if(e!=null)e.$1(g.b(l)?l:A.E(i,h))}catch(a3){e=$.b1H
-if(e!=null)e.$1(A.E(i,h))}else if(a1&&m.b===401){e=$.b8x
-if(e!=null)e.$0()}e=m
-q=e
+if(m.b===426)try{d=m
+l=B.E.bF(0,A.c5(A.c3(d.e)).aT(0,d.w),null)
+d=$.b1H
+if(d!=null)d.$1(f.b(l)?l:A.E(h,g))}catch(a4){d=$.b1H
+if(d!=null)d.$1(A.E(h,g))}else if(a2&&m.b===401){d=$.b8x
+if(d!=null)d.$0()}d=m
+q=d
 s=1
 break
 p=2
 s=9
 break
 case 7:p=6
-a=o
-k=A.ad(a)
-b=k
+a0=o
+k=A.ad(a0)
+a=k
 s=9
 break
 case 6:s=2
 break
-case 9:case 4:++f
+case 9:case 4:j.length===i||(0,A.a0)(j),++e
 s=3
 break
-case 5:c=J.z(b)
-if(B.c.n(c,"SocketException")||B.c.n(c,"Failed host lookup")||B.c.n(c,"ClientException")||B.c.n(c,"errno = 7"))throw A.c(A.bd("Unable to reach BEMS Enterprise servers. Please check your mobile data or Wi-Fi internet connection and try again."))
-throw A.c(t.VI.b(b)?b:A.bd("Connection failed. Please check your internet connectivity."))
+case 5:b=J.z(a)
+if(B.c.n(b,"SocketException")||B.c.n(b,"Failed host lookup")||B.c.n(b,"ClientException")||B.c.n(b,"errno = 7"))throw A.c(A.bd("Unable to reach BEMS Enterprise servers. Please check your mobile data or Wi-Fi internet connection and try again."))
+throw A.c(t.VI.b(a)?a:A.bd("Connection failed. Please check your internet connectivity."))
 case 1:return A.u(q,r)
 case 2:return A.t(o,r)}})
 return A.v($async$cv,r)},
@@ -10476,137 +10476,137 @@ throw A.c(A.bd(l==null?"Invalid work credentials. Please check your email and pa
 case 1:return A.u(q,r)}})
 return A.v($async$auz,r)},
 k9(a,b,c,d){return A.bmK(a,b,c,d)},
-bmK(c4,c5,c6,c7){var s=0,r=A.w(t.N),q,p=2,o,n,m,l,k,j,i,h,g,f,e,d,c,b,a,a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,b0,b1,b2,b3,b4,b5,b6,b7,b8,b9,c0,c1,c2,c3
-var $async$k9=A.r(function(c9,d0){if(c9===1){o=d0
-s=p}while(true)switch(s){case 0:c1=c6.length!==0?c6:"avatar.jpg"
-c2=J.ea(c1,".")?B.b.gae(J.Cm(c1,".")).toLowerCase():"jpg"
-if(J.d(c2,"png"))a0=A.uS("image","png",null)
-else if(J.d(c2,"webp")){a1=A.uS("image","webp",null)
-a0=a1}else{a1=J.d(c2,"pdf")?A.uS("application","pdf",null):A.uS("image","jpeg",null)
+bmK(c5,c6,c7,c8){var s=0,r=A.w(t.N),q,p=2,o,n,m,l,k,j,i,h,g,f,e,d,c,b,a,a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,b0,b1,b2,b3,b4,b5,b6,b7,b8,b9,c0,c1,c2,c3,c4
+var $async$k9=A.r(function(d0,d1){if(d0===1){o=d1
+s=p}while(true)switch(s){case 0:c2=c7.length!==0?c7:"avatar.jpg"
+c3=J.ea(c2,".")?B.b.gae(J.Cm(c2,".")).toLowerCase():"jpg"
+if(J.d(c3,"png"))a0=A.uS("image","png",null)
+else if(J.d(c3,"webp")){a1=A.uS("image","webp",null)
+a0=a1}else{a1=J.d(c3,"pdf")?A.uS("application","pdf",null):A.uS("image","jpeg",null)
 a0=a1}n=a0
 m=null
-a1=A.b1G(),a2=t.N,a3=t.z,a4=c7!=null,a5=c5!=null,a6=c4.length,a7=t.zb,a8=t.G5,a9=t.P,b0=a7.i("fI<1>"),b1=0
-case 3:if(!(b1<1)){s=5
-break}l=a1[b1]
+a1=A.b1G(),a2=a1.length,a3=t.N,a4=t.z,a5=c8!=null,a6=c6!=null,a7=c5.length,a8=t.zb,a9=t.G5,b0=t.P,b1=a8.i("fI<1>"),b2=0
+case 3:if(!(b2<a1.length)){s=5
+break}l=a1[b2]
 p=7
 k=A.bH(A.i(l)+"/api/upload",0,null)
-b2=A.bkF("POST",k)
-b3=J.b_F(c1,"."+A.i(c2))?c1:A.i(c1)+"."+A.i(c2)
-b4=n
-b5=new A.l4(null,null,null,null,a7)
-b6=b5.Ca()
-b7=new A.rG(c4)
-b8=b6.c
-if(b8==null)b6.b=b6.c=b7
-else{b8.skh(0,b7)
-b6.c=b7}b5.J0()
-b5=A.b3p(new A.lk(new A.fI(b5,b0)))
-if(b4==null)b4=new A.yK("application".toLowerCase(),"octet-stream".toLowerCase(),new A.nm(A.E(a2,a2),a8))
-b2.y.push(new A.Uc("file",a6,b3,b4,b5))
-j=b2
-if(a5&&c5.length!==0){j.x.p(0,"employeeId",c5)
-j.r.p(0,"x-employee-id",c5)}i=a4&&c7.length!==0?c7:$.XA
+b3=A.bkF("POST",k)
+b4=J.b_F(c2,"."+A.i(c3))?c2:A.i(c2)+"."+A.i(c3)
+b5=n
+b6=new A.l4(null,null,null,null,a8)
+b7=b6.Ca()
+b8=new A.rG(c5)
+b9=b7.c
+if(b9==null)b7.b=b7.c=b8
+else{b9.skh(0,b8)
+b7.c=b8}b6.J0()
+b6=A.b3p(new A.lk(new A.fI(b6,b1)))
+if(b5==null)b5=new A.yK("application".toLowerCase(),"octet-stream".toLowerCase(),new A.nm(A.E(a3,a3),a9))
+b3.y.push(new A.Uc("file",a7,b4,b5,b6))
+j=b3
+if(a6&&c6.length!==0){j.x.p(0,"employeeId",c6)
+j.r.p(0,"x-employee-id",c6)}i=a5&&c8.length!==0?c8:$.XA
 if(i!=null&&J.bl(i)!==0)j.r.p(0,"Authorization","Bearer "+A.i(i))
 s=10
 return A.l(J.bgl(j).pn(0,B.oD),$async$k9)
-case 10:h=d0
+case 10:h=d1
 s=11
 return A.l(A.Wd(h),$async$k9)
-case 11:g=d0
-f=A.E(a2,a3)
-b3=g
-if(B.c.N(A.c5(A.c3(b3.e)).aT(0,b3.w)).length!==0)try{b3=g
-e=B.E.bF(0,A.c5(A.c3(b3.e)).aT(0,b3.w),null)
-if(a9.b(e))f=e}catch(c8){b3=A.bd("Server returned an unexpected response ("+g.b+"). Please try again.")
-throw A.c(b3)}else if(g.b!==200){b3=A.bd("Server is temporarily unavailable ("+g.b+"). Please retry in a moment.")
-throw A.c(b3)}if(g.b>=200&&g.b<300&&J.F(f,"url")!=null){$.b1F=l
+case 11:g=d1
+f=A.E(a3,a4)
+b4=g
+if(B.c.N(A.c5(A.c3(b4.e)).aT(0,b4.w)).length!==0)try{b4=g
+e=B.E.bF(0,A.c5(A.c3(b4.e)).aT(0,b4.w),null)
+if(b0.b(e))f=e}catch(c9){b4=A.bd("Server returned an unexpected response ("+g.b+"). Please try again.")
+throw A.c(b4)}else if(g.b!==200){b4=A.bd("Server is temporarily unavailable ("+g.b+"). Please retry in a moment.")
+throw A.c(b4)}if(g.b>=200&&g.b<300&&J.F(f,"url")!=null){$.b1F=l
 d=J.z(J.F(f,"url"))
-b3=d
-b4=J.bl(b3)
-if(0>b4)A.ai(A.di(0,0,b4,"startIndex",null))
-c=A.bcq(b3,"https://pink-horse-318730.hostingersite.com","https://api.bemserp.work",0)
-b3=J.Cn(c,"http")?c:"https://api.bemserp.work"+A.i(c)
-q=b3
+b4=d
+b5=J.bl(b4)
+if(0>b5)A.ai(A.di(0,0,b5,"startIndex",null))
+c=A.bcq(b4,"https://pink-horse-318730.hostingersite.com","https://api.bemserp.work",0)
+b4=J.Cn(c,"http")?c:"https://api.bemserp.work"+A.i(c)
+q=b4
 s=1
-break}b3=J.F(f,"error")
-c0=b3==null?null:J.z(b3)
-b=c0==null?"Could not upload passport photo.":c0
-b3=A.bd(b)
-throw A.c(b3)
+break}b4=J.F(f,"error")
+c1=b4==null?null:J.z(b4)
+b=c1==null?"Could not upload passport photo.":c1
+b4=A.bd(b)
+throw A.c(b4)
 p=2
 s=9
 break
 case 7:p=6
-c3=o
-a=A.ad(c3)
+c4=o
+a=A.ad(c4)
 m=a
 s=9
 break
 case 6:s=2
 break
-case 9:case 4:++b1
+case 9:case 4:a1.length===a2||(0,A.a0)(a1),++b2
 s=3
 break
 case 5:throw A.c(t.VI.b(m)?m:A.bd("Unable to upload photo. Please check your internet connection."))
 case 1:return A.u(q,r)
 case 2:return A.t(o,r)}})
 return A.v($async$k9,r)},
-aum(b9,c0,c1){var s=0,r=A.w(t.P),q,p=2,o,n,m,l,k,j,i,h,g,f,e,d,c,b,a,a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,b0,b1,b2,b3,b4,b5,b6,b7,b8
-var $async$aum=A.r(function(c2,c3){if(c2===1){o=c3
-s=p}while(true)switch(s){case 0:b7=A.cK(b9,c0)
-a1=A.b1G(),a2=t.N,a3=t.z,a4=t.PT,a5=t.Ja,a6=t.fB,a7=t.Wd,a8=t.ls,a9=t.f,b0=t.cx,b1=t.j,b2=t.ON,b3=t.wj,b4=0
-case 3:if(!(b4<1)){s=5
-break}n=a1[b4]
+aum(c0,c1,c2){var s=0,r=A.w(t.P),q,p=2,o,n,m,l,k,j,i,h,g,f,e,d,c,b,a,a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,b0,b1,b2,b3,b4,b5,b6,b7,b8,b9
+var $async$aum=A.r(function(c3,c4){if(c3===1){o=c4
+s=p}while(true)switch(s){case 0:b8=A.cK(c0,c1)
+a1=A.b1G(),a2=a1.length,a3=t.N,a4=t.z,a5=t.PT,a6=t.Ja,a7=t.fB,a8=t.Wd,a9=t.ls,b0=t.f,b1=t.cx,b2=t.j,b3=t.ON,b4=t.wj,b5=0
+case 3:if(!(b5<a1.length)){s=5
+break}n=a1[b5]
 p=7
 m=Date.now()
 l=A.bH(A.i(n)+"/api/requests?_t="+A.i(m),0,null)
 k=A.bH(A.i(n)+"/api/staff/disbursements?_t="+A.i(m),0,null)
 j=A.bH(A.i(n)+"/api/accountability?_t="+A.i(m),0,null)
 s=10
-return A.l(A.lB(A.a([A.fK(l,b7).pn(0,B.cS),A.fK(k,b7).pn(0,B.cS),A.fK(j,b7).pn(0,B.cS)],a6),a7),$async$aum)
-case 10:i=c3
-h=A.a([],a8)
-if(J.F(i,0).b===200){b5=J.F(i,0)
-g=B.E.bF(0,A.c5(A.c3(b5.e)).aT(0,b5.w),null)
+return A.l(A.lB(A.a([A.fK(l,b8).pn(0,B.cS),A.fK(k,b8).pn(0,B.cS),A.fK(j,b8).pn(0,B.cS)],a7),a8),$async$aum)
+case 10:i=c4
+h=A.a([],a9)
+if(J.F(i,0).b===200){b6=J.F(i,0)
+g=B.E.bF(0,A.c5(A.c3(b6.e)).aT(0,b6.w),null)
 f=[]
-if(b1.b(g))f=g
-else if(a9.b(g)&&b1.b(J.F(g,"requests")))f=b1.a(J.F(g,"requests"))
-b5=J.b_N(f,a9)
-b5=A.n_(b5,new A.aun(),b5.$ti.i("D.E"),b0)
-h=A.a5(b5,!0,A.C(b5).i("D.E"))}e=A.a([],a5)
-if(J.F(i,1).b===200){b5=J.F(i,1)
-d=B.E.bF(0,A.c5(A.c3(b5.e)).aT(0,b5.w),null)
+if(b2.b(g))f=g
+else if(b0.b(g)&&b2.b(J.F(g,"requests")))f=b2.a(J.F(g,"requests"))
+b6=J.b_N(f,b0)
+b6=A.n_(b6,new A.aun(),b6.$ti.i("D.E"),b1)
+h=A.a5(b6,!0,A.C(b6).i("D.E"))}e=A.a([],a6)
+if(J.F(i,1).b===200){b6=J.F(i,1)
+d=B.E.bF(0,A.c5(A.c3(b6.e)).aT(0,b6.w),null)
 c=[]
-if(a9.b(d)&&b1.b(J.F(d,"awaitingConfirmation")))c=b1.a(J.F(d,"awaitingConfirmation"))
-else if(b1.b(d))c=d
-b5=J.b_N(c,a9)
-b5=A.n_(b5,new A.auo(),b5.$ti.i("D.E"),b2)
-e=A.a5(b5,!0,A.C(b5).i("D.E"))}b=A.a([],a4)
-if(J.F(i,2).b===200){b5=J.F(i,2)
-a=B.E.bF(0,A.c5(A.c3(b5.e)).aT(0,b5.w),null)
+if(b0.b(d)&&b2.b(J.F(d,"awaitingConfirmation")))c=b2.a(J.F(d,"awaitingConfirmation"))
+else if(b2.b(d))c=d
+b6=J.b_N(c,b0)
+b6=A.n_(b6,new A.auo(),b6.$ti.i("D.E"),b3)
+e=A.a5(b6,!0,A.C(b6).i("D.E"))}b=A.a([],a5)
+if(J.F(i,2).b===200){b6=J.F(i,2)
+a=B.E.bF(0,A.c5(A.c3(b6.e)).aT(0,b6.w),null)
 a0=[]
-if(a9.b(a)&&b1.b(J.F(a,"cases")))a0=b1.a(J.F(a,"cases"))
-else if(b1.b(a))a0=a
-b5=J.b_N(a0,a9)
-b5=A.n_(b5,new A.aup(),b5.$ti.i("D.E"),b3)
-b=A.a5(b5,!0,A.C(b5).i("D.E"))}$.b1F=n
-b5=A.ah(["requests",h,"disbursementsAwaiting",e,"accountabilityCases",b],a2,a3)
-q=b5
+if(b0.b(a)&&b2.b(J.F(a,"cases")))a0=b2.a(J.F(a,"cases"))
+else if(b2.b(a))a0=a
+b6=J.b_N(a0,b0)
+b6=A.n_(b6,new A.aup(),b6.$ti.i("D.E"),b4)
+b=A.a5(b6,!0,A.C(b6).i("D.E"))}$.b1F=n
+b6=A.ah(["requests",h,"disbursementsAwaiting",e,"accountabilityCases",b],a3,a4)
+q=b6
 s=1
 break
 p=2
 s=9
 break
 case 7:p=6
-b8=o
+b9=o
 s=9
 break
 case 6:s=2
 break
-case 9:case 4:++b4
+case 9:case 4:a1.length===a2||(0,A.a0)(a1),++b5
 s=3
 break
-case 5:q=A.ah(["requests",A.a([],a8),"disbursementsAwaiting",A.a([],a5),"accountabilityCases",A.a([],a4)],a2,a3)
+case 5:q=A.ah(["requests",A.a([],a9),"disbursementsAwaiting",A.a([],a6),"accountabilityCases",A.a([],a5)],a3,a4)
 s=1
 break
 case 1:return A.u(q,r)
