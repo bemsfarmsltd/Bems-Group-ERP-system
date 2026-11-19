@@ -1,0 +1,45 @@
+services:
+  bemserp-redis:
+    image: redis:7-alpine
+    container_name: bemserp-redis
+    restart: unless-stopped
+    mem_limit: 256m
+    networks:
+      - bemserp_internal
+
+  bemserp-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: bemserp-api
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - BACKEND_HOST=0.0.0.0
+      - BACKEND_PORT=4000
+      - PORT=4000
+      - REDIS_URL=redis://bemserp-redis:6379
+    depends_on:
+      - bemserp-redis
+    mem_limit: 1g
+    volumes:
+      - ./uploads:/app/uploads
+    networks:
+      - bemserp_internal
+      - n8n_default
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=n8n_default"
+      - "traefik.http.routers.bemserp-api.rule=Host(`api.bemserp.work`)"
+      - "traefik.http.routers.bemserp-api.entrypoints=web,websecure"
+      - "traefik.http.routers.bemserp-api.tls=true"
+      - "traefik.http.routers.bemserp-api.tls.certresolver=mytlschallenge"
+      - "traefik.http.services.bemserp-api.loadbalancer.server.port=4000"
+
+networks:
+  bemserp_internal:
+    driver: bridge
+  n8n_default:
+    external: true

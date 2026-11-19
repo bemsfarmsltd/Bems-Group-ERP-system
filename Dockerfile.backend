@@ -1,0 +1,24 @@
+FROM node:22-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+
+COPY package*.json ./
+COPY prisma ./prisma/
+
+RUN npm ci --legacy-peer-deps
+
+COPY . .
+
+RUN npm run backend:build
+
+ENV NODE_ENV=production
+ENV BACKEND_HOST=0.0.0.0
+ENV BACKEND_PORT=4000
+ENV PORT=4000
+
+EXPOSE 4000
+
+CMD ["npm", "run", "backend:start"]
