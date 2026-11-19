@@ -10,6 +10,7 @@ import { subscribeRealtimeChannel } from '../src/lib/realtime';
 import { registerNextApiPlugin } from './next-route-adapter';
 import { registerAllNextApiRoutes } from './routes/register-api-routes';
 import { registerSsrAndFileRoutes } from './routes/ssr-bootstrap';
+import { lookupStoredFileByPath } from '../src/lib/stored-file-lookup';
 
 initTelemetry('bems-erp-fastify-backend');
 logger.info('Step 1: BEMS ERP backend module loaded');
@@ -234,6 +235,19 @@ export async function buildBackendServer() {
   logger.info('Step 2: registering Next API routes onto Fastify');
   await registerNextApiPlugin(app, registerAllNextApiRoutes);
   registerSsrAndFileRoutes(app);
+
+  app.get('/uploads/*', async (req, reply) => {
+    const rawPath = String((req.params as Record<string, string>)['*'] || '');
+    const file = await lookupStoredFileByPath(rawPath);
+    if (!file) {
+      return reply.status(404).send('Not Found');
+    }
+    return reply
+      .header('Content-Type', file.mimeType)
+      .header('Cache-Control', 'public, max-age=31536000, immutable')
+      .send(file.data);
+  });
+
   logger.info('Step 3: all Next API routes registered');
 
   return app;
