@@ -35,7 +35,6 @@ export async function lookupStoredFileByPath(rawPath: string): Promise<ResolvedS
   const attachment = await prisma.attachment.findFirst({
     where: { fileName: filename, fileData: { not: null } },
     select: { contentType: true, fileData: true },
-    orderBy: { createdAt: 'desc' },
   });
   if (attachment?.fileData) {
     return {
