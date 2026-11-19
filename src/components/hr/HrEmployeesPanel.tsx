@@ -683,6 +683,8 @@ export default function HrEmployeesPanel({
                             <img
                               src={s.avatarUrl}
                               alt={s.legalName}
+                              loading="lazy"
+                              decoding="async"
                               className="h-9 w-9 rounded-full object-cover border border-slate-200"
                             />
                           ) : (

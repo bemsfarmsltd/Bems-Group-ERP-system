@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { lookupStoredFileByPath } from '@/lib/stored-file-lookup';
+import { isSupabaseStorageConfigured, resolveSupabaseRedirectUrl } from '@/lib/supabase-storage';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,6 +11,19 @@ export async function GET(
   try {
     const { path } = await context.params;
     const rawPath = Array.isArray(path) ? path.join('/') : '';
+
+    if (isSupabaseStorageConfigured()) {
+      const redirectUrl = await resolveSupabaseRedirectUrl(rawPath);
+      if (redirectUrl) {
+        return NextResponse.redirect(redirectUrl, {
+          status: 302,
+          headers: {
+            'Cache-Control': 'public, max-age=31536000, immutable',
+          },
+        });
+      }
+    }
+
     const file = await lookupStoredFileByPath(rawPath);
     if (!file) {
       return new NextResponse('Not Found', { status: 404 });

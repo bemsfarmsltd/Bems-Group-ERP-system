@@ -1,11 +1,11 @@
-import { writeFile, mkdir } from 'node:fs/promises';
-import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { NextResponse } from 'next/server';
 import { getAuthenticatedEmployee, hasAnyRole } from '@/lib/auth';
 import { checkRateLimit, getClientIp } from '@/lib/rate-limiter';
 import { prisma } from '@/lib/prisma';
 import { computeBufferSha256 } from '@/lib/platform/staged-attachments';
+import { isSupabaseStorageConfigured, uploadToSupabaseStorage } from '@/lib/supabase-storage';
+import { optimizeAvatarImage } from '@/lib/image-optimizer';
 
 export const dynamic = 'force-dynamic';
 
@@ -40,6 +40,91 @@ async function persistStoredFileWithRetry(
     }
   }
   return false;
+}
+
+async function saveUploadedAsset(params: {
+  actor: Awaited<ReturnType<typeof getAuthenticatedEmployee>>;
+  bytes: Buffer;
+  ext: string;
+  mimeType: string;
+  isPdf: boolean;
+  prefix: 'doc' | 'file' | 'avatar';
+  originalFileName?: string;
+  employeeId?: string;
+  ownerTypeWhenActor: string;
+}) {
+  const { actor, isPdf, prefix, employeeId, ownerTypeWhenActor } = params;
+  let finalBytes = params.bytes;
+  let finalExt = params.ext;
+  let finalMimeType = params.mimeType;
+
+  if (!isPdf) {
+    const optimized = await optimizeAvatarImage(params.bytes, params.ext, params.mimeType);
+    finalBytes = optimized.buffer;
+    finalExt = optimized.ext;
+    finalMimeType = optimized.mimeType;
+  }
+
+  const filename = `${prefix}-${Date.now()}-${randomUUID().slice(0, 8)}.${finalExt}`;
+  const subDir = isPdf ? 'documents' : 'avatars';
+  const storagePath = `${subDir}/${filename}`;
+  const checksum = computeBufferSha256(finalBytes);
+
+  let url: string;
+  let storedInSupabase = false;
+
+  if (isSupabaseStorageConfigured()) {
+    const uploaded = await uploadToSupabaseStorage({
+      storagePath,
+      data: finalBytes,
+      contentType: finalMimeType,
+      retries: 3,
+    });
+    url = uploaded.publicUrl;
+    storedInSupabase = true;
+  } else {
+    if (!(await persistStoredFileWithRetry(filename, finalMimeType, finalBytes, 3))) {
+      throw new Error('File persistence failed.');
+    }
+    url = `/uploads/${storagePath}`;
+  }
+
+  if (!isPdf && employeeId) {
+    const canUpdate =
+      Boolean(actor) &&
+      (actor!.id === employeeId || hasAnyRole(actor, ['SYSTEM_ADMIN', 'SUPER_ADMIN', 'GMD']));
+    if (canUpdate) {
+      await prisma.employee
+        .update({
+          where: { id: employeeId },
+          data: { avatarUrl: url },
+        })
+        .catch(() => {});
+    }
+  }
+
+  const attachment = await prisma.attachment.create({
+    data: {
+      ownerType: actor ? ownerTypeWhenActor : 'PUBLIC_AVATAR',
+      ownerId: actor?.id || null,
+      fileName: params.originalFileName || filename,
+      contentType: finalMimeType,
+      fileUrl: url,
+      fileData: storedInSupabase ? null : new Uint8Array(finalBytes),
+      checksum,
+      uploadedById: actor?.id || 'registration',
+    },
+  });
+
+  return {
+    success: true,
+    url,
+    filename,
+    checksum,
+    mimeType: finalMimeType,
+    sizeBytes: finalBytes.length,
+    attachmentId: attachment.id,
+  };
 }
 
 export async function POST(request: Request) {
@@ -95,49 +180,22 @@ export async function POST(request: Request) {
 
       const bytes = Buffer.from(await file.arrayBuffer());
       const prefix = isPdf ? 'doc' : 'file';
-      const filename = `${prefix}-${Date.now()}-${randomUUID().slice(0, 8)}.${cleanExt}`;
-      const subDir = isPdf ? 'documents' : 'avatars';
       const mimeType = isPdf ? 'application/pdf' : cleanExt === 'png' ? 'image/png' : cleanExt === 'webp' ? 'image/webp' : 'image/jpeg';
-
-      // 1. Permanently persist to Supabase PostgreSQL database with retries
-      if (!await persistStoredFileWithRetry(filename, mimeType, bytes, 3)) throw new Error('File persistence failed.');
-
-
-      const url = `/uploads/${subDir}/${filename}`;
-      const checksum = computeBufferSha256(bytes);
-
-      // 3. If an employeeId was provided for an avatar update, atomically update employee.avatarUrl ONLY for an authenticated owner or executive
       const formEmployeeId = formData.get('employeeId')?.toString()?.trim() || request.headers.get('x-employee-id')?.trim();
-      if (!isPdf && formEmployeeId) {
-        const canUpdate =
-          Boolean(actor) &&
-          (actor!.id === formEmployeeId || hasAnyRole(actor, ['SYSTEM_ADMIN', 'SUPER_ADMIN', 'GMD']));
-        if (canUpdate) {
-          await prisma.employee.update({
-            where: { id: formEmployeeId },
-            data: { avatarUrl: url },
-          }).catch(() => {});
-        }
-      }
 
-      const attachment = await prisma.attachment.create({
-        data: {
-          ownerType: actor ? 'STAGED_EVIDENCE' : 'PUBLIC_AVATAR',
-          ownerId: actor?.id || null, fileName: file.name || filename, contentType: mimeType,
-          fileUrl: url, fileData: new Uint8Array(bytes), checksum, uploadedById: actor?.id || 'registration',
-        },
-      });
-      const attachmentId = attachment.id;
-
-      return NextResponse.json({
-        success: true,
-        url,
-        filename,
-        checksum,
+      const result = await saveUploadedAsset({
+        actor,
+        bytes,
+        ext: cleanExt,
         mimeType,
-        sizeBytes: bytes.length,
-        ...(attachmentId ? { attachmentId } : {}),
+        isPdf,
+        prefix,
+        originalFileName: file.name || undefined,
+        employeeId: formEmployeeId,
+        ownerTypeWhenActor: 'STAGED_EVIDENCE',
       });
+
+      return NextResponse.json(result);
     }
 
     // Handle JSON Base64 Payload
@@ -170,36 +228,21 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Image size exceeds maximum 8MB limit.' }, { status: 400 });
       }
 
-      const rawPreserve = typeof body.preserveFilename === 'string' ? body.preserveFilename.trim() : '';
-      const isValidPreserve = /^file-\d+-[a-f0-9]+\.(jpg|jpeg|png|webp)$/i.test(rawPreserve);
-      const filename = `avatar-${Date.now()}-${randomUUID().slice(0, 8)}.${ext}`;
-      const mimeType = filename.endsWith('.png') ? 'image/png' : filename.endsWith('.webp') ? 'image/webp' : 'image/jpeg';
-
-      // 1. Permanently persist to Supabase PostgreSQL database with retries
-      if (!await persistStoredFileWithRetry(filename, mimeType, buffer, 3)) throw new Error('File persistence failed.');
-
-
-      const url = `/uploads/avatars/${filename}`;
-      const checksum = computeBufferSha256(buffer);
-      const attachment = await prisma.attachment.create({ data: {
-        ownerType: actor ? 'PROFILE' : 'PUBLIC_AVATAR', ownerId: actor?.id || null,
-        fileName: filename, contentType: mimeType, fileUrl: url, fileData: new Uint8Array(buffer), checksum, uploadedById: actor?.id || 'registration',
-      } });
-
+      const mimeType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
       const bodyEmployeeId = typeof body.employeeId === 'string' ? body.employeeId.trim() : request.headers.get('x-employee-id')?.trim();
-      if (bodyEmployeeId) {
-        const canUpdate =
-          Boolean(actor) &&
-          (actor!.id === bodyEmployeeId || hasAnyRole(actor, ['SYSTEM_ADMIN', 'SUPER_ADMIN', 'GMD']));
-        if (canUpdate) {
-          await prisma.employee.update({
-            where: { id: bodyEmployeeId },
-            data: { avatarUrl: url },
-          }).catch(() => {});
-        }
-      }
 
-      return NextResponse.json({ success: true, url, filename, checksum, mimeType, attachmentId: attachment.id, sizeBytes: buffer.length });
+      const result = await saveUploadedAsset({
+        actor,
+        bytes: buffer,
+        ext,
+        mimeType,
+        isPdf: false,
+        prefix: 'avatar',
+        employeeId: bodyEmployeeId,
+        ownerTypeWhenActor: 'PROFILE',
+      });
+
+      return NextResponse.json(result);
     }
 
     return NextResponse.json({ error: 'Unsupported media type.' }, { status: 415 });

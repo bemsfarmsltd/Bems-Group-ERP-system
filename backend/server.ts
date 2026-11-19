@@ -11,6 +11,7 @@ import { registerNextApiPlugin } from './next-route-adapter';
 import { registerAllNextApiRoutes } from './routes/register-api-routes';
 import { registerSsrAndFileRoutes } from './routes/ssr-bootstrap';
 import { lookupStoredFileByPath } from '../src/lib/stored-file-lookup';
+import { isSupabaseStorageConfigured, resolveSupabaseRedirectUrl } from '../src/lib/supabase-storage';
 
 initTelemetry('bems-erp-fastify-backend');
 logger.info('Step 1: BEMS ERP backend module loaded');
@@ -238,6 +239,14 @@ export async function buildBackendServer() {
 
   app.get('/uploads/*', async (req, reply) => {
     const rawPath = String((req.params as Record<string, string>)['*'] || '');
+    if (isSupabaseStorageConfigured()) {
+      const redirectUrl = await resolveSupabaseRedirectUrl(rawPath);
+      if (redirectUrl) {
+        return reply
+          .header('Cache-Control', 'public, max-age=31536000, immutable')
+          .redirect(redirectUrl, 302);
+      }
+    }
     const file = await lookupStoredFileByPath(rawPath);
     if (!file) {
       return reply.status(404).send('Not Found');

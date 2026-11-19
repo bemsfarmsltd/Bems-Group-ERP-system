@@ -636,6 +636,8 @@ export default function HrIdCardsPanel({
                           <img
                             src={c.avatarUrl}
                             alt={c.legalName}
+                            loading="lazy"
+                            decoding="async"
                             className="h-full w-full object-cover"
                             onError={() =>
                               setFailedAvatars((prev) => ({ ...prev, [c.employeeId]: true }))
