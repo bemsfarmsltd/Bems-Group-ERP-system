@@ -54,9 +54,9 @@ void main() async {
       if (currentCtx != null && currentCtx.mounted) {
         ScaffoldMessenger.of(currentCtx).showSnackBar(
           const SnackBar(
-            content: Text('Session terminated. This account does not exist or has been suspended.'),
-            backgroundColor: Color(0xFFDC2626),
-            duration: Duration(seconds: 4),
+            content: Text('Your session has expired. Please sign in again.'),
+            backgroundColor: Color(0xFF0F172A),
+            duration: Duration(seconds: 3),
           ),
         );
       }
