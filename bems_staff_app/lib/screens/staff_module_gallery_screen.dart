@@ -63,8 +63,10 @@ class _StaffModuleGalleryScreenState extends State<StaffModuleGalleryScreen> wit
 
   @override
   Widget build(BuildContext context) {
+    final allowedSet = _user.staffAppModules.map((e) => e.toLowerCase()).toSet();
     final modules = _getEnterpriseModules(_user)
         .where((m) => m.id.toLowerCase() != 'control-center' && m.id.toLowerCase() != 'control_center')
+        .where((m) => allowedSet.contains(m.id.toLowerCase()))
         .toList();
     final filtered = _searchQuery.isEmpty
         ? modules
