@@ -3,6 +3,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { prisma } from '@/lib/prisma';
 import { getAuthenticatedEmployee, hasAnyRole } from '@/lib/auth';
+import { isSupabaseStorageConfigured, resolveSupabaseRedirectUrl } from '@/lib/supabase-storage';
 
 export const dynamic = 'force-dynamic';
 
@@ -87,6 +88,16 @@ export async function GET(
         status: 404,
         headers: { 'Content-Type': 'text/plain', 'Cache-Control': 'private, max-age=60' },
       });
+    }
+
+    if (isAvatarPath && isSupabaseStorageConfigured()) {
+      const redirectUrl = await resolveSupabaseRedirectUrl(safeSegments.join('/'));
+      if (redirectUrl) {
+        return NextResponse.redirect(redirectUrl, {
+          status: 302,
+          headers: { 'Cache-Control': 'public, max-age=31536000, immutable' },
+        });
+      }
     }
 
     let meta = fileMetaCache.get(filename);
