@@ -1580,35 +1580,43 @@ class _StaffHrScreenState extends State<StaffHrScreen> {
           ),
 
           const SizedBox(height: 22),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text('Quick Access', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
-              TextButton(
-                onPressed: () => _navigateToTab(3),
-                child: Text('All 15 Services →', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: accent)),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
+          const Text('HR Services & Quick Access', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
+          const SizedBox(height: 12),
 
-          GridView.count(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            crossAxisCount: 4,
-            mainAxisSpacing: 10,
-            crossAxisSpacing: 10,
-            childAspectRatio: 0.95,
-            children: [
-              _quickAccessBtn(Icons.event_available_rounded, 'Leave', accent, () => _navigateToTab(2)),
-              _quickAccessBtn(Icons.account_balance_wallet_rounded, 'Salary', accent, () => Navigator.push(context, MaterialPageRoute(builder: (_) => HrSalaryPayslipsScreen(hrData: _hrData, onTapPayslip: _showPayslipBreakdown)))),
-              _quickAccessBtn(Icons.receipt_long_rounded, 'Deductions', const Color(0xFFDC2626), () => Navigator.push(context, MaterialPageRoute(builder: (_) => HrDeductionsScreen(user: widget.user, hrData: _hrData, onDispute: _showDisputeModal)))),
-              _quickAccessBtn(Icons.assignment_rounded, 'Requests', const Color(0xFF0284C7), () => Navigator.push(context, MaterialPageRoute(builder: (_) => HrRequestsScreen(user: widget.user, hrData: _hrData, onRefresh: _loadHrData, onNewRequest: _showHrTicketModal)))),
-              _quickAccessBtn(Icons.track_changes_rounded, 'My KPIs', const Color(0xFF059669), () => Navigator.push(context, MaterialPageRoute(builder: (_) => HrPerformanceScreen(user: widget.user, hrData: _hrData, onRefresh: _loadHrData)))),
-              _quickAccessBtn(Icons.badge_rounded, 'Staff ID', accent, _openDigitalIdCardModal),
-              _quickAccessBtn(Icons.school_rounded, 'Training', const Color(0xFF7C3AED), () => Navigator.push(context, MaterialPageRoute(builder: (_) => HrWorkspaceDirectoryScreen(user: widget.user, hrData: _hrData, onRefresh: _loadHrData, onOpenTicket: _showHrTicketModal)))),
-              _quickAccessBtn(Icons.support_agent_rounded, 'HR Help', const Color(0xFF0F172A), () => _showHrTicketModal()),
-            ],
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final cols = constraints.maxWidth >= 900 ? 4 : 2;
+              final items = <Widget>[
+                _quickAccessCard(Icons.person_outline_rounded, 'My Profile', 'Dossier & Bank', accent, _openProfileModal),
+                _quickAccessCard(Icons.badge_rounded, 'Digital Staff ID', 'Front & Back QR', const Color(0xFF0F172A), _openDigitalIdCardModal),
+                _quickAccessCard(Icons.access_time_rounded, 'Attendance', 'Clock-In & Log', const Color(0xFF059669), () => _navigateToTab(1)),
+                _quickAccessCard(Icons.event_note_rounded, 'My Schedule', 'Shifts & Grace', const Color(0xFF0284C7), () => Navigator.push(context, MaterialPageRoute(builder: (_) => HrScheduleScreen(hrData: _hrData)))),
+                _quickAccessCard(Icons.event_available_rounded, 'Leave', '$remainingLeave Days Left', accent, () => _navigateToTab(2)),
+                _quickAccessCard(Icons.account_balance_wallet_rounded, 'Salary & Payslips', 'Pay & Balance', accent, () => Navigator.push(context, MaterialPageRoute(builder: (_) => HrSalaryPayslipsScreen(hrData: _hrData, onTapPayslip: _showPayslipBreakdown)))),
+                _quickAccessCard(Icons.receipt_long_rounded, 'Deductions', 'Itemized & Disputes', const Color(0xFFDC2626), () => Navigator.push(context, MaterialPageRoute(builder: (_) => HrDeductionsScreen(user: widget.user, hrData: _hrData, onDispute: _showDisputeModal)))),
+                _quickAccessCard(Icons.assignment_rounded, 'My Requests', 'Letters & Approvals', const Color(0xFF0284C7), () => Navigator.push(context, MaterialPageRoute(builder: (_) => HrRequestsScreen(user: widget.user, hrData: _hrData, onRefresh: _loadHrData, onNewRequest: _showHrTicketModal)))),
+                _quickAccessCard(Icons.track_changes_rounded, 'Performance', 'KPIs & Probation', const Color(0xFF059669), () => Navigator.push(context, MaterialPageRoute(builder: (_) => HrPerformanceScreen(user: widget.user, hrData: _hrData, onRefresh: _loadHrData)))),
+                _quickAccessCard(Icons.folder_shared_rounded, 'Documents', 'Contracts & Sign', const Color(0xFF334155), () => Navigator.push(context, MaterialPageRoute(builder: (_) => HrDocumentsScreen(user: widget.user, hrData: _hrData, onRefresh: _loadHrData, onOpenUrl: _openDocumentUrl)))),
+                _quickAccessCard(Icons.school_rounded, 'Learning & Career', 'Training & Timeline', const Color(0xFF7C3AED), () => Navigator.push(context, MaterialPageRoute(builder: (_) => HrWorkspaceDirectoryScreen(user: widget.user, hrData: _hrData, onRefresh: _loadHrData, onOpenTicket: _showHrTicketModal)))),
+                _quickAccessCard(Icons.volunteer_activism_rounded, 'Benefits & Loans', 'Advances & Welfare', const Color(0xFF0284C7), () => Navigator.push(context, MaterialPageRoute(builder: (_) => HrBenefitsScreen(hrData: _hrData, onOpenLoans: () => Navigator.push(context, MaterialPageRoute(builder: (_) => HrLoansScreen(user: widget.user, hrData: _hrData, onRefresh: _loadHrData))))))),
+                _quickAccessCard(Icons.gavel_rounded, 'HR Cases', 'Queries & Grievances', const Color(0xFFDC2626), () => Navigator.push(context, MaterialPageRoute(builder: (_) => HrCasesScreen(user: widget.user, hrData: _hrData, onRefresh: _loadHrData)))),
+                _quickAccessCard(Icons.campaign_rounded, 'Policies & Notices', 'Updates & Sign-Off', const Color(0xFF7C3AED), () => Navigator.push(context, MaterialPageRoute(builder: (_) => HrWorkspaceDirectoryScreen(user: widget.user, hrData: _hrData, onRefresh: _loadHrData, onOpenTicket: _showHrTicketModal)))),
+                _quickAccessCard(Icons.exit_to_app_rounded, 'Exit & Clearance', 'Handover & Exit', const Color(0xFF64748B), () => Navigator.push(context, MaterialPageRoute(builder: (_) => HrWorkspaceDirectoryScreen(user: widget.user, hrData: _hrData, onRefresh: _loadHrData, onOpenTicket: _showHrTicketModal)))),
+                _quickAccessCard(Icons.support_agent_rounded, 'HR Helpdesk', 'Confidential Support', const Color(0xFF0F172A), () => _showHrTicketModal()),
+              ];
+              return GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: cols,
+                  mainAxisSpacing: 10,
+                  crossAxisSpacing: 10,
+                  mainAxisExtent: 76,
+                ),
+                itemCount: items.length,
+                itemBuilder: (_, idx) => items[idx],
+              );
+            },
           ),
         ],
       ),
@@ -2159,27 +2167,46 @@ class _StaffHrScreenState extends State<StaffHrScreen> {
     );
   }
 
-  Widget _quickAccessBtn(IconData icon, String label, Color color, VoidCallback onTap) {
+  Widget _quickAccessCard(IconData icon, String title, String subtitle, Color color, VoidCallback onTap) {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(16),
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: const Color(0xFFE2E8F0)),
         ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+        child: Row(
           children: [
-            Icon(icon, color: color, size: 22),
-            const SizedBox(height: 6),
-            Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
+              child: Icon(icon, color: color, size: 19),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                  ),
+                  const SizedBox(height: 1),
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 10.5, color: Color(0xFF64748B), fontWeight: FontWeight.w500),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
