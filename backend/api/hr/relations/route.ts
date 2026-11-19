@@ -32,7 +32,7 @@ export async function GET(req: Request) {
       }),
       prisma.employee.findMany({
         where: {
-          role: { in: ['STAFF', 'CUSTOM_ADMIN'] },
+          role: 'STAFF',
           status: 'ACTIVE',
           ...(useSubFilter
             ? { assignments: { some: { subsidiaryId: { in: allowedSubIds }, status: 'ACTIVE' } } }

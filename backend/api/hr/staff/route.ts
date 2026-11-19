@@ -36,7 +36,7 @@ export async function GET(req: Request) {
     }
 
     const whereClause: any = {
-      role: { in: ['STAFF', 'CUSTOM_ADMIN'] },
+      role: 'STAFF',
     };
 
     if (query) {

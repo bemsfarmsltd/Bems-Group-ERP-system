@@ -54,7 +54,7 @@ export async function GET(req: Request) {
     const employeeRelationSubFilter = useSubFilter
       ? {
           employee: {
-            role: { in: ['STAFF', 'CUSTOM_ADMIN'] },
+            role: 'STAFF',
             assignments: {
               some: {
                 subsidiaryId: { in: allowedSubIds },
@@ -99,7 +99,7 @@ export async function GET(req: Request) {
     ] = await Promise.all([
       prisma.employee.count({
         where: {
-          role: { in: ['STAFF', 'CUSTOM_ADMIN'] },
+          role: 'STAFF',
           status: 'ACTIVE',
           ...staffSubFilter,
         },
@@ -107,7 +107,7 @@ export async function GET(req: Request) {
 
       prisma.employee.count({
         where: {
-          role: { in: ['STAFF', 'CUSTOM_ADMIN'] },
+          role: 'STAFF',
           approvalStatus: 'PENDING_APPROVAL',
           ...staffSubFilter,
         },
@@ -240,7 +240,7 @@ export async function GET(req: Request) {
 
       prisma.employee.findMany({
         where: {
-          role: { in: ['STAFF', 'CUSTOM_ADMIN'] },
+          role: 'STAFF',
           status: 'ACTIVE',
           ...staffSubFilter,
         },
