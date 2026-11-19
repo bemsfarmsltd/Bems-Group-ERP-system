@@ -8,21 +8,23 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const appId = searchParams.get('appId') || request.headers.get('x-app-id') || 'GMD_APP';
     const clientVersion = searchParams.get('version') || request.headers.get('x-app-version') || '1.0.0';
-
-    const check = await checkMobileAppVersion(appId, clientVersion);
-    const gate = check.gate || await getMobileAppGate(appId);
+    const gate = await getMobileAppGate(appId).catch(() => null);
+    const isStaffApp = appId.toUpperCase().includes('STAFF');
 
     return NextResponse.json({
       appId: gate?.appId || appId,
-      appName: gate?.appName || '',
+      appName: gate?.appName || (isStaffApp ? 'BEMS Staff Portal' : 'BEMS Executive'),
       packageName: gate?.packageName || '',
       clientVersion,
-      minimumAllowedVersion: gate?.minimumAllowedVersion || '1.0.0',
-      latestVersionAvailable: gate?.latestVersionAvailable || '1.0.0',
-      forceUpdate: gate?.forceUpdate ?? true,
-      upgradeRequired: check.upgradeRequired,
-      directDownloadUrl: gate?.directDownloadUrl || 'https://bemserp.work/download',
-      upgradePromptNotes: gate?.upgradePromptNotes || '',
+      minimumAllowedVersion: '99.0.0',
+      latestVersionAvailable: '99.0.0',
+      forceUpdate: true,
+      upgradeRequired: true,
+      directDownloadUrl: isStaffApp
+        ? 'https://bemserp.work/staff-app/index.html'
+        : 'https://bemserp.work',
+      upgradePromptNotes:
+        'Mobile apps are currently disabled. Please use the BEMS web portal at https://bemserp.work.',
     });
   } catch (error) {
     console.error('[mobile/version-check] Error checking version gate:', error);
