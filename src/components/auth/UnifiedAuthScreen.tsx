@@ -382,9 +382,6 @@ function AuthGate({ onAuthed }: { onAuthed: (user: AuthUser) => void }) {
     <section className="onboarding-main">
       <header className="onboarding-top">
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <a href="/download" target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, fontWeight: 700, color: '#ea580c', textDecoration: 'none', background: '#fff7ed', border: '1px solid #fed7aa', padding: '6px 12px', borderRadius: 20, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-            <span>📱</span> Download Mobile Apps (APK)
-          </a>
           <span>
             {view==='login' ? 'Sign in' : view==='signup' ? `Staff Registration (Step ${signupStep} of 4)` : view==='setup' ? 'Initial admin setup' : 'Registration Complete'}
           </span>
@@ -1243,28 +1240,6 @@ function AuthGate({ onAuthed }: { onAuthed: (user: AuthUser) => void }) {
         </p>
       )}
 
-      {view==='login' && (
-        <div style={{ marginTop: 14, textAlign: 'center' }}>
-          <a
-            href="/download"
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              fontSize: 12,
-              fontWeight: 700,
-              color: '#ea580c',
-              textDecoration: 'none',
-              background: '#fff7ed',
-              border: '1px solid #fed7aa',
-              padding: '6px 14px',
-              borderRadius: 8,
-            }}
-          >
-            <span>📱 Download BEMS Mobile App (Android APK) →</span>
-          </a>
-        </div>
-      )}
       {view==='login' && bootstrapAvailable && <p className="signin-note"><button onClick={()=>{setError('');setView('setup')}}>Set up the first System Admin</button></p>}
       {view==='login' && !adminExists && !bootstrapConfigured && <p className="signin-note">First-time setup needs <code>BEMS_BOOTSTRAP_SECRET</code> in <code>.env.local</code>.</p>}
     </section>
