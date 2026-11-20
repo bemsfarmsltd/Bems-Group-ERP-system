@@ -27,6 +27,7 @@ import { FundApprovalPolicyCard } from '@/components/control-center/FundApproval
 import { RecurringAutoPayPolicyCard } from '@/components/control-center/RecurringAutoPayPolicyCard';
 import { SubsidiaryPortfolioView } from '@/components/dashboard/gmd/SubsidiaryPortfolioView';
 import { NotificationCentrePanel } from '@/components/notifications/NotificationCentrePanel';
+import { NotificationMatrixPanel } from '@/components/control-center/NotificationMatrixPanel';
 import { hasCategoryAccess } from '@/lib/admin-permissions';
 import {
   AuditLogsModule as LiveAuditLogsModule,
@@ -75,7 +76,7 @@ export default function EnterpriseControlCenterClient({
   const [section, setSection] = useState<ControlSection>(
     initialSection || (openWalletApprovals ? 'wallet_approval' : 'overview')
   );
-  const [notificationsTab, setNotificationsTab] = useState<'centre' | 'channels'>('centre');
+  const [notificationsTab, setNotificationsTab] = useState<'centre' | 'matrix' | 'channels'>('matrix');
   const [collapsed, setCollapsed] = useState(true);
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<any>(null);
@@ -754,6 +755,22 @@ export default function EnterpriseControlCenterClient({
               >
                 <button
                   type="button"
+                  onClick={() => setNotificationsTab('matrix')}
+                  style={{
+                    padding: '7px 14px',
+                    borderRadius: 9,
+                    border: 'none',
+                    background: notificationsTab === 'matrix' ? '#ea580c' : 'transparent',
+                    color: notificationsTab === 'matrix' ? '#ffffff' : '#475569',
+                    fontSize: 12.5,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Notification &amp; Email Matrix
+                </button>
+                <button
+                  type="button"
                   onClick={() => setNotificationsTab('centre')}
                   style={{
                     padding: '7px 14px',
@@ -786,7 +803,9 @@ export default function EnterpriseControlCenterClient({
                 </button>
               </div>
 
-              {notificationsTab === 'centre' ? (
+              {notificationsTab === 'matrix' ? (
+                <NotificationMatrixPanel setNotice={(msg) => setNotice(msg)} />
+              ) : notificationsTab === 'centre' ? (
                 <NotificationCentrePanel embedded initialCategory={initialNotificationCategory} />
               ) : (
                 <LiveWorkspaceSettingsModule

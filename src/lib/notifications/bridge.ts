@@ -2,6 +2,7 @@ import { randomUUID } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { sendEmail, sendGmdRequisitionAlert } from "@/lib/email";
 import { resolveModuleEmailRecipients } from "@/lib/email-routing";
+import { getChannelConfigFromMatrix, getNotificationPolicyMatrix } from "@/lib/notifications/policy-matrix";
 
 export interface NotificationPayload {
   channel: "SLACK" | "WHATSAPP" | "EMAIL" | "BOTH" | "ALL";
@@ -511,28 +512,41 @@ export async function notifyApprovalRequired(params: {
     },
   });
 
-  // Always send real-time executive notification emails to GMD & Finance-authorized Admins (excluding HR-only admins)
+  // Always send real-time executive notification emails & in-app alerts honoring Control Center Matrix
   const emailPromise = (async () => {
     try {
-      const execs = await resolveModuleEmailRecipients(prisma, 'finance');
-      for (let i = 0; i < execs.length; i++) {
-        const exec = execs[i];
-        await prisma.systemNotification.create({
-          data: {
-            employeeId: exec.id,
-            category: "APPROVALS",
-            priority: "IMPORTANT",
-            kind: "APPROVAL_REQUIRED",
-            title: `New Fund Request: ${params.requestNumber}`,
-            body: `${params.requesterName} submitted "${params.title}" (₦${(params.amountMinor / 100).toLocaleString("en-NG")}) for ${params.subsidiaryName || "BEMS Group"}.`,
-            actionLabel: "Review Request",
-            actionUrl: "/finance?tab=approvals",
-            linkUrl: "/finance?tab=approvals",
-          },
-        }).catch((err) => console.error(`Failed to create in-app alert for ${exec.id}:`, err));
-        if (i > 0) {
+      const [execs, matrix] = await Promise.all([
+        resolveModuleEmailRecipients(prisma, 'finance'),
+        getNotificationPolicyMatrix(prisma),
+      ]);
+      let emailSentCount = 0;
+      for (const exec of execs) {
+        const cfg = getChannelConfigFromMatrix(
+          matrix,
+          exec.role,
+          (exec as any).customAdminProfileId,
+          'REQUEST_SUBMITTED'
+        );
+        if (cfg.inApp) {
+          await prisma.systemNotification.create({
+            data: {
+              employeeId: exec.id,
+              category: "APPROVALS",
+              priority: "IMPORTANT",
+              kind: "APPROVAL_REQUIRED",
+              title: `New Fund Request: ${params.requestNumber}`,
+              body: `${params.requesterName} submitted "${params.title}" (₦${(params.amountMinor / 100).toLocaleString("en-NG")}) for ${params.subsidiaryName || "BEMS Group"}.`,
+              actionLabel: "Review Request",
+              actionUrl: "/finance?tab=approvals",
+              linkUrl: "/finance?tab=approvals",
+            },
+          }).catch((err) => console.error(`Failed to create in-app alert for ${exec.id}:`, err));
+        }
+        if (!cfg.email) continue;
+        if (emailSentCount > 0) {
           await new Promise((r) => setTimeout(r, 600));
         }
+        emailSentCount++;
         await sendGmdRequisitionAlert({
           gmdEmail: exec.workEmail,
           gmdName: exec.legalName,

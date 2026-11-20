@@ -66,13 +66,14 @@ export async function resolveModuleEmailRecipients(
   const candidates: RecipientCandidate[] = await prismaClient.employee.findMany({
     where: {
       status: 'ACTIVE',
-      role: { in: ['GMD', 'SUPER_ADMIN', 'SYSTEM_ADMIN'] },
+      role: { in: ['GMD', 'SUPER_ADMIN', 'SYSTEM_ADMIN', 'CUSTOM_ADMIN'] },
     },
     select: {
       id: true,
       legalName: true,
       workEmail: true,
       role: true,
+      customAdminProfileId: true,
       customAdminProfile: {
         select: { permissionsJson: true },
       },

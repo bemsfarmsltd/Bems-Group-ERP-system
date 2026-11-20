@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { getExecutiveRecipients, sendEmail } from '@/lib/email';
+import { getChannelConfigFromMatrix, getNotificationPolicyMatrix } from '@/lib/notifications/policy-matrix';
 
 function escapeHtml(value: string): string {
   return value
@@ -45,21 +46,35 @@ export async function notifyExecutivesMonnifyWalletFunded(params: MonnifyWalletF
     const newFormatted =
       params.newBalanceMinor != null ? formatNaira(params.newBalanceMinor) : null;
 
-    const executives = await prisma.employee.findMany({
-      where: {
-        status: 'ACTIVE',
-        role: { in: ['GMD', 'SUPER_ADMIN', 'SYSTEM_ADMIN'] },
-      },
-      select: { id: true, legalName: true, workEmail: true },
-    });
+    const [executives, matrix] = await Promise.all([
+      prisma.employee.findMany({
+        where: {
+          status: 'ACTIVE',
+          role: { in: ['GMD', 'SUPER_ADMIN', 'SYSTEM_ADMIN', 'CUSTOM_ADMIN'] },
+        },
+        select: { id: true, legalName: true, workEmail: true, role: true, customAdminProfileId: true },
+      }),
+      getNotificationPolicyMatrix(prisma),
+    ]);
 
     const title = `Monnify Wallet Funded: +${amountFormatted}`;
     const bodyText = newFormatted
       ? `Your Monnify company wallet (${params.sourceAccount}) was funded with +${amountFormatted}. Verified balance is now ${newFormatted}${prevFormatted ? ` (previously ${prevFormatted})` : ''}.`
       : `Your Monnify company wallet (${params.sourceAccount}) received a credit of +${amountFormatted}${params.reference ? ` (Ref: ${params.reference})` : ''}.`;
 
-    // 1. In-app SystemNotifications for all active GMD & Super Admins
+    // 1. In-app SystemNotifications honoring Control Center Matrix
+    const emailTargets: string[] = [];
     for (const exec of executives) {
+      const cfg = getChannelConfigFromMatrix(
+        matrix,
+        exec.role,
+        exec.customAdminProfileId,
+        'MONNIFY_WALLET_FUNDED'
+      );
+      if (cfg.email && exec.workEmail && exec.workEmail.includes('@')) {
+        emailTargets.push(exec.workEmail);
+      }
+      if (!cfg.inApp) continue;
       await prisma.systemNotification
         .create({
           data: {
@@ -87,14 +102,8 @@ export async function notifyExecutivesMonnifyWalletFunded(params: MonnifyWalletF
         .catch(() => {});
     }
 
-    // 2. Resend Email to all executive recipients
-    const recipients = await getExecutiveRecipients();
-    const emails = Array.from(
-      new Set([
-        ...recipients.map((r) => r.email),
-        ...executives.map((e) => e.workEmail).filter((e): e is string => Boolean(e && e.includes('@'))),
-      ])
-    );
+    // 2. Resend Email to enabled recipients
+    const emails = Array.from(new Set(emailTargets));
 
     const html = `
     <div style="background:#f8fafc;padding:24px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#0f172a;">
