@@ -149,6 +149,17 @@ export async function applyWalletEvidence(id:string,leaseToken:string,e:Transfer
       // movement; never pretend a cached pre-transfer balance is still current.
       await tx.$executeRaw`UPDATE "WalletFundingPool" SET "observedAt"=to_timestamp(0) WHERE "id"='MONNIFY_NGN'`;
       await tx.systemNotification.create({data:{employeeId:w.employeeId,kind:'WALLET_WITHDRAWAL_'+status,title:status==='SUCCEEDED'?'Bank transfer completed':status==='REVERSED'?'Bank transfer reversed':'Withdrawal failed',body:w.targetType==='VENDOR'?'Vendor payment status: '+status+'. Review its source request and provider reference.':status==='SUCCEEDED'?'Monnify confirmed your bank transfer. Company fees did not reduce your principal.':'Your approved principal is available again. Review the withdrawal history before retrying.',linkUrl:'/wallet'}});
+      void import('@/lib/notifications/policy-matrix').then(m => m.dispatchMatrixNotifications({
+        eventKey: 'WALLET_WITHDRAWAL_STATUS',
+        title: status === 'SUCCEEDED' ? `Monnify Transfer Settled (${w.reference})` : `Monnify Transfer ${status} (${w.reference})`,
+        body: `Transfer of ₦${(Number(w.amountMinor) / 100).toLocaleString('en-NG')} to ${w.accountName} (•••• ${String(w.accountNumber).slice(-4)}) finished with status ${status}.`,
+        category: 'PAYROLL_DEDUCTIONS',
+        priority: status === 'SUCCEEDED' ? 'IMPORTANT' : 'CRITICAL',
+        actionLabel: 'View Wallet Ledger',
+        actionUrl: '/wallet/funding',
+        targetEmployeeId: w.employeeId,
+        skipTargetInApp: true,
+      })).catch(() => {});
     }
       const feeDelta=e.feeMinor-w.feeMinor;
       if(feeDelta>BigInt(0)){

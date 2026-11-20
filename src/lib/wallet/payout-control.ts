@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { WalletError } from './errors';
+import { dispatchMatrixNotifications } from '@/lib/notifications/policy-matrix';
 
 export const GLOBAL_PAYOUT_SETTING_KEY = 'GLOBAL_PAYOUTS_DISABLED';
 
@@ -153,6 +154,18 @@ export async function setGlobalPayoutControl(
       },
     });
   });
+
+  void dispatchMatrixNotifications({
+    eventKey: 'GLOBAL_PAYOUT_KILLSWITCH',
+    title: disabled ? 'Global Payouts Disabled (Emergency Hold)' : 'Global Payouts Re-Enabled',
+    body: disabled
+      ? `All system payouts, approvals, and wallet withdrawals were paused by ${actor.legalName}${cleanReason ? `: ${cleanReason}` : '.'}`
+      : `System payouts and wallet withdrawals were re-enabled by ${actor.legalName}.`,
+    category: 'SECURITY',
+    priority: 'CRITICAL',
+    actionLabel: 'Open Control Center',
+    actionUrl: '/control-center?section=wallet-approval',
+  }).catch(() => {});
 
   return state;
 }

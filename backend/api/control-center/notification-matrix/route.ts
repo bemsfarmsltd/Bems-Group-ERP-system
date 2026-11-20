@@ -6,6 +6,7 @@ import {
   NOTIFICATION_CATEGORIES,
   NOTIFICATION_EVENT_CATALOG,
   buildDefaultMatrix,
+  dispatchMatrixNotifications,
   getNotificationPolicyMatrix,
   saveNotificationPolicyMatrix,
 } from '@/lib/notifications/policy-matrix';
@@ -74,6 +75,22 @@ export async function POST(request: Request) {
 
     const body = await request.json().catch(() => ({}));
     const action = String(body.action || 'SAVE_MATRIX').toUpperCase();
+
+    if (action === 'TEST_DISPATCH') {
+      const eventKey = String(body.eventKey || 'REQUEST_SUBMITTED');
+      const evt = NOTIFICATION_EVENT_CATALOG.find((e) => e.key === eventKey) || NOTIFICATION_EVENT_CATALOG[0];
+      const delivery = await dispatchMatrixNotifications({
+        eventKey: evt.key,
+        title: `Test Alert: ${evt.label}`,
+        body: `Live verification triggered by ${actor.legalName} from Control Center Notification Matrix.`,
+        category: 'SECURITY',
+        priority: 'IMPORTANT',
+        actionLabel: 'Open Control Center',
+        actionUrl: '/control-center?section=notifications',
+        targetEmployeeId: actor.id,
+      });
+      return NextResponse.json({ success: true, delivery });
+    }
 
     if (action === 'RESET_DEFAULTS') {
       const profiles = await prisma.customAdminProfile.findMany({

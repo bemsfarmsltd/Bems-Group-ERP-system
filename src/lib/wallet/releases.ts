@@ -229,6 +229,17 @@ export async function approveWalletRelease(actor:WalletActor,id:string,confirmat
   for (const approval of approvals) {
     void sendApprovalDecisionEmail(approval).catch(err => console.error('[Wallet Release Email Error]', err));
   }
+  if (!result.alreadyExecuted && 'amountMinor' in result && result.amountMinor) {
+    void import('@/lib/notifications/policy-matrix').then(m => m.dispatchMatrixNotifications({
+      eventKey: 'WALLET_RELEASE_EXECUTED',
+      title: `Wallet Release Executed (₦${(Number(result.amountMinor) / 100).toLocaleString('en-NG')})`,
+      body: `${actor.legalName} authorized a wallet release (${result.status}) totaling ₦${(Number(result.amountMinor) / 100).toLocaleString('en-NG')}.`,
+      category: 'PAYROLL_DEDUCTIONS',
+      priority: 'IMPORTANT',
+      actionLabel: 'Open Wallet Funding',
+      actionUrl: '/wallet/funding',
+    })).catch(() => {});
+  }
   void import('./runtime-worker').then(m => m.tickWalletWorker()).catch(() => {});
   return result;
 }

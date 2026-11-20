@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getAuthenticatedEmployee, hasAnyRole, hasEmployeePermission } from '@/lib/auth';
 import { extractRequestForensics } from '@/lib/audit-forensics';
+import { dispatchMatrixNotifications } from '@/lib/notifications/policy-matrix';
 
 export const dynamic = 'force-dynamic';
 
@@ -204,6 +205,20 @@ export async function POST(
         return reqUpdated;
       }
     });
+
+    void dispatchMatrixNotifications({
+      eventKey: 'REQUEST_PAYOUT_PAUSED',
+      title: paused ? `Payout Paused: ${target.requestNumber}` : `Payout Resumed: ${target.requestNumber}`,
+      body: paused
+        ? `Payout for approved requisition "${target.title}" was overridden and placed on hold by ${actor.legalName}${reason ? `: ${reason}` : '.'}`
+        : `Payout hold on approved requisition "${target.title}" was lifted by ${actor.legalName}.`,
+      category: 'REQUESTS_APPROVALS',
+      priority: 'CRITICAL',
+      actionLabel: 'View Request',
+      actionUrl: `/requests/${target.requestNumber}`,
+      targetEmployeeId: target.requestedById,
+      skipTargetInApp: true,
+    }).catch(() => {});
 
     return NextResponse.json({
       success: true,

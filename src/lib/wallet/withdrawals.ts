@@ -9,7 +9,7 @@ function normalizedName(value:string){return value.normalize('NFKD').replace(/[\
 export async function saveVerifiedWalletBank(actor:WalletActor,input:{accountNumber:string;bankCode:string;password:unknown}) {
   await verifyWalletPassword(actor,input.password);
   const bank=await verifyMonnifyDestination(String(input.accountNumber),String(input.bankCode));
-  return walletTransaction(async tx=>{
+  const saved = await walletTransaction(async tx=>{
     const employee=await liveWalletActor(tx,actor);
     if(!isStaffAccount(employee.role) || employee.status!=='ACTIVE')throw new WalletError('OWNER_REQUIRED','Only active staff owners can configure a withdrawal bank account.',403);
     const fingerprint=hash(bank); const id=randomUUID();
@@ -20,6 +20,18 @@ export async function saveVerifiedWalletBank(actor:WalletActor,input:{accountNum
     await tx.systemNotification.create({data:{employeeId:actor.id,kind:'WALLET_BANK_CHANGED',title:'Wallet beneficiary added',body:`Verified beneficiary ${bank.accountName} (•••• ${bank.accountNumber.slice(-4)}) was added to your wallet.`,linkUrl:'/wallet'}});
     return {id:old?.id||id,bankCode:bank.bankCode,lastFour:bank.accountNumber.slice(-4),accountName:bank.accountName};
   });
+  void import('@/lib/notifications/policy-matrix').then(m => m.dispatchMatrixNotifications({
+    eventKey: 'WALLET_BANK_CHANGED',
+    title: `Beneficiary Bank Added: ${actor.legalName}`,
+    body: `${actor.legalName} verified and linked withdrawal beneficiary ${bank.accountName} (•••• ${bank.accountNumber.slice(-4)}).`,
+    category: 'SECURITY',
+    priority: 'IMPORTANT',
+    actionLabel: 'Open Wallet Governance',
+    actionUrl: '/wallet/funding',
+    targetEmployeeId: actor.id,
+    skipTargetInApp: true,
+  })).catch(() => {});
+  return saved;
 }
 export async function requestWalletWithdrawal(actor:WalletActor,input:any,proof?:SecurityProof) {
   requireWallet();

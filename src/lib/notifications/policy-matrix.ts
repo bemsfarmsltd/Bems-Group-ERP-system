@@ -708,3 +708,132 @@ export async function shouldDeliverNotification(params: {
     return true;
   }
 }
+
+export async function dispatchMatrixNotifications(params: {
+  eventKey: string;
+  title: string;
+  body: string;
+  category?: string;
+  priority?: 'CRITICAL' | 'IMPORTANT' | 'INFORMATIONAL';
+  actionLabel?: string;
+  actionUrl?: string;
+  targetEmployeeId?: string | null;
+  skipTargetInApp?: boolean;
+  emailSubject?: string;
+  emailHtml?: string;
+}) {
+  try {
+    const matrix = await getNotificationPolicyMatrix(prisma);
+    const recipients = await prisma.employee.findMany({
+      where: {
+        status: 'ACTIVE',
+        OR: [
+          { role: { in: ['GMD', 'SUPER_ADMIN', 'SYSTEM_ADMIN', 'CUSTOM_ADMIN'] } },
+          ...(params.targetEmployeeId ? [{ id: params.targetEmployeeId }] : []),
+        ],
+      },
+      select: {
+        id: true,
+        legalName: true,
+        workEmail: true,
+        role: true,
+        customAdminProfileId: true,
+      },
+    });
+
+    const { sendEmail } = await import('@/lib/email');
+    const inAppData: Array<{
+      employeeId: string;
+      category: string;
+      priority: string;
+      kind: string;
+      title: string;
+      body: string;
+      actionLabel?: string;
+      actionUrl?: string;
+      linkUrl?: string;
+    }> = [];
+    const emailQueue: Array<{ to: string; name: string }> = [];
+    let shouldSendBridge = false;
+
+    for (const r of recipients) {
+      const cfg = getChannelConfigFromMatrix(
+        matrix,
+        r.role,
+        r.customAdminProfileId,
+        params.eventKey
+      );
+      const isTarget = params.targetEmployeeId && r.id === params.targetEmployeeId;
+      if (cfg.inApp && !(isTarget && params.skipTargetInApp)) {
+        inAppData.push({
+          employeeId: r.id,
+          category: params.category || 'GENERAL',
+          priority: params.priority || 'IMPORTANT',
+          kind: params.eventKey,
+          title: params.title,
+          body: params.body,
+          actionLabel: params.actionLabel,
+          actionUrl: params.actionUrl,
+          linkUrl: params.actionUrl,
+        });
+      }
+      if (cfg.email && r.workEmail && r.workEmail.includes('@')) {
+        emailQueue.push({ to: r.workEmail, name: r.legalName });
+      }
+      if (cfg.bridge && ['GMD', 'SUPER_ADMIN', 'SYSTEM_ADMIN'].includes(r.role.toUpperCase())) {
+        shouldSendBridge = true;
+      }
+    }
+
+    if (inAppData.length > 0) {
+      await prisma.systemNotification.createMany({ data: inAppData }).catch(() => {});
+    }
+
+    const html =
+      params.emailHtml ||
+      `<div style="font-family:sans-serif;background:#f8fafc;padding:20px;color:#0f172a;"><div style="max-width:560px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:20px;"><div style="font-size:11px;font-weight:700;color:#ea580c;text-transform:uppercase;">BEMS Group · ${params.eventKey}</div><h2 style="margin:8px 0;font-size:18px;">${params.title}</h2><p style="font-size:14px;color:#334155;line-height:1.5;">${params.body}</p></div></div>`;
+
+    for (let i = 0; i < emailQueue.length; i++) {
+      if (i > 0) await new Promise((res) => setTimeout(res, 550));
+      await sendEmail({
+        to: emailQueue[i].to,
+        subject: params.emailSubject || `BEMS Alert: ${params.title}`,
+        html,
+        text: `${params.title}\n\n${params.body}`,
+        eventType: params.eventKey,
+      }).catch(() => {});
+    }
+
+    if (shouldSendBridge) {
+      const { dispatchNotificationBridge, resolveGmdNotificationTarget } = await import(
+        '@/lib/notifications/bridge'
+      );
+      const target = await resolveGmdNotificationTarget().catch(() => ({ phone: '' }));
+      const bridgeEventType =
+        params.eventKey === 'STAFF_ONBOARDING'
+          ? 'STAFF_ONBOARDING'
+          : params.eventKey === 'PAYROLL_LIFECYCLE'
+            ? 'PAYROLL_SUBMITTED'
+            : params.eventKey === 'LEAVE_REQUEST'
+              ? 'LEAVE_REQUESTED'
+              : params.eventKey === 'ACCOUNTABILITY_72H_SLA'
+                ? 'RETIREMENT_WARNING'
+                : params.eventKey === 'RECURRING_COMMITMENT_DUE'
+                  ? 'RECURRING_FEE_DUE'
+                  : 'APPROVAL_REQUESTED';
+      await dispatchNotificationBridge({
+        channel: 'BOTH',
+        recipient: target.phone || '',
+        eventType: bridgeEventType,
+        title: params.title,
+        summary: params.body,
+        correlationId: `matrix_${params.eventKey}_${Date.now()}`,
+      }).catch(() => {});
+    }
+
+    return { inAppCount: inAppData.length, emailCount: emailQueue.length, bridge: shouldSendBridge };
+  } catch (err) {
+    console.error(`[dispatchMatrixNotifications:${params.eventKey}]`, err);
+    return { inAppCount: 0, emailCount: 0, bridge: false };
+  }
+}

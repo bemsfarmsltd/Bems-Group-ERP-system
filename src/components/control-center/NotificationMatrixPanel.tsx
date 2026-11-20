@@ -87,6 +87,7 @@ export function NotificationMatrixPanel({
 }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [categories, setCategories] = useState<CategoryMeta[]>([]);
   const [events, setEvents] = useState<NotificationEventDef[]>([]);
@@ -222,6 +223,27 @@ export function NotificationMatrixPanel({
     }
   };
 
+  const handleTestDispatch = async () => {
+    setTesting(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/control-center/notification-matrix', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ action: 'TEST_DISPATCH', eventKey: 'REQUEST_SUBMITTED' }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Test dispatch failed.');
+      const d = json.delivery || {};
+      setNotice(`Live Test Dispatched: ${d.inAppCount ?? 0} In-App notification(s), ${d.emailCount ?? 0} Email(s) sent via Resend.`);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to send test alert.');
+    } finally {
+      setTesting(false);
+    }
+  };
+
   const handleResetDefaults = async () => {
     setSaving(true);
     setError(null);
@@ -301,6 +323,15 @@ export function NotificationMatrixPanel({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={handleTestDispatch}
+              disabled={saving || testing}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
+            >
+              <Bell className="h-3.5 w-3.5" />
+              {testing ? 'Sending Test…' : 'Send Live Test Alert'}
+            </button>
             <button
               type="button"
               onClick={loadMatrix}
