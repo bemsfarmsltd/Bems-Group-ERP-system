@@ -7,6 +7,7 @@ import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { hasStaffAppModuleAccess } from '@/lib/staff-modules';
 import { prisma } from '@/lib/prisma';
+import { STANDARD_NIGERIAN_BANKS } from '@/lib/monnify';
 
 export type WalletActor = {
   id: string;
@@ -147,13 +148,17 @@ export async function readOwnWallet(actor: WalletActor) {
     if(!isStaffAccount(actor.role))throw new WalletError('STAFF_WALLET_REQUIRED','Use the executive funding dashboard for company payments.',403);
     const credits = await tx.$queryRaw<any[]>`SELECT "id","sourceType","sourceId","organizationId","category","amountMinor","availableMinor","heldMinor","settledMinor","returnedMinor","frozen","createdAt" FROM "WalletCreditLot" WHERE "employeeId" = ${actor.id} ORDER BY "createdAt" DESC LIMIT 100`;
     const [totals] = await tx.$queryRaw<any[]>`SELECT COALESCE(sum("availableMinor"),0)::bigint AS "availableMinor", COALESCE(sum("heldMinor"),0)::bigint AS "heldMinor", COALESCE(sum("settledMinor"),0)::bigint AS "settledMinor" FROM "WalletCreditLot" WHERE "employeeId" = ${actor.id}`;
-    const rawBanks = await tx.$queryRaw<any[]>`SELECT "id","bankCode","accountNumber",right("accountNumber",4) AS "lastFour","accountName","verifiedAt" FROM "WalletBankAccount" WHERE "employeeId" = ${actor.id} AND "active"`;
+    const rawBanks = await tx.$queryRaw<any[]>`SELECT "id","bankCode","accountNumber",right("accountNumber",4) AS "lastFour","accountName","verifiedAt" FROM "WalletBankAccount" WHERE "employeeId" = ${actor.id} AND "active" ORDER BY "verifiedAt" DESC`;
+    const bankNameByCode = new Map(STANDARD_NIGERIAN_BANKS.map(b => [b.code, b.name]));
 
     const regBankName = employee.salaryBankName || employee.bankName || '';
     const regAccountNumber = employee.salaryAccountNumber || employee.accountNumber || '';
     const regAccountName = employee.salaryAccountName || employee.accountName || employee.legalName || '';
 
-    const banks = [...rawBanks];
+    const banks = rawBanks.map(b => ({
+      ...b,
+      bankName: bankNameByCode.get(String(b.bankCode)) || regBankName || `Bank (${b.bankCode})`,
+    }));
     const hasRegBank = rawBanks.some(b => b.accountNumber === regAccountNumber);
     if (!hasRegBank && regAccountNumber) {
       banks.unshift({

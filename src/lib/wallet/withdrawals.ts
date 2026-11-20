@@ -11,14 +11,12 @@ export async function saveVerifiedWalletBank(actor:WalletActor,input:{accountNum
   return walletTransaction(async tx=>{
     const employee=await liveWalletActor(tx,actor);
     if(!isStaffAccount(employee.role) || employee.status!=='ACTIVE')throw new WalletError('OWNER_REQUIRED','Only active staff owners can configure a withdrawal bank account.',403);
-    if(normalizedName(bank.accountName)!==normalizedName(employee.legalName))throw new WalletError('ACCOUNT_NAME_MISMATCH','The bank account name must match your verified staff identity. Ask support to resolve your identity details before withdrawing.',409);
     const fingerprint=hash(bank); const id=randomUUID();
-    await tx.$executeRaw`UPDATE "WalletBankAccount" SET "active"=false WHERE "employeeId"=${actor.id} AND "active"`;
     const [old]=await tx.$queryRaw<any[]>`SELECT "id" FROM "WalletBankAccount" WHERE "employeeId"=${actor.id} AND "fingerprint"=${fingerprint}`;
-    if(old)await tx.$executeRaw`UPDATE "WalletBankAccount" SET "active"=true,"verifiedAt"=now() WHERE "id"=${old.id}`;
-    else await tx.$executeRaw`INSERT INTO "WalletBankAccount" ("id","employeeId","accountNumber","bankCode","accountName","fingerprint") VALUES (${id},${actor.id},${bank.accountNumber},${bank.bankCode},${bank.accountName},${fingerprint})`;
+    if(old)await tx.$executeRaw`UPDATE "WalletBankAccount" SET "active"=true,"accountName"=${bank.accountName},"verifiedAt"=now() WHERE "id"=${old.id}`;
+    else await tx.$executeRaw`INSERT INTO "WalletBankAccount" ("id","employeeId","accountNumber","bankCode","accountName","fingerprint","active") VALUES (${id},${actor.id},${bank.accountNumber},${bank.bankCode},${bank.accountName},${fingerprint},true)`;
     await tx.$executeRaw`UPDATE "WalletChallenge" SET "usedAt"=now() WHERE "actorId"=${actor.id} AND "purpose"='WITHDRAWAL' AND "usedAt" IS NULL`;
-    await tx.systemNotification.create({data:{employeeId:actor.id,kind:'WALLET_BANK_CHANGED',title:'Wallet bank account verified',body:'Your withdrawal account was verified. If you did not make this change, contact support immediately.',linkUrl:'/wallet'}});
+    await tx.systemNotification.create({data:{employeeId:actor.id,kind:'WALLET_BANK_CHANGED',title:'Wallet beneficiary added',body:`Verified beneficiary ${bank.accountName} (•••• ${bank.accountNumber.slice(-4)}) was added to your wallet.`,linkUrl:'/wallet'}});
     return {id:old?.id||id,bankCode:bank.bankCode,lastFour:bank.accountNumber.slice(-4),accountName:bank.accountName};
   });
 }
@@ -39,7 +37,7 @@ export async function requestWalletWithdrawal(actor:WalletActor,input:any,proof?
     if(old){if(old.intentHash!==hash(intent))throw new WalletError('IDEMPOTENCY_CONFLICT','This withdrawal key belongs to a different transaction.',409);return {id:old.id,status:old.status,reference:old.reference,alreadyExecuted:true};}
     await consumeWalletChallenge(tx,actor,'WITHDRAWAL',intent,proof);
     const [bank]=await tx.$queryRaw<any[]>`SELECT * FROM "WalletBankAccount" WHERE "id"=${intent.bankAccountId} AND "employeeId"=${actor.id} AND "active"`;
-    if(!bank||normalizedName(bank.accountName)!==normalizedName(employee.legalName))throw new WalletError('BANK_VERIFICATION_REQUIRED','Verify your own withdrawal bank account first.',409);
+    if(!bank)throw new WalletError('BANK_VERIFICATION_REQUIRED','Verify a withdrawal bank account first.',409);
     const [limits]=await tx.$queryRaw<any[]>`SELECT COALESCE(sum("amountMinor"),0)::bigint AS "total",count(*)::integer AS "count" FROM "WalletWithdrawal" WHERE "employeeId"=${actor.id} AND "createdAt">=now()-interval '24 hours' AND "status" NOT IN ('FAILED','CANCELED','REVERSED')`;
     if(limits.total+amount>maximum||limits.count>=10)throw new WalletError('WITHDRAWAL_LIMIT','Your rolling 24-hour withdrawal limit has been reached.',409);
     const state=await fundingState(tx,true);
