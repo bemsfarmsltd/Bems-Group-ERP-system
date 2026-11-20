@@ -147,15 +147,195 @@ class _StaffMainScreenState extends State<StaffMainScreen> {
     );
   }
 
+  bool _weeklyDeductionPopupShown = false;
+
   @override
   void initState() {
     super.initState();
     _pageController = PageController(initialPage: _currentIndex);
     _currentUser = widget.user;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkWeeklyDeductionPopup();
+    });
     if (!_currentUser.staffAppModules.contains('finance')) return;
     _loadData();
     _loadBiometricSettings();
     StaffNotificationService().startPeriodicSync(_currentUser);
+  }
+
+  String _formatMinorNaira(dynamic minorVal) {
+    final num raw = minorVal is num ? minorVal : num.tryParse(minorVal?.toString() ?? '0') ?? 0;
+    final naira = (raw / 100).round();
+    final str = naira.abs().toString();
+    final buf = StringBuffer();
+    for (int i = 0; i < str.length; i++) {
+      final posFromEnd = str.length - i;
+      buf.write(str[i]);
+      if (posFromEnd > 1 && posFromEnd % 3 == 1) buf.write(',');
+    }
+    return '${naira < 0 ? '-' : ''}₦${buf.toString()}';
+  }
+
+  Future<void> _checkWeeklyDeductionPopup() async {
+    if (_weeklyDeductionPopupShown || !mounted) return;
+    try {
+      final notifications = await StaffApiService.fetchNotifications(employeeId: _currentUser.id);
+      if (!mounted) return;
+      final summary = notifications.cast<Map<String, dynamic>?>().firstWhere(
+            (n) =>
+                n != null &&
+                n['kind'] == 'WEEKLY_DEDUCTION_SUMMARY' &&
+                n['readAt'] == null,
+            orElse: () => null,
+          );
+      if (summary == null) return;
+      _weeklyDeductionPopupShown = true;
+
+      final meta = (summary['metadata'] is Map)
+          ? Map<String, dynamic>.from(summary['metadata'] as Map)
+          : <String, dynamic>{};
+      final month = (meta['month'] ?? '').toString();
+      final lateCount = meta['lateCount'] ?? 0;
+      final absentCount = meta['absentCount'] ?? 0;
+      final totalPercent = meta['totalPercent'] ?? 0;
+      final grossMinor = meta['grossMinor'] ?? 0;
+      final deductionMinor = meta['deductionMinor'] ?? 0;
+      final remainingMinor = meta['remainingMinor'] ?? 0;
+      final hasDeductions = (deductionMinor is num ? deductionMinor : 0) > 0;
+
+      if (!mounted || !context.mounted) return;
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => Dialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+            side: const BorderSide(color: Color(0xFFE2E8F0)),
+          ),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: Padding(
+              padding: const EdgeInsets.all(22),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: hasDeductions ? const Color(0xFFFEF3C7) : const Color(0xFFDCFCE7),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          hasDeductions ? 'WEEKLY DEDUCTION SUMMARY' : 'WEEKLY ATTENDANCE CLEAR',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.6,
+                            color: hasDeductions ? const Color(0xFF92400E) : const Color(0xFF166534),
+                          ),
+                        ),
+                      ),
+                      const Spacer(),
+                      if (month.isNotEmpty)
+                        Text(
+                          month,
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF64748B)),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Your Weekly Salary & Deduction Status',
+                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    (summary['body'] ?? '').toString(),
+                    style: const TextStyle(fontSize: 13, height: 1.45, color: Color(0xFF475569)),
+                  ),
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: Column(
+                      children: [
+                        _summaryPopupRow('Monthly Gross', _formatMinorNaira(grossMinor), const Color(0xFF0F172A)),
+                        const Divider(height: 16, color: Color(0xFFE2E8F0)),
+                        _summaryPopupRow('Late Arrivals (2% ea)', '$lateCount day(s)', const Color(0xFF334155)),
+                        const SizedBox(height: 8),
+                        _summaryPopupRow('Unexcused Absences (5% ea)', '$absentCount day(s)', const Color(0xFF334155)),
+                        const Divider(height: 16, color: Color(0xFFE2E8F0)),
+                        _summaryPopupRow(
+                          'Total Deductions ($totalPercent%)',
+                          hasDeductions ? '- ${_formatMinorNaira(deductionMinor)}' : '₦0',
+                          hasDeductions ? const Color(0xFF991B1B) : const Color(0xFF166534),
+                          bold: true,
+                        ),
+                        const SizedBox(height: 8),
+                        _summaryPopupRow(
+                          'Estimated Remaining Salary',
+                          _formatMinorNaira(remainingMinor),
+                          const Color(0xFFEA580C),
+                          bold: true,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () {
+                        Navigator.of(ctx).pop();
+                        StaffApiService.markNotificationsRead(employeeId: _currentUser.id);
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFEA580C),
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(vertical: 13),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      child: const Text(
+                        'Acknowledge',
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    } catch (_) {
+      // Non-blocking
+    }
+  }
+
+  Widget _summaryPopupRow(String label, String value, Color valueColor, {bool bold = false}) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label, style: const TextStyle(fontSize: 12, color: Color(0xFF64748B), fontWeight: FontWeight.w600)),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: bold ? 14 : 13,
+            fontWeight: bold ? FontWeight.w800 : FontWeight.w700,
+            color: valueColor,
+          ),
+        ),
+      ],
+    );
   }
 
   @override
