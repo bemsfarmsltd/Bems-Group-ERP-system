@@ -517,6 +517,19 @@ export async function notifyApprovalRequired(params: {
       const execs = await resolveModuleEmailRecipients(prisma, 'finance');
       for (let i = 0; i < execs.length; i++) {
         const exec = execs[i];
+        await prisma.systemNotification.create({
+          data: {
+            employeeId: exec.id,
+            category: "APPROVALS",
+            priority: "IMPORTANT",
+            kind: "APPROVAL_REQUIRED",
+            title: `New Fund Request: ${params.requestNumber}`,
+            body: `${params.requesterName} submitted "${params.title}" (₦${(params.amountMinor / 100).toLocaleString("en-NG")}) for ${params.subsidiaryName || "BEMS Group"}.`,
+            actionLabel: "Review Request",
+            actionUrl: "/finance?tab=approvals",
+            linkUrl: "/finance?tab=approvals",
+          },
+        }).catch((err) => console.error(`Failed to create in-app alert for ${exec.id}:`, err));
         if (i > 0) {
           await new Promise((r) => setTimeout(r, 600));
         }

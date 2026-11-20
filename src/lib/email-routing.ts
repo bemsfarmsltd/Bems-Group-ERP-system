@@ -11,7 +11,7 @@ type RecipientCandidate = {
   workEmail: string;
   role: string;
   customAdminPermissions?: unknown;
-  customAdminProfile?: { permissions?: unknown } | null;
+  customAdminProfile?: { permissionsJson?: unknown; permissions?: unknown } | null;
 };
 
 function normalizePermissions(raw: unknown): CustomAdminPermissionsMap | null {
@@ -42,7 +42,7 @@ export function filterModuleEmailRecipients<T extends RecipientCandidate>(
     if (role === 'GMD') return true;
 
     const customPerms = normalizePermissions(
-      emp.customAdminProfile?.permissions ?? emp.customAdminPermissions,
+      emp.customAdminProfile?.permissionsJson ?? emp.customAdminProfile?.permissions ?? emp.customAdminPermissions,
     );
 
     if (customPerms) {
@@ -74,7 +74,7 @@ export async function resolveModuleEmailRecipients(
       workEmail: true,
       role: true,
       customAdminProfile: {
-        select: { permissions: true },
+        select: { permissionsJson: true },
       },
     },
   });
