@@ -89,8 +89,8 @@ export async function queryDailyAttendanceRoster(
     resumptionTime: '08:00',
     closingTime: '17:00',
     gracePeriodMinutes: 30,
-    latenessDeductionPercent: 10.0,
-    absenceDeductionPercent: 100.0,
+    latenessDeductionPercent: 5.0,
+    absenceDeductionPercent: 10.0,
   };
 
   const subsidiaries = rawSubsidiaries.map((s) => ({
@@ -231,9 +231,9 @@ export async function queryDailyAttendanceRoster(
     const deductionPercent = rec?.isManualOverride
       ? rec.deductionPercent
       : morningStatus === 'LATE'
-      ? empPolicy.latenessDeductionPercent ?? 10.0
+      ? empPolicy.latenessDeductionPercent ?? 5.0
       : morningStatus === 'ABSENT'
-      ? empPolicy.absenceDeductionPercent ?? 100.0
+      ? empPolicy.absenceDeductionPercent ?? 10.0
       : rec?.deductionPercent || 0;
 
     return {

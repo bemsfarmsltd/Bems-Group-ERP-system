@@ -241,6 +241,7 @@ export async function GET(req: NextRequest) {
 
     const attendanceDeductionByEmployee = new Map<string, { countLate: number; countAbsent: number; totalPercent: number }>();
     for (const rec of monthlyAttendance) {
+      if (rec.excuseStatus === 'APPROVED') continue;
       if (rec.deductionPercent > 0) {
         const cur = attendanceDeductionByEmployee.get(rec.employeeId) || { countLate: 0, countAbsent: 0, totalPercent: 0 };
         if (rec.status === 'LATE') cur.countLate += 1;
@@ -321,9 +322,9 @@ export async function GET(req: NextRequest) {
 
     const safeItems = scopedBatchItems.map(item => {
       const attStats = attendanceDeductionByEmployee.get(item.employee.id) || { countLate: 0, countAbsent: 0, totalPercent: 0 };
-      // Pro-rated daily rate (grossMinor / 22 work days in average month)
-      const dailyRate = Number(item.grossMinor) / 22;
-      const attendancePenaltyMinor = Math.round((dailyRate * attStats.totalPercent) / 100);
+      // Company Policy: 5% of monthly salary per late morning, 10% of monthly salary per full-day absence (capped at 100%).
+      const cappedPercent = Math.min(100, Math.max(0, attStats.totalPercent));
+      const attendancePenaltyMinor = Math.round((Number(item.grossMinor) * cappedPercent) / 100);
 
       // Company Policy: Zero Tax / PAYE / Pension Deductions. Only attendance lateness deductions apply.
       const latenessDeductionsMinor = attendancePenaltyMinor;

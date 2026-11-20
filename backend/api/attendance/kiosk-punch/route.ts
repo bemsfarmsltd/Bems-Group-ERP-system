@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { getLagosTime, serializeAttendanceRecord } from '@/lib/attendance/token';
 import { notifyGmdStaffClockIn } from '@/lib/notifications/attendance';
 import { checkRateLimit, getClientIp } from '@/lib/rate-limiter';
+import { computeMonthlyDeductionMinor, getEmployeeMonthlyGrossMinor } from '@/lib/services/attendance-absence-sweeper';
 
 export const dynamic = 'force-dynamic';
 
@@ -133,7 +134,9 @@ export async function POST(request: Request) {
 
     const isLate = minutesSinceMidnight > cutoffMinutes;
     const status = isLate ? 'LATE' : 'PRESENT';
-    const deductionPercent = isLate ? (policy?.latenessDeductionPercent ?? 10.0) : 0.0;
+    const deductionPercent = isLate ? (policy?.latenessDeductionPercent ?? 5.0) : 0.0;
+    const monthlyGrossMinor = isLate ? await getEmployeeMonthlyGrossMinor(matched.id) : BigInt(0);
+    const deductionMinor = isLate ? computeMonthlyDeductionMinor(monthlyGrossMinor, deductionPercent) : BigInt(0);
 
     const record = await prisma.attendanceRecord.upsert({
       where: {
@@ -146,6 +149,8 @@ export async function POST(request: Request) {
         checkInTime: now,
         status,
         deductionPercent,
+        deductionMinor,
+        isDeductionApplied: isLate && deductionPercent > 0,
         stationId: station?.id || null,
       },
       create: {
@@ -154,6 +159,8 @@ export async function POST(request: Request) {
         checkInTime: now,
         status,
         deductionPercent,
+        deductionMinor,
+        isDeductionApplied: isLate && deductionPercent > 0,
         stationId: station?.id || null,
       },
     });

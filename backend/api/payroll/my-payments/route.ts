@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getAuthenticatedEmployee } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { getLagosTime } from '@/lib/attendance/token';
 
 export const dynamic = 'force-dynamic';
 
@@ -55,10 +56,28 @@ export async function GET(request: Request) {
   const activeAgreement = employee.employmentAgreements[0];
   const activeComp = activeAgreement?.compensations[0];
   const grossMinor = activeComp ? Number(activeComp.grossMinor) : 0;
-  // Company Policy: Zero Tax / PAYE / Pension Deductions. Only attendance lateness deductions apply.
-  const pensionMinor = 0;
-  const payeMinor = 0;
-  const estimatedNetMinor = grossMinor;
+
+  // Company Policy: Zero Tax / PAYE / Pension Deductions.
+  // Automated attendance deductions: 5% of monthly salary per late morning, 10% per unexcused absence (capped at 100%).
+  const { workDate } = getLagosTime();
+  const currentMonthPrefix = workDate.slice(0, 7);
+  const currentMonthRecords = await prisma.attendanceRecord.findMany({
+    where: {
+      employeeId: actor.id,
+      workDate: { startsWith: currentMonthPrefix },
+    },
+    select: {
+      deductionPercent: true,
+      excuseStatus: true,
+    },
+  });
+  const totalAttendancePenaltyPercent = currentMonthRecords.reduce((sum, rec) => {
+    if (rec.excuseStatus === 'APPROVED') return sum;
+    return sum + (rec.deductionPercent > 0 ? rec.deductionPercent : 0);
+  }, 0);
+  const cappedPenaltyPercent = Math.min(100, Math.max(0, totalAttendancePenaltyPercent));
+  const latenessDeductionsMinor = Math.round((grossMinor * cappedPenaltyPercent) / 100);
+  const estimatedNetMinor = Math.max(0, grossMinor - latenessDeductionsMinor);
 
   const compensationSummary = {
     grossMinor,
@@ -67,8 +86,8 @@ export async function GET(request: Request) {
     employeePensionFormatted: '₦0 (No Tax)',
     payeTaxMinor: 0,
     payeTaxFormatted: '₦0 (No Tax)',
-    latenessDeductionsMinor: 0,
-    latenessDeductionsFormatted: '₦0',
+    latenessDeductionsMinor,
+    latenessDeductionsFormatted: formatNaira(latenessDeductionsMinor),
     estimatedNetMinor,
     estimatedNetFormatted: formatNaira(estimatedNetMinor),
     currency: activeComp?.currency || 'NGN',

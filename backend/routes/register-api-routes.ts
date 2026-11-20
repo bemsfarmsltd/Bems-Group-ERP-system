@@ -68,6 +68,7 @@ import * as route_57 from "../api/approvals/decide/route";
 import * as route_58 from "../api/approvals/route";
 import * as route_59 from "../api/attendance/admin/daily-roster/route";
 import * as route_daily_digest from "../api/attendance/admin/daily-digest/route";
+import * as route_mark_absences from "../api/attendance/admin/mark-absences/route";
 import * as route_60 from "../api/attendance/admin/override/route";
 import * as route_61 from "../api/attendance/admin/policy/route";
 import * as route_62 from "../api/attendance/admin/roster/route";
@@ -318,6 +319,7 @@ export function registerAllNextApiRoutes(app: FastifyInstance): void {
   mountNextRoute(app, "/api/approvals", route_58 as unknown as NextRouteModule);
   mountNextRoute(app, "/api/attendance/admin/daily-roster", route_59 as unknown as NextRouteModule);
   mountNextRoute(app, "/api/attendance/admin/daily-digest", route_daily_digest as unknown as NextRouteModule);
+  mountNextRoute(app, "/api/attendance/admin/mark-absences", route_mark_absences as unknown as NextRouteModule);
   mountNextRoute(app, "/api/attendance/admin/override", route_60 as unknown as NextRouteModule);
   mountNextRoute(app, "/api/attendance/admin/policy", route_61 as unknown as NextRouteModule);
   mountNextRoute(app, "/api/attendance/admin/roster", route_62 as unknown as NextRouteModule);

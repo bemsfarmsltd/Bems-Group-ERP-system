@@ -2,6 +2,7 @@ import { isStaffAccount } from '@/lib/portal-access';
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getAuthenticatedEmployee, hasAnyRole } from '@/lib/auth';
+import { computeMonthlyDeductionMinor, getEmployeeMonthlyGrossMinor } from '@/lib/services/attendance-absence-sweeper';
 import {
   calculateHaversineDistance,
   verifyStationQrToken,
@@ -111,7 +112,7 @@ export async function POST(request: Request) {
     const resumptionTime = policy?.resumptionTime || '08:00';
     const closingTime = policy?.closingTime || '17:00';
     const graceMinutes = policy?.gracePeriodMinutes ?? 30;
-    const latenessDeductionPercent = policy?.latenessDeductionPercent ?? 10.0;
+    const latenessDeductionPercent = policy?.latenessDeductionPercent ?? 5.0;
 
     // Dual-Factor Check 1: Geofence Verification (Honors policy bypass & outage buffer)
     const distanceMeters = calculateHaversineDistance(latNum, lngNum, station.latitude, station.longitude);
@@ -224,6 +225,9 @@ export async function POST(request: Request) {
         deductionPercent = latenessDeductionPercent;
       }
 
+      const monthlyGrossMinor = status === 'LATE' ? await getEmployeeMonthlyGrossMinor(employee.id) : BigInt(0);
+      const deductionMinor = status === 'LATE' ? computeMonthlyDeductionMinor(monthlyGrossMinor, deductionPercent) : BigInt(0);
+
       // Upsert record
       const record = await prisma.attendanceRecord.upsert({
         where: {
@@ -241,6 +245,8 @@ export async function POST(request: Request) {
           clientIp,
           status: existing?.checkInTime || existing?.isManualOverride ? existing.status : status,
           deductionPercent: existing?.checkInTime || existing?.isManualOverride ? existing.deductionPercent : deductionPercent,
+          deductionMinor: existing?.checkInTime || existing?.isManualOverride ? existing.deductionMinor : deductionMinor,
+          isDeductionApplied: existing?.checkInTime || existing?.isManualOverride ? existing.isDeductionApplied : (status === 'LATE' && deductionPercent > 0),
         },
         create: {
           employeeId: employee.id,
@@ -253,6 +259,8 @@ export async function POST(request: Request) {
           clientIp,
           status,
           deductionPercent,
+          deductionMinor,
+          isDeductionApplied: status === 'LATE' && deductionPercent > 0,
         },
       });
 
