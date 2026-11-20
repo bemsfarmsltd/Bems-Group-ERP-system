@@ -59,6 +59,8 @@ export async function buildBackendServer() {
       'x-app-version',
       'x-employee-id',
       'x-cron-secret',
+      'idempotency-key',
+      'x-correlation-id',
     ],
   });
 
