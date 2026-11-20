@@ -46,7 +46,8 @@ export async function sendWeeklyStaffDeductionSummaries() {
         take: 1,
         include: {
           compensations: {
-            orderBy: { effectiveFrom: 'desc' },
+            where: { effectiveTo: null },
+            orderBy: [{ version: 'desc' }, { effectiveFrom: 'desc' }],
             take: 1,
           },
         },

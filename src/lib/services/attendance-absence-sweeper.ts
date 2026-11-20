@@ -20,7 +20,8 @@ export async function getEmployeeMonthlyGrossMinor(employeeId: string): Promise<
     orderBy: { startDate: 'desc' },
     include: {
       compensations: {
-        orderBy: { effectiveFrom: 'desc' },
+        where: { effectiveTo: null },
+        orderBy: [{ version: 'desc' }, { effectiveFrom: 'desc' }],
         take: 1,
       },
     },
@@ -81,7 +82,8 @@ export async function markDailyAbsences(params: MarkDailyAbsencesParams = {}) {
           take: 1,
           include: {
             compensations: {
-              orderBy: { effectiveFrom: 'desc' },
+              where: { effectiveTo: null },
+              orderBy: [{ version: 'desc' }, { effectiveFrom: 'desc' }],
               take: 1,
             },
           },

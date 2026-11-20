@@ -110,7 +110,7 @@ export async function GET(request: Request) {
       prisma.employmentAgreement.findFirst({
         where: { employeeId: actor.id, status: 'ACTIVE' },
         orderBy: { startDate: 'desc' },
-        include: { compensations: { orderBy: { effectiveFrom: 'desc' }, take: 1 } },
+        include: { compensations: { where: { effectiveTo: null }, orderBy: [{ version: 'desc' }, { effectiveFrom: 'desc' }], take: 1 } },
       }),
       prisma.staffWorkSchedule.findUnique({ where: { employeeId: actor.id } }),
       prisma.attendanceRecord.findMany({
