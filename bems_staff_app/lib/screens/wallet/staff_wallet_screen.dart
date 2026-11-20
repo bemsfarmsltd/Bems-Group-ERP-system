@@ -497,7 +497,7 @@ class _StaffWalletScreenState extends State<StaffWalletScreen> {
         'bankCode': selectedBankCode,
       };
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e'), backgroundColor: const Color(0xFFDC2626)));
+      if (mounted) _showErrorModal(e, title: 'Account Verification Failed');
       return null;
     } finally {
       numberController.dispose();
@@ -876,10 +876,96 @@ class _StaffWalletScreenState extends State<StaffWalletScreen> {
         _showSuccessReceipt(result, bank, amountMinor);
       }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e'), backgroundColor: const Color(0xFFDC2626)));
+      if (mounted) _showErrorModal(e, title: 'Withdrawal Could Not Be Processed');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  String _cleanErrorMessage(Object error) {
+    var msg = error.toString().trim();
+    for (final prefix in ['Exception: ', 'Error: ', 'FormatException: ']) {
+      if (msg.startsWith(prefix)) {
+        msg = msg.substring(prefix.length).trim();
+      }
+    }
+    if (msg.isEmpty) {
+      return 'Something went wrong while processing your request. Please try again.';
+    }
+    return msg;
+  }
+
+  void _showErrorModal(Object error, {String title = 'Unable to Complete Request'}) {
+    final cleanMsg = _cleanErrorMessage(error);
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: const BorderSide(color: Color(0xFFE2E8F0)),
+        ),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 400),
+          child: Padding(
+            padding: const EdgeInsets.all(22),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 52,
+                  height: 52,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFFEE2E2),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.error_outline_rounded, color: Color(0xFFDC2626), size: 28),
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  title,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF0F172A),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  cleanMsg,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 13.5,
+                    height: 1.5,
+                    color: Color(0xFF475569),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.of(ctx).pop(),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFEA580C),
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(vertical: 13),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: const Text(
+                      'Understood',
+                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   // --- BANK-GRADE INSUFFICIENT BALANCE DIALOG ---
@@ -1175,7 +1261,7 @@ class _StaffWalletScreenState extends State<StaffWalletScreen> {
         _reload();
       }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+      if (mounted) _showErrorModal(e, title: 'Return Could Not Be Processed');
     } finally {
       amount.dispose();
       reason.dispose();
@@ -1189,7 +1275,7 @@ class _StaffWalletScreenState extends State<StaffWalletScreen> {
       await StaffApiService.walletRequest(widget.user, 'withdrawals/$id/cancel', {});
       if (mounted) _reload();
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+      if (mounted) _showErrorModal(e, title: 'Cancellation Failed');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
