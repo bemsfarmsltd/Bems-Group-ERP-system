@@ -2,6 +2,7 @@ import { isStaffAccount } from '@/lib/portal-access';
 import {requiredFeeReserve,backedFeeReserve} from './fees';
 import { randomUUID } from 'node:crypto';
 import { WalletActor, WalletError, fundingState, fundingCommitments, liveWalletActor, requireWallet, walletJson, walletTransaction } from './core';
+import { notifyExecutivesMonnifyWalletFunded } from '@/lib/notifications/monnify-funding';
 
 export function providerAmountMinor(value: unknown): bigint {
   if (typeof value !== 'string' && typeof value !== 'number') throw new WalletError('INVALID_PROVIDER_BALANCE', 'Monnify returned an invalid balance.', 502);
@@ -45,12 +46,16 @@ export async function refreshMonnifyFunding(actor: WalletActor, forOwnWithdrawal
   const body = await providerJson(base + '/api/v2/disbursements/wallet-balance?accountNumber=' + encodeURIComponent(sourceAccount), { headers: { Authorization: 'Bearer ' + auth.accessToken } });
   const amount = verifiedMonnifyBalance(body,sourceAccount);
   const observedAt = observationStartedAt;
-  return walletTransaction(async tx => {
+  let fundedDelta: { deltaMinor: bigint; previousBalanceMinor: bigint } | null = null;
+  const result = await walletTransaction(async tx => {
     await liveWalletActor(tx, actor);
-    const [existing] = await tx.$queryRaw<Array<{ environment: string; sourceAccount: string; observedAt: Date }>>`SELECT "environment","sourceAccount","observedAt" FROM "WalletFundingPool" WHERE "id" = 'MONNIFY_NGN'`;
+    const [existing] = await tx.$queryRaw<Array<{ environment: string; sourceAccount: string; availableMinor: bigint; observedAt: Date }>>`SELECT "environment","sourceAccount","availableMinor","observedAt" FROM "WalletFundingPool" WHERE "id" = 'MONNIFY_NGN'`;
     // Never switch accounts/environments over existing obligations via a refresh.
     if (existing && (existing.environment !== environment || existing.sourceAccount !== sourceAccount)) throw new WalletError('PROVIDER_SOURCE_MISMATCH', 'Changing the funding source requires a reviewed migration.', 409);
     if (!existing || existing.observedAt <= observedAt) {
+      if (existing && amount > existing.availableMinor) {
+        fundedDelta = { deltaMinor: amount - existing.availableMinor, previousBalanceMinor: existing.availableMinor };
+      }
       const requiredFees=await requiredFeeReserve(tx);
       const commitments=await fundingCommitments(tx);
       const feeReserve=backedFeeReserve(amount,commitments.envelopeMinor+commitments.liabilityMinor,BigInt(reserve),requiredFees);
@@ -62,6 +67,18 @@ export async function refreshMonnifyFunding(actor: WalletActor, forOwnWithdrawal
     }
     return walletJson(await fundingState(tx));
   });
+
+  if (fundedDelta) {
+    const delta = fundedDelta as { deltaMinor: bigint; previousBalanceMinor: bigint };
+    void notifyExecutivesMonnifyWalletFunded({
+      deltaMinor: delta.deltaMinor,
+      previousBalanceMinor: delta.previousBalanceMinor,
+      newBalanceMinor: amount,
+      sourceAccount,
+      source: 'BALANCE_SYNC',
+    }).catch(() => {});
+  }
+  return result;
 }
 
 export async function ensureWalletFundingFresh(actor:WalletActor,forOwnWithdrawal=false){

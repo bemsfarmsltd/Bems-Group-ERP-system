@@ -1,6 +1,7 @@
 import { createHmac,randomUUID,timingSafeEqual } from 'node:crypto';
 import { WalletError, hash, walletTransaction } from './core';
 import { hasAuthorizedTransfer } from './transfer-authorization';
+import { notifyExecutivesMonnifyWalletFunded } from '@/lib/notifications/monnify-funding';
 export async function receiveMonnifyEvent(raw:string,signature:string|null) {
   if(Buffer.byteLength(raw)>65536)throw new WalletError('PAYLOAD_TOO_LARGE','Webhook exceeds the accepted size.',413);
   const secret=process.env.MONNIFY_SECRET_KEY;
@@ -14,17 +15,71 @@ export async function receiveMonnifyEvent(raw:string,signature:string|null) {
     if(!signature||!/^[a-f0-9]{128}$/i.test(signature)||!timingSafeEqual(Buffer.from(expected,'hex'),Buffer.from(signature,'hex')))throw new WalletError('INVALID_SIGNATURE','Webhook authentication failed.',401);
   }else if(env!=='sandbox')throw new WalletError('INVALID_SIGNATURE','Webhook authentication failed.',401);
   let body;try{body=JSON.parse(raw);}catch{throw new WalletError('INVALID_EVENT','Invalid event body.');}
-  const reference=body?.eventData?.reference;
+  const reference =
+    body?.eventData?.reference ||
+    body?.eventData?.transactionReference ||
+    body?.eventData?.paymentReference ||
+    null;
   // Completion callbacks never create credits or settle withdrawals directly.
   // Even sandbox notifications can only wake a query of an existing reference.
-  if(typeof reference!=='string'||typeof body.eventType!=='string')return {received:true,ignored:true};
-  return walletTransaction(async tx=>{
-    const [withdrawal]=await tx.$queryRaw<any[]>`SELECT "id","environment" FROM "WalletWithdrawal" WHERE "reference"=${reference}`;
-    if(!withdrawal||withdrawal.environment!==env)return {received:true,ignored:true};
-    const n=await tx.$executeRaw`INSERT INTO "WalletProviderInbox" ("id","bodyHash","reference","eventType") VALUES (${randomUUID()},${hash(raw)},${reference},${body.eventType.slice(0,100)}) ON CONFLICT ("bodyHash") DO NOTHING`;
-    if(n)await tx.$executeRaw`UPDATE "WalletWithdrawal" SET "nextAttemptAt"=now() WHERE "id"=${withdrawal.id}`;
-    return {received:true,duplicate:n===0};
+  if (typeof body?.eventType !== 'string') return { received: true, ignored: true };
+  const eventTypeUpper = body.eventType.toUpperCase();
+  const isWalletCreditEvent =
+    eventTypeUpper.includes('WALLET') ||
+    eventTypeUpper.includes('CREDIT') ||
+    eventTypeUpper.includes('FUND') ||
+    eventTypeUpper === 'SUCCESSFUL_TRANSACTION';
+
+  if (typeof reference !== 'string' && !isWalletCreditEvent) {
+    return { received: true, ignored: true };
+  }
+
+  let notifyCredit: { deltaMinor: bigint; sourceAccount: string; reference: string | null } | null = null;
+
+  const outcome = await walletTransaction(async tx => {
+    if (typeof reference === 'string') {
+      const [withdrawal] = await tx.$queryRaw<any[]>`SELECT "id","environment" FROM "WalletWithdrawal" WHERE "reference"=${reference}`;
+      if (withdrawal && withdrawal.environment === env) {
+        const n = await tx.$executeRaw`INSERT INTO "WalletProviderInbox" ("id","bodyHash","reference","eventType") VALUES (${randomUUID()},${hash(raw)},${reference},${body.eventType.slice(0, 100)}) ON CONFLICT ("bodyHash") DO NOTHING`;
+        if (n) await tx.$executeRaw`UPDATE "WalletWithdrawal" SET "nextAttemptAt"=now() WHERE "id"=${withdrawal.id}`;
+        return { received: true, duplicate: n === 0 };
+      }
+    }
+
+    if (isWalletCreditEvent) {
+      const rawAmount =
+        body?.eventData?.amountPaid ??
+        body?.eventData?.amount ??
+        body?.eventData?.transactionAmount ??
+        null;
+      const numericAmount = typeof rawAmount === 'number' || typeof rawAmount === 'string' ? Number(rawAmount) : 0;
+      const creditRef = typeof reference === 'string' ? reference : `CREDIT-${hash(raw).slice(0, 12)}`;
+      const n = await tx.$executeRaw`INSERT INTO "WalletProviderInbox" ("id","bodyHash","reference","eventType") VALUES (${randomUUID()},${hash(raw)},${creditRef},${body.eventType.slice(0, 100)}) ON CONFLICT ("bodyHash") DO NOTHING`;
+      if (n && Number.isFinite(numericAmount) && numericAmount > 0) {
+        const curSource = process.env.MONNIFY_SOURCE_ACCOUNT || process.env.MONNIFY_WALLET_ACCOUNT_NUMBER || 'MONNIFY';
+        notifyCredit = {
+          deltaMinor: BigInt(Math.round(numericAmount * 100)),
+          sourceAccount: curSource,
+          reference: creditRef,
+        };
+      }
+      return { received: true, duplicate: n === 0, walletCreditAlerted: Boolean(notifyCredit) };
+    }
+
+    return { received: true, ignored: true };
   });
+
+  if (notifyCredit) {
+    const credit = notifyCredit as { deltaMinor: bigint; sourceAccount: string; reference: string | null };
+    void notifyExecutivesMonnifyWalletFunded({
+      deltaMinor: credit.deltaMinor,
+      sourceAccount: credit.sourceAccount,
+      reference: credit.reference,
+      source: 'WEBHOOK',
+    }).catch(() => {});
+  }
+
+  return outcome;
 }
 export async function validateMonnifyIntent(body:any,signature:string|null,timestamp:string|null){
   if(process.env.BEMS_MONNIFY_VALIDATION_ENABLED!=='true')throw new WalletError('VALIDATION_NOT_CONFIGURED','Transaction validation is disabled.',503);
