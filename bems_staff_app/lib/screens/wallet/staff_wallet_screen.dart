@@ -1060,7 +1060,30 @@ class _StaffWalletScreenState extends State<StaffWalletScreen> {
 
   // --- BANK-GRADE SUCCESS RECEIPT DIALOG ---
   void _showSuccessReceipt(Map<String, dynamic> result, Map<String, dynamic> bank, String amountMinor) {
+    final status = (result['status']?.toString() ?? 'PENDING').toUpperCase();
+    if (status == 'FAILED' || status == 'EXPIRED' || status == 'REVERSED') {
+      _showErrorModal(
+        result['message']?.toString() ?? 'Monnify could not complete this bank transfer. Your approved funds remain safely in your wallet.',
+        title: 'Transfer Not Completed',
+      );
+      return;
+    }
+
+    final isConfirmed = status == 'SUCCEEDED' || result['confirmed'] == true;
+    final requiresAuth = result['requiresProviderAuthorization'] == true;
     final ref = result['reference']?.toString() ?? 'BEMS-W-${DateTime.now().millisecondsSinceEpoch}';
+
+    final Color badgeBg = isConfirmed ? const Color(0xFFF0FDF4) : const Color(0xFFFFFBEB);
+    final Color badgeColor = isConfirmed ? const Color(0xFF16A34A) : const Color(0xFFD97706);
+    final IconData badgeIcon = isConfirmed ? Icons.check_circle_rounded : Icons.schedule_rounded;
+    final String heading = isConfirmed ? 'Transfer Successful' : 'Transfer Pending Confirmation';
+    final String subtext = result['message']?.toString() ??
+        (isConfirmed
+            ? 'Monnify confirmed settlement to your bank account.'
+            : requiresAuth
+                ? 'Submitted to Monnify, awaiting Monnify 2FA/OTP authorization. Not yet settled.'
+                : 'Submitted to Monnify and awaiting bank settlement confirmation.');
+
     showDialog(
       context: context,
       builder: (c) => Dialog(
@@ -1074,21 +1097,23 @@ class _StaffWalletScreenState extends State<StaffWalletScreen> {
               Container(
                 width: 60,
                 height: 60,
-                decoration: const BoxDecoration(
-                  color: Color(0xFFF0FDF4),
+                decoration: BoxDecoration(
+                  color: badgeBg,
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.check_circle_rounded, color: Color(0xFF16A34A), size: 36),
+                child: Icon(badgeIcon, color: badgeColor, size: 36),
               ),
               const SizedBox(height: 14),
-              const Text(
-                'Transfer Reserved & Queued',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Color(0xFF0F172A)),
+              Text(
+                heading,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Color(0xFF0F172A)),
               ),
               const SizedBox(height: 4),
-              const Text(
-                'Instant Monnify settlement in progress.',
-                style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+              Text(
+                subtext,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
               ),
               const SizedBox(height: 16),
               Text(

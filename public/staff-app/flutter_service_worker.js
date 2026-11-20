@@ -3,11 +3,11 @@ const MANIFEST = 'flutter-app-manifest';
 const TEMP = 'flutter-temp-cache';
 const CACHE_NAME = 'flutter-app-cache';
 
-const RESOURCES = {"flutter_bootstrap.js": "a093b7f2dd31131e5882b54cff45beaa",
+const RESOURCES = {"flutter_bootstrap.js": "cecdd59e6dc42f441caa8de9e739c8d0",
 "version.json": "e70e89fcc5277e7423715a8d2014a9c1",
 "index.html": "ce3ec7b86dbaabeccc51f097f878bdb4",
 "/": "ce3ec7b86dbaabeccc51f097f878bdb4",
-"main.dart.js": "4dc006a2ef7931062989a57c30ae80ff",
+"main.dart.js": "fd85603c5104dd841b66a19cc34587a7",
 "flutter.js": "f393d3c16b631f36852323de8e583132",
 "favicon.png": "5dcef449791fa27946b3d35ad8803796",
 "icons/Icon-192.png": "ac9a721a12bbc803b44f645561ecb1e1",
@@ -22,7 +22,7 @@ const RESOURCES = {"flutter_bootstrap.js": "a093b7f2dd31131e5882b54cff45beaa",
 "assets/packages/cupertino_icons/assets/CupertinoIcons.ttf": "e986ebe42ef785b27164c36a9abc7818",
 "assets/shaders/ink_sparkle.frag": "ecc85a2e95f5e9f53123dcaf8cb9b6ce",
 "assets/AssetManifest.bin": "1e3eef112a133bf5e9b5d65a83e5f5cb",
-"assets/fonts/MaterialIcons-Regular.otf": "4473c7ca49f00cfb1e4cb26e323429e7",
+"assets/fonts/MaterialIcons-Regular.otf": "73652ea57326beb6c21cd08c9082784f",
 "assets/assets/images/bems-mark.png": "83b13227bff725d52b2d755e05433edb",
 "assets/assets/images/bems-logo.png": "83b13227bff725d52b2d755e05433edb",
 "assets/assets/images/onboarding/staff_slide_1.jpg": "051889bba41e46cf2f274c89b878062e",

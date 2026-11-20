@@ -7,14 +7,18 @@ import { recordWalletIssue } from './withdrawals';
 import { hasAuthorizedTransfer } from './transfer-authorization';
 export type WalletTransferProvider={submit:(intent:TransferIntent)=>Promise<unknown>;query:(reference:string)=>Promise<TransferEvidence>};
 const realProvider:WalletTransferProvider={submit:submitMonnifyTransfer,query:queryMonnifyTransfer};
-export async function processWalletTransfer(provider:WalletTransferProvider=realProvider) {
+export async function processWalletTransfer(provider:WalletTransferProvider=realProvider, targetWithdrawalId?: string) {
   requireWallet();
   if(process.env.BEMS_WALLET_TRANSFERS_ENABLED==='false')throw new WalletError('WITHDRAWALS_NOT_ACTIVATED','Transfer worker is disabled.',503);
   const {prisma}=await import('@/lib/prisma');
-  const [next]=await prisma.$queryRaw<any[]>`SELECT "employeeId","status" FROM "WalletWithdrawal" WHERE "status" IN ('HELD','SUBMITTING','PENDING','UNKNOWN','SUCCEEDED','FAILED') AND "nextAttemptAt"<=now() AND ("leaseUntil" IS NULL OR "leaseUntil"<now()) ORDER BY CASE WHEN "status"='HELD' THEN 1 ELSE 0 END,"nextAttemptAt" LIMIT 1`;
+  const [next]=targetWithdrawalId
+    ? await prisma.$queryRaw<any[]>`SELECT "employeeId","status" FROM "WalletWithdrawal" WHERE "id"=${targetWithdrawalId} LIMIT 1`
+    : await prisma.$queryRaw<any[]>`SELECT "employeeId","status" FROM "WalletWithdrawal" WHERE "status" IN ('HELD','SUBMITTING','PENDING','UNKNOWN','SUCCEEDED','FAILED') AND "nextAttemptAt"<=now() AND ("leaseUntil" IS NULL OR "leaseUntil"<now()) ORDER BY CASE WHEN "status"='HELD' THEN 1 ELSE 0 END,"nextAttemptAt" LIMIT 1`;
   if(next?.status==='HELD'){const employee=await prisma.employee.findUnique({where:{id:next.employeeId}});if(employee&&['STAFF','CUSTOM_ADMIN','GMD','SUPER_ADMIN','SYSTEM_ADMIN'].includes(employee.role)&&['ACTIVE','ON_LEAVE'].includes(employee.status))await(await import('./monnify-balance')).ensureWalletFundingFresh(employee,true);}
   const job=await walletTransaction(async tx=>{
-    const [w]=await tx.$queryRaw<any[]>`SELECT * FROM "WalletWithdrawal" WHERE "nextAttemptAt"<=now() AND ("leaseUntil" IS NULL OR "leaseUntil"<now()) AND "status" IN ('HELD','SUBMITTING','PENDING','UNKNOWN','SUCCEEDED','FAILED') ORDER BY CASE WHEN "status"='HELD' THEN 1 ELSE 0 END,"nextAttemptAt","id" LIMIT 1 FOR UPDATE SKIP LOCKED`;
+    const [w]=targetWithdrawalId
+      ? await tx.$queryRaw<any[]>`SELECT * FROM "WalletWithdrawal" WHERE "id"=${targetWithdrawalId} AND ("leaseUntil" IS NULL OR "leaseUntil"<now()) AND "status" IN ('HELD','SUBMITTING','PENDING','UNKNOWN') LIMIT 1 FOR UPDATE SKIP LOCKED`
+      : await tx.$queryRaw<any[]>`SELECT * FROM "WalletWithdrawal" WHERE "nextAttemptAt"<=now() AND ("leaseUntil" IS NULL OR "leaseUntil"<now()) AND "status" IN ('HELD','SUBMITTING','PENDING','UNKNOWN','SUCCEEDED','FAILED') ORDER BY CASE WHEN "status"='HELD' THEN 1 ELSE 0 END,"nextAttemptAt","id" LIMIT 1 FOR UPDATE SKIP LOCKED`;
     if(!w)return null;
     const curEnv = process.env.MONNIFY_ENVIRONMENT || process.env.MONNIFY_ENV || 'live';
     const curSource = process.env.MONNIFY_SOURCE_ACCOUNT || process.env.MONNIFY_WALLET_ACCOUNT_NUMBER || '';
@@ -52,7 +56,7 @@ export async function processWalletTransfer(provider:WalletTransferProvider=real
       await walletTransaction(async tx=>{
         await tx.$executeRaw`UPDATE "WalletWithdrawal" SET "status"='PENDING',"providerStatus"=${typeof submitted?.status==='string'?submitted.status.slice(0,80):null},"leaseUntil"=NULL,"leaseToken"=NULL,"nextAttemptAt"=now(),"lastError"=NULL WHERE "id"=${job.id} AND "leaseToken"=${job.leaseToken}`;
       });
-      return {processed:true,id:job.id,status:'PENDING'};
+      return {processed:true,id:job.id,status:'PENDING',providerStatus:submitted?.status||null,requiresProviderAuthorization:Boolean(submitted?.twoFaEnabled)};
     }
     const queryStartedAt=new Date();
     const evidence=await provider.query(job.reference);
@@ -69,6 +73,22 @@ export async function processWalletTransfer(provider:WalletTransferProvider=real
     });
     return {processed:true,id:job.id,status:'UNCONFIRMED'};
   }
+}
+
+export async function processSpecificWalletWithdrawal(withdrawalId: string) {
+  const submitResult: any = await processWalletTransfer(realProvider, withdrawalId);
+  if (submitResult?.status === 'PENDING' && !submitResult?.requiresProviderAuthorization) {
+    // Give Monnify a brief moment to settle, then query live status immediately
+    await new Promise((r) => setTimeout(r, 1500));
+    const queryResult: any = await processWalletTransfer(realProvider, withdrawalId).catch(() => null);
+    if (queryResult?.processed && queryResult?.status) {
+      return {
+        ...queryResult,
+        requiresProviderAuthorization: Boolean(submitResult?.requiresProviderAuthorization),
+      };
+    }
+  }
+  return submitResult;
 }
 export async function applyWalletEvidence(id:string,leaseToken:string,e:TransferEvidence,queryStartedAt:Date=new Date()){
   return walletTransaction(async tx=>{

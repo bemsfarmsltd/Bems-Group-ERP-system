@@ -57,10 +57,55 @@ export async function requestWalletWithdrawal(actor:WalletActor,input:any,proof?
     await tx.$executeRaw`INSERT INTO "WalletWithdrawal" ("id","employeeId","amountMinor","feeLimitMinor","reference","idempotencyKey","intentHash","environment","sourceAccount","bankAccountId","bankCode","accountNumber","accountName") VALUES (${id},${actor.id},${amount},${feeLimit},${reference},${intent.idempotencyKey},${hash(intent)},${monnifyEnv},${sourceAcc},${bank.id},${bank.bankCode},${bank.accountNumber},${bank.accountName})`;
     for(const a of intent.creditAllocations)await tx.$executeRaw`INSERT INTO "WalletWithdrawalAllocation" ("id","withdrawalId","creditLotId","amountMinor") VALUES (${randomUUID()},${id},${a.creditLotId},${BigInt(a.amountMinor)})`;
     await journal(tx,actor.id,'WITHDRAWAL_HELD',id,'STAFF:'+actor.id,'HELD:'+id,amount);
-    return {id,reference,status:'HELD',amountMinor:amount.toString(),alreadyExecuted:false,message:'Withdrawal reserved and queued. No second GMD approval is required.'};
+    return {id,reference,status:'HELD',amountMinor:amount.toString(),alreadyExecuted:false,message:'Withdrawal reserved and queued.'};
   });
-  void import('./runtime-worker').then(m => m.tickWalletWorker()).catch(() => {});
-  return result;
+  if (result.alreadyExecuted) {
+    return {
+      ...result,
+      confirmed: result.status === 'SUCCEEDED',
+    };
+  }
+  try {
+    const { processSpecificWalletWithdrawal } = await import('./worker');
+    const live: any = await processSpecificWalletWithdrawal(result.id);
+    const liveStatus = String(live?.status || 'PENDING');
+    if (liveStatus === 'SUCCEEDED') {
+      return {
+        ...result,
+        status: 'SUCCEEDED',
+        confirmed: true,
+        requiresProviderAuthorization: false,
+        message: 'Bank transfer confirmed by Monnify.',
+      };
+    }
+    if (liveStatus === 'FAILED' || liveStatus === 'REVERSED') {
+      throw new WalletError(
+        'TRANSFER_FAILED',
+        'Monnify could not complete this bank transfer. Your approved funds remain safely in your wallet.',
+        409
+      );
+    }
+    const requiresAuth = Boolean(live?.requiresProviderAuthorization);
+    return {
+      ...result,
+      status: 'PENDING',
+      confirmed: false,
+      requiresProviderAuthorization: requiresAuth,
+      message: requiresAuth
+        ? 'Submitted to Monnify, awaiting Monnify 2FA/OTP authorization. Not yet settled.'
+        : 'Submitted to Monnify and awaiting bank settlement confirmation.',
+    };
+  } catch (err) {
+    if (err instanceof WalletError) throw err;
+    void import('./runtime-worker').then(m => m.tickWalletWorker()).catch(() => {});
+    return {
+      ...result,
+      status: 'PENDING',
+      confirmed: false,
+      requiresProviderAuthorization: false,
+      message: 'Submitted to Monnify and awaiting bank settlement confirmation.',
+    };
+  }
 }
 export async function recordWalletIssue(tx:Prisma.TransactionClient,code:string,detail:string,reference:string|null=null){
   await tx.$executeRaw`INSERT INTO "WalletReconciliationIssue" ("id","code","detail","reference") SELECT ${randomUUID()},${code},${detail},${reference} WHERE NOT EXISTS (SELECT 1 FROM "WalletReconciliationIssue" WHERE "code"=${code} AND "reference" IS NOT DISTINCT FROM ${reference} AND "resolvedAt" IS NULL)`;
