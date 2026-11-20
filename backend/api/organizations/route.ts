@@ -272,39 +272,8 @@ export async function POST(req: Request) {
       }
     }
 
-    // 4. Create Initial Active Budget if amount provided
-    const budgetAmount = Number(initialBudget) || 0;
-    if (budgetAmount > 0) {
-      const [pool] = await prisma.$queryRaw<Array<{ availableMinor: bigint }>>`SELECT "availableMinor" FROM "WalletFundingPool" WHERE "id" = 'MONNIFY_NGN'`;
-      if (pool && pool.availableMinor > BigInt(0)) {
-        const maxAllowed = Number(pool.availableMinor) / 100;
-        if (budgetAmount > maxAllowed) {
-          return NextResponse.json(
-            { error: `Subsidiary budget cannot exceed the available Monnify balance (₦${maxAllowed.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}).` },
-            { status: 400 }
-          );
-        }
-      }
-      const now = new Date();
-      const fiscalYear = now.getFullYear();
-      const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-      const periodName = `${monthNames[now.getMonth()]} ${fiscalYear}`;
-      try {
-        await prisma.budget.create({
-          data: {
-            organizationId: newOrg.id,
-            fiscalYear,
-            fiscalPeriod: 'MONTHLY',
-            periodName,
-            totalAmount: budgetAmount,
-            committedAmount: 0,
-            spentAmount: 0,
-            status: 'ACTIVE',
-            warningThreshold: 80.0,
-          },
-        });
-      } catch {}
-    }
+    // Budgets are allocated exclusively from Monnify backing in Wallets & Funded Budgets.
+    const budgetAmount = 0;
 
     return NextResponse.json(
       {

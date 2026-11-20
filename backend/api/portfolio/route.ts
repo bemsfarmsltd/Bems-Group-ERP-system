@@ -21,20 +21,18 @@ export async function GET(request: Request) {
     if (cached) {
       return NextResponse.json(cached);
     }
-    const [organizations, budgets, requests, intercompanyNotes, departments, assignments, disbursements, accountabilityCases, companyBankAccounts, allStaffEmployees] = await Promise.all([
+    const [organizations, walletEnvelopes, requests, intercompanyNotes, departments, assignments, disbursements, accountabilityCases, companyBankAccounts, allStaffEmployees] = await Promise.all([
       prisma.organization.findMany({
         orderBy: { createdAt: 'asc' },
         include: {
           settings: true,
         },
       }),
-      prisma.budget.findMany({
-        where: { status: 'ACTIVE' },
-        include: {
-          organization: true,
-          lines: true,
-        },
-      }),
+      prisma.$queryRaw<Array<{ organizationId: string; allocatedMinor: bigint; remainingMinor: bigint }>>`
+        SELECT "organizationId", "allocatedMinor", "remainingMinor"
+        FROM "WalletBudgetEnvelope"
+        WHERE "status" = 'ACTIVE'
+      `,
       prisma.expenditureRequest.findMany({
         include: {
           subsidiary: true,
@@ -139,19 +137,20 @@ export async function GET(request: Request) {
     ]);
 
     const portfolio = organizations.map((org) => {
-      const orgBudgets = budgets.filter((b) => b.organizationId === org.id);
-      const totalBudget = orgBudgets.reduce((acc, b) => acc + Number(b.totalAmount), 0);
+      const orgEnvelopes = walletEnvelopes.filter((e) => e.organizationId === org.id);
+      const totalBudget = orgEnvelopes.reduce((acc, e) => acc + Number(e.allocatedMinor) / 100, 0);
+      const moneyLeft = orgEnvelopes.reduce((acc, e) => acc + Number(e.remainingMinor) / 100, 0);
 
       const orgDisbursements = disbursements.filter((d) => d.payerOrgId === org.id);
-      const totalSpent = orgDisbursements.reduce((acc, d) => acc + Number(d.amountMinor) / 100, 0);
+      const envelopeSpent = Math.max(0, totalBudget - moneyLeft);
+      const totalSpent = totalBudget > 0 ? envelopeSpent : orgDisbursements.reduce((acc, d) => acc + Number(d.amountMinor) / 100, 0);
 
       const orgRequests = requests.filter((r) => r.subsidiaryId === org.id);
       const totalCommitted = orgRequests
         .filter((r) => r.approvalStatus === 'APPROVED' && !['SETTLED', 'RECIPIENT_CONFIRMED', 'PAID'].includes(r.paymentStatus))
         .reduce((acc, r) => acc + Number(r.amountMinor) / 100, 0);
 
-      const moneyLeft = Math.max(0, totalBudget - (totalSpent + totalCommitted));
-      const utilisationPct = totalBudget > 0 ? Math.min(100, Math.round(((totalSpent + totalCommitted) / totalBudget) * 100)) : 0;
+      const utilisationPct = totalBudget > 0 ? Math.min(100, Math.round((envelopeSpent / totalBudget) * 100)) : 0;
 
       const pendingApprovals = orgRequests.filter((r) => r.approvalStatus === 'SUBMITTED' || r.approvalStatus === 'IN_REVIEW').length;
 

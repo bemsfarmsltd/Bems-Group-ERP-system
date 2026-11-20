@@ -207,33 +207,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ or
         }
       }
 
-      // 3. Update or create Active Budget if provided
-      if (monthlyBudget !== undefined && monthlyBudget >= 0) {
-        const activeBudget = current.budgets[0];
-        if (activeBudget) {
-          await tx.budget.update({
-            where: { id: activeBudget.id },
-            data: { totalAmount: monthlyBudget },
-          });
-        } else {
-          const now = new Date();
-          const fiscalYear = now.getFullYear();
-          const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-          await tx.budget.create({
-            data: {
-              organizationId,
-              fiscalYear,
-              fiscalPeriod: 'MONTHLY',
-              periodName: `${monthNames[now.getMonth()]} ${fiscalYear}`,
-              totalAmount: monthlyBudget,
-              committedAmount: 0,
-              spentAmount: 0,
-              status: 'ACTIVE',
-              warningThreshold: 80.0,
-            },
-          });
-        }
-      }
+      // Budgets are managed exclusively via Monnify-backed WalletBudgetEnvelope in Wallets & Funded Budgets.
 
       // 4. Create Audit Event
       await tx.auditEvent.create({

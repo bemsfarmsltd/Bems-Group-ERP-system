@@ -403,8 +403,6 @@ export function SubsidiaryPortfolioView({
         leadTitle: newSubLeadTitle.trim() || undefined,
         leadEmail: newSubLeadEmail.trim() || undefined,
         leadPhone: newSubLeadPhone.trim() || undefined,
-        initialBudget: Number(newSubBudget) || 0,
-        monthlyBudget: Number(newSubBudget) || 0,
         departments: newSubDepts,
         staffIds: newSubStaffIds,
       };
@@ -2031,26 +2029,41 @@ export function SubsidiaryPortfolioView({
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '14px', marginBottom: '18px' }}>
                 <div>
                   <label style={{ fontSize: '11px', fontWeight: '750', color: '#1e293b', display: 'block', marginBottom: '4px' }}>
-                    3. Monthly Budget Allocation (NGN ₦)
+                    3. Funded Budget (Monnify-Backed)
                   </label>
-                  <input
-                    type="number"
-                    placeholder="20000000"
-                    value={newSubBudget}
-                    onChange={(e) => setNewSubBudget(e.target.value)}
+                  <div
                     style={{
-                      width: '100%',
-                      padding: '8px 12px',
+                      padding: '10px 12px',
                       borderRadius: '8px',
-                      border: '1px solid #cbd5e1',
-                      fontSize: '12px',
-                      color: '#0f172a',
-                      fontWeight: '700',
+                      border: '1px solid #e2e8f0',
+                      background: '#f8fafc',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '6px',
                     }}
-                  />
-                  <small style={{ fontSize: '9px', color: '#059669', display: 'block', marginTop: '3px', fontWeight: '600' }}>
-                    {formatNaira(Number(newSubBudget) || 0)} monthly operational allocation.
-                  </small>
+                  >
+                    <strong style={{ fontSize: '13px', color: '#0f172a', fontWeight: '800' }}>
+                      {formatNaira(Number(newSubBudget) || 0)}
+                    </strong>
+                    <span style={{ fontSize: '10px', color: '#64748b', lineHeight: 1.4 }}>
+                      Subsidiary budgets are funded exclusively from verified Monnify backing.
+                    </span>
+                    <a
+                      href={editingSubId ? `/finance?org=${encodeURIComponent(editingSubId)}&tab=Wallets+%26+funded+budgets` : '/wallet/funding'}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        fontSize: '10.5px',
+                        fontWeight: '700',
+                        color: '#ea580c',
+                        textDecoration: 'none',
+                        marginTop: '2px',
+                      }}
+                    >
+                      Allocate in Wallets &amp; Funded Budgets →
+                    </a>
+                  </div>
                 </div>
 
                 <div>
