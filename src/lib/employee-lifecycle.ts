@@ -324,6 +324,18 @@ export async function approveEmployeeOnboarding(params: {
     return emp;
   });
 
+  void import('@/lib/notifications/policy-matrix').then(m => m.dispatchMatrixNotifications({
+    eventKey: 'STAFF_ONBOARDING',
+    title: `Staff Approved: ${target.legalName}`,
+    body: `${target.legalName} (${finalRole}) onboarding was approved by ${params.actor.legalName}.`,
+    category: 'GENERAL',
+    priority: 'IMPORTANT',
+    actionLabel: 'View Staff',
+    actionUrl: '/hr?tab=employees',
+    targetEmployeeId: target.id,
+    skipTargetInApp: true,
+  })).catch(() => {});
+
 
 
   return updated;

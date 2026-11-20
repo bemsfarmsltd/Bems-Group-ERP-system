@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma';
-import { getExecutiveRecipients, sendEmail } from '@/lib/email';
+import { sendEmail } from '@/lib/email';
 import { queryDailyAttendanceRoster } from '@/lib/services/attendance-roster';
+import { getChannelConfigFromMatrix, getNotificationPolicyMatrix } from '@/lib/notifications/policy-matrix';
 import type { AuthenticatedEmployee } from '@/lib/auth';
 
 function escapeHtml(value: string): string {
@@ -52,14 +53,26 @@ export async function sendDailyAttendanceDigestEmail(params: SendDailyAttendance
     redactSensitivePins: true,
   });
 
-  const targetEmails =
-    params.recipients && params.recipients.length > 0
-      ? params.recipients.map((e) => e.trim()).filter(Boolean)
-      : (await getExecutiveRecipients()).map((r) => r.email);
+  let targetEmails: string[] = [];
+  if (params.recipients && params.recipients.length > 0) {
+    targetEmails = params.recipients.map((e) => e.trim()).filter(Boolean);
+  } else {
+    const [execs, matrix] = await Promise.all([
+      prisma.employee.findMany({
+        where: { status: 'ACTIVE', approvalStatus: 'APPROVED', role: { in: ['GMD', 'SUPER_ADMIN', 'SYSTEM_ADMIN', 'CUSTOM_ADMIN'] } },
+        select: { id: true, workEmail: true, role: true, customAdminProfileId: true },
+      }),
+      getNotificationPolicyMatrix(prisma),
+    ]);
+    targetEmails = execs
+      .filter((e) => getChannelConfigFromMatrix(matrix, e.role, e.customAdminProfileId, 'ATTENDANCE_DAILY_DIGEST').email)
+      .map((e) => e.workEmail)
+      .filter((e): e is string => Boolean(e && e.includes('@')));
+  }
 
   const uniqueEmails = Array.from(new Set(targetEmails));
   if (uniqueEmails.length === 0) {
-    return { success: false, date: data.targetDate, sentCount: 0, error: 'No executive email recipients found.' };
+    return { success: false, date: data.targetDate, sentCount: 0, error: 'No enabled email recipients for ATTENDANCE_DAILY_DIGEST.' };
   }
 
   const statusRank: Record<string, number> = {

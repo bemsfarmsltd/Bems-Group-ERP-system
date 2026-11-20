@@ -709,6 +709,28 @@ export async function shouldDeliverNotification(params: {
   }
 }
 
+export async function canDeliverToEmployee(
+  employeeId: string,
+  eventKey: string,
+  channel: NotificationChannelKey
+): Promise<boolean> {
+  try {
+    const emp = await prisma.employee.findUnique({
+      where: { id: employeeId },
+      select: { role: true, customAdminProfileId: true },
+    });
+    if (!emp) return true;
+    return shouldDeliverNotification({
+      role: emp.role,
+      customAdminProfileId: emp.customAdminProfileId,
+      eventKey,
+      channel,
+    });
+  } catch {
+    return true;
+  }
+}
+
 export async function dispatchMatrixNotifications(params: {
   eventKey: string;
   title: string;

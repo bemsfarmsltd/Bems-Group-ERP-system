@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { sendEmail } from '@/lib/email';
 import { getLagosTime } from '@/lib/attendance/token';
+import { getChannelConfigFromMatrix, getNotificationPolicyMatrix } from '@/lib/notifications/policy-matrix';
 
 function escapeHtml(value: string): string {
   return value
@@ -69,6 +70,9 @@ export async function sendWeeklyStaffDeductionSummaries() {
   let emailsSent = 0;
   let emailsSkipped = 0;
 
+  const matrix = await getNotificationPolicyMatrix(prisma);
+  const staffChannelCfg = getChannelConfigFromMatrix(matrix, 'STAFF', null, 'ATTENDANCE_WEEKLY_SUMMARY');
+
   for (const emp of staffList) {
     const grossMinor = Number(emp.employmentAgreements?.[0]?.compensations?.[0]?.grossMinor ?? BigInt(0));
     const subsidiaryId = emp.assignments?.[0]?.subsidiaryId || null;
@@ -96,33 +100,35 @@ export async function sendWeeklyStaffDeductionSummaries() {
       ? `Month-to-date (${monthPrefix}): ${lateCount} late day(s), ${absentCount} absent day(s). Total deductions: ${formatNaira(totalDeductionMinor)} (${cappedPercent}%). Estimated remaining salary: ${formatNaira(remainingSalaryMinor)} out of ${formatNaira(grossMinor)}.`
       : `Great job! You have ₦0 attendance deductions so far for ${monthPrefix}. Estimated remaining salary: ${formatNaira(remainingSalaryMinor)}.`;
 
-    await prisma.systemNotification.create({
-      data: {
-        employeeId: emp.id,
-        subsidiaryId,
-        category: 'PAYROLL_DEDUCTIONS',
-        priority: hasDeductions ? 'IMPORTANT' : 'INFORMATIONAL',
-        kind: 'WEEKLY_DEDUCTION_SUMMARY',
-        title: notifTitle,
-        body: notifBody,
-        actionLabel: 'View Deductions',
-        actionUrl: '/deductions',
-        metadata: {
-          month: monthPrefix,
-          asOfDate: workDate,
-          grossMinor,
-          deductionMinor: totalDeductionMinor,
-          remainingMinor: remainingSalaryMinor,
-          lateCount,
-          absentCount,
-          totalPercent: cappedPercent,
+    if (staffChannelCfg.inApp) {
+      await prisma.systemNotification.create({
+        data: {
+          employeeId: emp.id,
+          subsidiaryId,
+          category: 'PAYROLL_DEDUCTIONS',
+          priority: hasDeductions ? 'IMPORTANT' : 'INFORMATIONAL',
+          kind: 'WEEKLY_DEDUCTION_SUMMARY',
+          title: notifTitle,
+          body: notifBody,
+          actionLabel: 'View Deductions',
+          actionUrl: '/deductions',
+          metadata: {
+            month: monthPrefix,
+            asOfDate: workDate,
+            grossMinor,
+            deductionMinor: totalDeductionMinor,
+            remainingMinor: remainingSalaryMinor,
+            lateCount,
+            absentCount,
+            totalPercent: cappedPercent,
+          },
         },
-      },
-    });
-    notificationsCreated++;
+      });
+      notificationsCreated++;
+    }
 
     const email = emp.workEmail?.trim();
-    if (!email || !email.includes('@') || email.toLowerCase().endsWith('@bems.internal')) {
+    if (!staffChannelCfg.email || !email || !email.includes('@') || email.toLowerCase().endsWith('@bems.internal')) {
       emailsSkipped++;
       continue;
     }

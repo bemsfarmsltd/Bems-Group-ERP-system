@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { sendEmail } from '@/lib/email';
+import { canDeliverToEmployee } from '@/lib/notifications/policy-matrix';
 
 function escapeHtml(value: string): string {
   return value
@@ -37,6 +38,11 @@ export interface StaffAttendanceDeductionEmailParams {
  */
 export async function sendStaffAttendanceDeductionEmail(params: StaffAttendanceDeductionEmailParams) {
   try {
+    const eventKey = params.reasonType === 'ABSENT' ? 'ATTENDANCE_ABSENCE_SWEEP' : 'ATTENDANCE_CLOCK_IN';
+    const emailAllowed = await canDeliverToEmployee(params.employeeId, eventKey, 'email');
+    if (!emailAllowed) {
+      return { success: false, skipped: true };
+    }
     const email = params.workEmail?.trim();
     if (!email || !email.includes('@') || email.toLowerCase().endsWith('@bems.internal')) {
       return { success: false, skipped: true };

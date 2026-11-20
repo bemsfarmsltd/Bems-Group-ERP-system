@@ -66,6 +66,17 @@ export async function checkApprovalPin(tx: Tx, actor: WalletActor, pin: unknown)
     body: `${actor.legalName} entered an incorrect approval PIN three times. ${actor.role === 'GMD' ? 'Sign-in and financial approvals are' : 'Financial approvals are'} locked until recovery is authorized.`,
     linkUrl: '/control-center?section=wallet-approval',
   })) });
+  void import('@/lib/notifications/policy-matrix').then(m => m.dispatchMatrixNotifications({
+    eventKey: 'SECURITY_PIN_RECOVERY',
+    title: 'Wallet Approval PIN Locked',
+    body: `${actor.legalName} entered an incorrect approval PIN three times and is locked pending recovery.`,
+    category: 'SECURITY',
+    priority: 'CRITICAL',
+    actionLabel: 'Open Wallet Security',
+    actionUrl: '/control-center?section=wallet-approval',
+    targetEmployeeId: actor.id,
+    skipTargetInApp: true,
+  })).catch(() => {});
   return new WalletError('APPROVAL_PIN_LOCKED', actor.role === 'GMD' ? 'Sign-in and financial approval locked after three incorrect PIN entries. Contact your System Admin.' : 'Financial approval locked after three incorrect PIN entries.', 423);
 }
 
