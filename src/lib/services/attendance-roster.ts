@@ -50,7 +50,7 @@ export async function queryDailyAttendanceRoster(
     prisma.employee.findMany({
       where: {
         status: 'ACTIVE',
-        role: { in: ['STAFF', 'CUSTOM_ADMIN'] },
+        role: 'STAFF',
         isAttendanceExempt: false,
         ...(scopedSubsidiaryIds !== null
           ? { assignments: { some: { subsidiaryId: { in: scopedSubsidiaryIds }, status: 'ACTIVE' } } }
