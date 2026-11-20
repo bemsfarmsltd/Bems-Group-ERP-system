@@ -58,7 +58,7 @@ export async function GET(request: Request) {
   const grossMinor = activeComp ? Number(activeComp.grossMinor) : 0;
 
   // Company Policy: Zero Tax / PAYE / Pension Deductions.
-  // Automated attendance deductions: 5% of monthly salary per late morning, 10% per unexcused absence (capped at 100%).
+  // Automated attendance deductions: 2% of monthly salary per late morning, 5% per unexcused absence (capped at 100%).
   const { workDate } = getLagosTime();
   const currentMonthPrefix = workDate.slice(0, 7);
   const currentMonthRecords = await prisma.attendanceRecord.findMany({

@@ -134,7 +134,7 @@ export async function POST(request: Request) {
 
     const isLate = minutesSinceMidnight > cutoffMinutes;
     const status = isLate ? 'LATE' : 'PRESENT';
-    const deductionPercent = isLate ? (policy?.latenessDeductionPercent ?? 5.0) : 0.0;
+    const deductionPercent = isLate ? (policy?.latenessDeductionPercent ?? 2.0) : 0.0;
     const monthlyGrossMinor = isLate ? await getEmployeeMonthlyGrossMinor(matched.id) : BigInt(0);
     const deductionMinor = isLate ? computeMonthlyDeductionMinor(monthlyGrossMinor, deductionPercent) : BigInt(0);
 

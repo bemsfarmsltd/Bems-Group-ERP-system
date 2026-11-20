@@ -322,7 +322,7 @@ export async function GET(req: NextRequest) {
 
     const safeItems = scopedBatchItems.map(item => {
       const attStats = attendanceDeductionByEmployee.get(item.employee.id) || { countLate: 0, countAbsent: 0, totalPercent: 0 };
-      // Company Policy: 5% of monthly salary per late morning, 10% of monthly salary per full-day absence (capped at 100%).
+      // Company Policy: 2% of monthly salary per late morning, 5% of monthly salary per full-day absence (capped at 100%).
       const cappedPercent = Math.min(100, Math.max(0, attStats.totalPercent));
       const attendancePenaltyMinor = Math.round((Number(item.grossMinor) * cappedPercent) / 100);
 

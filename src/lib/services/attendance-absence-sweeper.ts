@@ -133,7 +133,7 @@ export async function markDailyAbsences(params: MarkDailyAbsencesParams = {}) {
 
     const orgId = emp.assignments?.[0]?.subsidiaryId || '';
     const policy = policyByOrg.get(orgId);
-    const absencePercent = policy?.absenceDeductionPercent ?? 10.0;
+    const absencePercent = policy?.absenceDeductionPercent ?? 5.0;
     const grossMinor = emp.employmentAgreements?.[0]?.compensations?.[0]?.grossMinor ?? BigInt(0);
     const deductionMinor = computeMonthlyDeductionMinor(grossMinor, absencePercent);
 
