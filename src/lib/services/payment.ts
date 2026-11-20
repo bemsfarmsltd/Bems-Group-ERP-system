@@ -105,5 +105,16 @@ export async function recordTransfer(tx: Prisma.TransactionClient, input: Transf
   await tx.systemNotification.create({ data: { employeeId: employee.id, kind: 'PAYMENT_CONFIRMATION_REQUIRED', title: 'Confirm payment received', body: 'Review the recorded bank transfer and confirm whether the funds reached your account.', linkUrl: request ? '/requests/' + request.requestNumber : '/payroll' } });
   const org = await tx.organization.findUnique({ where: { id: bank.organizationId }, select: { parentGroupId: true } });
   await tx.auditEvent.create({ data: { actorId: actor.id, actorName: actor.legalName, actorRole: actor.role, groupId: org?.parentGroupId || bank.organizationId, subsidiaryId: request?.subsidiaryId || bank.organizationId, targetType: 'DISBURSEMENT', targetId: payment.id, action: 'PAYMENT_RECORDED', correlationId: input.idempotencyKey, metadata: JSON.stringify({ payerAccountId: bank.id, amountMinor: input.amountMinor.toString(), reference: input.reference, receiptHash }) } });
+  void import('@/lib/notifications/policy-matrix').then(m => m.dispatchMatrixNotifications({
+    eventKey: 'DISBURSEMENT_RECORDED',
+    title: `Disbursement Recorded: ₦${(Number(input.amountMinor) / 100).toLocaleString('en-NG')}`,
+    body: `${actor.legalName} recorded bank transfer ref ${input.reference} to ${name} via ${bank.bankName}.`,
+    category: 'REQUESTS_APPROVALS',
+    priority: 'IMPORTANT',
+    actionLabel: 'View Disbursements',
+    actionUrl: request ? `/requests/${request.requestNumber}` : '/finance',
+    targetEmployeeId: employee.id,
+    skipTargetInApp: true,
+  })).catch(() => {});
   return payment;
 }

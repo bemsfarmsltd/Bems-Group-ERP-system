@@ -26,6 +26,16 @@ export async function POST(request: Request) {
     if (!actor) return NextResponse.json({ error: 'Sign in to assign a task.' }, { status: 401 });
     const body = await request.json();
     const task = await executeDashboardCommand(actor, 'task_action', { ...body, sub_action: 'CREATE_TASK' });
+    void import('@/lib/notifications/policy-matrix').then(m => m.dispatchMatrixNotifications({
+      eventKey: 'PROJECT_TASK_ASSIGNED',
+      title: `Task Assigned: ${String(body.title || 'New Task')}`,
+      body: `${actor.legalName} assigned a new task${body.dueAt ? ` due ${String(body.dueAt).slice(0, 10)}` : ''}.`,
+      category: 'TASKS',
+      priority: 'IMPORTANT',
+      actionLabel: 'View Tasks',
+      actionUrl: '/projects',
+      targetEmployeeId: body.assigneeId ? String(body.assigneeId) : null,
+    })).catch(() => {});
     return NextResponse.json({ task }, { status: 201 });
   } catch (error: any) { return NextResponse.json({ error: error.message }, { status: 400 }); }
 }

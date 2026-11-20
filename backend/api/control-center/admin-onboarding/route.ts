@@ -300,6 +300,16 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    void import('@/lib/notifications/policy-matrix').then(m => m.dispatchMatrixNotifications({
+      eventKey: 'ADMIN_ROLE_POLICY_CHANGE',
+      title: mode === 'PROMOTE_STAFF' ? `Staff Admin Promotion Sent (${roleLabel})` : `Executive Admin Invite Sent (${roleLabel})`,
+      body: `${actor.legalName} dispatched an ${roleLabel} onboarding invitation to ${workEmail}.`,
+      category: 'SECURITY',
+      priority: 'CRITICAL',
+      actionLabel: 'Open Control Center',
+      actionUrl: '/control-center?section=onboarding',
+    })).catch(() => {});
+
     return NextResponse.json({
       success: true,
       mode,

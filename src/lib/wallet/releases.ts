@@ -130,6 +130,7 @@ export async function approveWalletRelease(actor:WalletActor,id:string,confirmat
   if(!(await canActorApproveFunds(actor)))throw new WalletError('GMD_REQUIRED','Only the designated GMD can release funds (unless explicitly permitted in Control Center).',403);
   await (await import('./monnify-balance')).ensureWalletFundingFresh(actor);
   const approvals: Parameters<typeof sendApprovalDecisionEmail>[0][] = [];
+  const lowBudgetAlerts: Array<{ orgName: string; remainingPct: number; remainingMinor: bigint }> = [];
   const result = await walletTransaction(async tx=>{
     await assertPayoutsEnabled(tx);
     await liveWalletActor(tx,actor,true);
@@ -176,6 +177,7 @@ export async function approveWalletRelease(actor:WalletActor,id:string,confirmat
     const fees=await requiredFeeReserve(tx,source.items,extraDirectFee);
     if(fees>currentFunding.feeReserveMinor){const increase=fees-currentFunding.feeReserveMinor;if(increase>currentFunding.freeMinor)throw new WalletError('FEE_RESERVE_INSUFFICIENT','Fund company fees as well as staff/vendor principal before approval.',409);await tx.$executeRaw`UPDATE "WalletFundingPool" SET "feeReserveMinor"=${fees} WHERE "id"='MONNIFY_NGN'`;}
     await tx.$executeRaw`UPDATE "WalletReleaseProposal" SET "status"='EXECUTED',"approvedById"=${actor.id},"approvedAt"=now() WHERE "id"=${id}`;
+    lowBudgetAlerts.length = 0;
     for(const i of items) {
       const count=await tx.$executeRaw`UPDATE "WalletBudgetEnvelope" SET "remainingMinor"="remainingMinor"-${i.amountMinor},"version"="version"+1 WHERE "id"=${i.envelopeId} AND "organizationId"=${i.organizationId} AND "status"='ACTIVE' AND "remainingMinor">=${i.amountMinor}`;
       if(count!==1)throw new WalletError('BUDGET_EXCEEDED','A funded subsidiary budget cannot cover this release.',409);
@@ -200,6 +202,27 @@ export async function approveWalletRelease(actor:WalletActor,id:string,confirmat
       const org=await tx.organization.findUniqueOrThrow({where:{id:i.organizationId}});
       await tx.auditEvent.create({data:{actorId:actor.id,actorName:actor.legalName,actorRole:actor.role,groupId:org.parentGroupId||org.id,subsidiaryId:org.id,targetType:'WALLET_CREDIT',targetId:creditId,action:'GMD_WALLET_RELEASED',correlationId:id,metadata:JSON.stringify({approvalAuthority:actor.role,temporarySuperAdminAccess:actor.role!=='GMD',amountMinor:i.amountMinor.toString(),sourceId:i.sourceId,envelopeId:i.envelopeId,confirmationHash,note})}});
       await tx.systemNotification.create({data:{employeeId:i.employeeId,kind:'WALLET_CREDITED',title:'Approved funds added to your wallet',body:'An authorized executive approved your payment. View the source and available funds in your wallet.',linkUrl:'/wallet'}});
+    }
+    const affectedEnvelopeIds = [...new Set(items.map((i: any) => i.envelopeId).filter(Boolean))];
+    if (affectedEnvelopeIds.length > 0) {
+      const updatedEnvelopes = await tx.walletBudgetEnvelope.findMany({
+        where: { id: { in: affectedEnvelopeIds } },
+      });
+      const orgIds = [...new Set(updatedEnvelopes.map(e => e.organizationId))];
+      const orgs = orgIds.length > 0
+        ? await tx.organization.findMany({ where: { id: { in: orgIds } }, select: { id: true, legalName: true } })
+        : [];
+      const orgNameById = new Map(orgs.map(o => [o.id, o.legalName]));
+      for (const env of updatedEnvelopes) {
+        if (env.allocatedMinor > BigInt(0) && (env.remainingMinor * BigInt(100)) < (env.allocatedMinor * BigInt(15))) {
+          const remainingPct = Number((env.remainingMinor * BigInt(100)) / env.allocatedMinor);
+          lowBudgetAlerts.push({
+            orgName: orgNameById.get(env.organizationId) || env.organizationId,
+            remainingPct,
+            remainingMinor: env.remainingMinor,
+          });
+        }
+      }
     }
     for (const requestId of requestIds) {
       const request=await tx.expenditureRequest.findUniqueOrThrow({where:{id:requestId},include:{requester:true}});
@@ -239,6 +262,17 @@ export async function approveWalletRelease(actor:WalletActor,id:string,confirmat
       actionLabel: 'Open Wallet Funding',
       actionUrl: '/wallet/funding',
     })).catch(() => {});
+    for (const alert of lowBudgetAlerts) {
+      void import('@/lib/notifications/policy-matrix').then(m => m.dispatchMatrixNotifications({
+        eventKey: 'BUDGET_THRESHOLD',
+        title: `Budget Threshold Alert: ${alert.orgName} (${alert.remainingPct}% left)`,
+        body: `Subsidiary wallet budget envelope for ${alert.orgName} dropped to ${alert.remainingPct}% remaining (₦${(Number(alert.remainingMinor) / 100).toLocaleString('en-NG')}).`,
+        category: 'PAYROLL_DEDUCTIONS',
+        priority: 'CRITICAL',
+        actionLabel: 'Open Wallet Funding',
+        actionUrl: '/wallet/funding',
+      })).catch(() => {});
+    }
   }
   void import('./runtime-worker').then(m => m.tickWalletWorker()).catch(() => {});
   return result;

@@ -1495,6 +1495,17 @@ export async function executeBusinessCommand(tx: Prisma.TransactionClient, input
               reason: decisionNote || undefined,
             }).catch((err) => console.error(`[Approval Email Failed] ${updatedReq.requestNumber}:`, err));
           }
+          void import('./notifications/policy-matrix').then(m => m.dispatchMatrixNotifications({
+            eventKey: 'REQUEST_DECISION',
+            title: `Request ${updatedReq.requestNumber} ${newStatus}`,
+            body: `"${updatedReq.title}" (₦${(Number(updatedReq.amountMinor) / 100).toLocaleString('en-NG')}) was marked ${newStatus} by ${actor.legalName}.`,
+            category: 'REQUESTS_APPROVALS',
+            priority: 'IMPORTANT',
+            actionLabel: 'View Request',
+            actionUrl: `/requests/${updatedReq.requestNumber}`,
+            targetEmployeeId: req.requestedById,
+            skipTargetInApp: true,
+          })).catch(() => {});
         }
 
         updatedResults.push(
@@ -1677,6 +1688,17 @@ export async function executeBusinessCommand(tx: Prisma.TransactionClient, input
         },
       });
       notificationsDeliveredIds.push(employee_id);
+      void import('./notifications/policy-matrix').then(m => m.dispatchMatrixNotifications({
+        eventKey: 'SALARY_COMPENSATION_CHANGE',
+        title: `Salary Updated: ₦${(Number(compResult.newGrossMinor) / 100).toLocaleString('en-NG')}`,
+        body: `${compResult.notificationBody} (Updated by ${actor.legalName})`,
+        category: 'PAYROLL_DEDUCTIONS',
+        priority: 'CRITICAL',
+        actionLabel: 'Open Payroll',
+        actionUrl: '/payroll',
+        targetEmployeeId: employee_id,
+        skipTargetInApp: true,
+      })).catch(() => {});
 
       recordType = 'compensation';
       recordId = employee_id;
@@ -1755,6 +1777,17 @@ export async function executeBusinessCommand(tx: Prisma.TransactionClient, input
         },
       });
       notificationsDeliveredIds.push(employee_id);
+      void import('./notifications/policy-matrix').then(m => m.dispatchMatrixNotifications({
+        eventKey: 'ADMIN_ROLE_POLICY_CHANGE',
+        title: `System Role Updated: ${emp.legalName}`,
+        body: `${emp.legalName}'s BEMS role was updated from ${emp.role} to ${updated.role} by ${actor.legalName}.`,
+        category: 'SECURITY',
+        priority: 'CRITICAL',
+        actionLabel: 'Open Control Center',
+        actionUrl: '/control-center',
+        targetEmployeeId: employee_id,
+        skipTargetInApp: true,
+      })).catch(() => {});
 
       recordType = 'employee';
       recordId = updated.employeeNumber;
@@ -3093,6 +3126,17 @@ export async function executeBusinessCommand(tx: Prisma.TransactionClient, input
           },
         });
         notificationsDeliveredIds.push(emp.id);
+        void import('./notifications/policy-matrix').then(m => m.dispatchMatrixNotifications({
+          eventKey: 'ATTENDANCE_OVERRIDE',
+          title: `Attendance Adjusted (${targetDate})`,
+          body: `${emp.legalName}'s attendance for ${targetDate} was updated to ${targetStatus} (${deductionPercent}% penalty) by ${actor.legalName}.`,
+          category: 'ATTENDANCE',
+          priority: 'IMPORTANT',
+          actionLabel: 'View Attendance',
+          actionUrl: '/attendance',
+          targetEmployeeId: emp.id,
+          skipTargetInApp: true,
+        })).catch(() => {});
         recordType = 'attendance';
         recordId = attendance.id;
         url = `/attendance`;
@@ -3864,6 +3908,16 @@ export async function executeBusinessCommand(tx: Prisma.TransactionClient, input
       } else {
         throw new Error(`Unsupported payroll_action sub_action: ${subAction}`);
       }
+
+      void import('./notifications/policy-matrix').then(m => m.dispatchMatrixNotifications({
+        eventKey: 'PAYROLL_LIFECYCLE',
+        title: `Payroll ${subAction.replace(/_/g, ' ')}: ${year}-${String(month).padStart(2, '0')}`,
+        body: `${actor.legalName} executed payroll action ${subAction.replace(/_/g, ' ')} for ${year}-${String(month).padStart(2, '0')}.`,
+        category: 'PAYROLL_DEDUCTIONS',
+        priority: ['APPROVE', 'DISBURSE', 'MARK_PAID', 'REJECT'].includes(subAction) ? 'CRITICAL' : 'IMPORTANT',
+        actionLabel: 'Open Payroll',
+        actionUrl: url || '/payroll',
+      })).catch(() => {});
     } else if (action.actionType === 'subsidiary_update') {
       const organizationId = materialPayload.organizationId || materialPayload.subsidiaryId || materialPayload.id;
       if (!organizationId) {

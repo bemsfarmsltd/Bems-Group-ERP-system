@@ -65,6 +65,15 @@ export async function evaluateRecurringReminders(prismaClient: any) {
 
   let notified = 0;
   for (const req of dueSoon) {
+    void import('@/lib/notifications/policy-matrix').then(m => m.dispatchMatrixNotifications({
+      eventKey: 'RECURRING_COMMITMENT_DUE',
+      title: `Recurring Commitment Due: ${req.title}`,
+      body: `${req.requestNumber} (${req.subsidiary?.legalName || 'BEMS'}) for ₦${(Number(req.amountMinor || 0) / 100).toLocaleString('en-NG')} is due soon.`,
+      category: 'REQUESTS_APPROVALS',
+      priority: 'IMPORTANT',
+      actionLabel: 'Open Recurring Commitments',
+      actionUrl: '/finance?tab=Recurring+commitments',
+    })).catch(() => {});
     const recipients = await resolveModuleEmailRecipients(prismaClient, 'finance', req.subsidiaryId);
     const dueStr = req.recurringNextDueAt
       ? new Date(req.recurringNextDueAt).toLocaleDateString('en-NG', { day: '2-digit', month: 'short', year: 'numeric' })

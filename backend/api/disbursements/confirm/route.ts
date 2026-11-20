@@ -217,6 +217,16 @@ export async function POST(request: Request) {
       }
     });
 
+    void import('@/lib/notifications/policy-matrix').then(m => m.dispatchMatrixNotifications({
+      eventKey: 'RECIPIENT_CONFIRMATION',
+      title: received ? 'Staff Confirmed Payment Receipt' : 'Staff Reported Payment Issue',
+      body: `${actor.legalName} ${received ? 'confirmed receiving' : 'reported an issue with'} ${isPayrollPayment ? 'their payroll transfer' : `the payment for ${disbursement.request!.requestNumber}`}.${note ? ` ${note}` : ''}`,
+      category: 'REQUESTS_APPROVALS',
+      priority: received ? 'IMPORTANT' : 'CRITICAL',
+      actionLabel: 'Open Disbursements',
+      actionUrl: isPayrollPayment ? '/finance' : `/requests/${disbursement.request!.requestNumber}`,
+    })).catch(() => {});
+
     return NextResponse.json({ success: true, status: nextStatus });
   } catch (error) {
     console.error('Recipient payment confirmation error:', error);

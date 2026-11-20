@@ -127,6 +127,17 @@ export async function POST(request: Request) {
       metadata: { workOrderId: wo.id, assigneeId },
     });
 
+    void import('@/lib/notifications/policy-matrix').then(m => m.dispatchMatrixNotifications({
+      eventKey: 'OPS_DISPATCH_WORK_ORDER',
+      title: `Work Order Dispatched: ${wo.title || wo.id}`,
+      body: `Assigned by ${ctx.actor.legalName} for ${dispatch.plannedDate.toISOString().slice(0, 10)}.`,
+      category: 'GENERAL',
+      priority: 'IMPORTANT',
+      actionLabel: 'Open Operations',
+      actionUrl: '/operations',
+      targetEmployeeId: assigneeId,
+    })).catch(() => {});
+
     return NextResponse.json({ dispatch }, { status: 201 });
   } catch (error) {
     console.error('Operations dispatch POST error:', error);

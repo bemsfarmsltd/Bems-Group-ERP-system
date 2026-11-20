@@ -94,6 +94,15 @@ export async function generatePayrollIntercompanyNotes(params: {
         return created;
       };
       const note = '$transaction' in client ? await client.$transaction(writeNote) : await writeNote(client);
+      void import('@/lib/notifications/policy-matrix').then(m => m.dispatchMatrixNotifications({
+        eventKey: 'INTERCOMPANY_NOTE',
+        title: `Intercompany Note Generated: ${note.noteNumber}`,
+        body: `Payroll allocation intercompany note (${alloc.percentage}%) for ${item.employee.legalName}.`,
+        category: 'PAYROLL_DEDUCTIONS',
+        priority: 'INFORMATIONAL',
+        actionLabel: 'View Intercompany',
+        actionUrl: '/finance',
+      })).catch(() => {});
 
       generatedNotes.push(note);
     }

@@ -122,6 +122,15 @@ export async function requestWalletWithdrawal(actor:WalletActor,input:any,proof?
 export async function recordWalletIssue(tx:Prisma.TransactionClient,code:string,detail:string,reference:string|null=null){
   await tx.$executeRaw`INSERT INTO "WalletReconciliationIssue" ("id","code","detail","reference") SELECT ${randomUUID()},${code},${detail},${reference} WHERE NOT EXISTS (SELECT 1 FROM "WalletReconciliationIssue" WHERE "code"=${code} AND "reference" IS NOT DISTINCT FROM ${reference} AND "resolvedAt" IS NULL)`;
   await tx.$executeRaw`UPDATE "WalletFundingPool" SET "paused"=true WHERE "id"='MONNIFY_NGN'`;
+  void import('@/lib/notifications/policy-matrix').then(m => m.dispatchMatrixNotifications({
+    eventKey: 'WALLET_RECONCILIATION_ISSUE',
+    title: `Monnify Reconciliation Issue: ${code}`,
+    body: `${detail}${reference ? ` (Ref: ${reference})` : ''}. Pool paused automatically for safety.`,
+    category: 'SECURITY',
+    priority: 'CRITICAL',
+    actionLabel: 'Open Wallet Funding',
+    actionUrl: '/wallet/funding',
+  })).catch(() => {});
 }
 export async function cancelQueuedWithdrawal(actor:WalletActor,id:string){
  return walletTransaction(async tx=>{

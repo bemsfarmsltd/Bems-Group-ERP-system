@@ -114,6 +114,16 @@ export async function POST(req: Request) {
       if (denied) return denied;
     }
     const leave = await executeDashboardCommand(actor, 'leave_action', { ...body, sub_action, rejectionReason: body.reviewNote });
+    void import('@/lib/notifications/policy-matrix').then(m => m.dispatchMatrixNotifications({
+      eventKey: 'LEAVE_REQUEST',
+      title: sub_action === 'CREATE_LEAVE' ? `Leave Requested: ${actor.legalName}` : `Leave ${sub_action === 'APPROVE_LEAVE' ? 'Approved' : 'Rejected'}`,
+      body: `${actor.legalName} ${sub_action === 'CREATE_LEAVE' ? `submitted a ${body.leaveType || 'Leave'} request` : `updated a leave request`}.`,
+      category: 'LEAVE',
+      priority: 'IMPORTANT',
+      actionLabel: 'Open HR Leave',
+      actionUrl: '/hr',
+      targetEmployeeId: (leave as any)?.employeeId || actor.id,
+    })).catch(() => {});
     if (sub_action === 'CREATE_LEAVE') {
       resolveGmdNotificationTarget()
         .then((gmdTarget) => {

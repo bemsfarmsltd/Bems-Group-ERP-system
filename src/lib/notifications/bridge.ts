@@ -575,6 +575,15 @@ export async function notifyRetirementWarning(params: {
   hoursRemaining: number;
   correlationId?: string;
 }) {
+  void import('@/lib/notifications/policy-matrix').then(m => m.dispatchMatrixNotifications({
+    eventKey: 'ACCOUNTABILITY_72H_SLA',
+    title: `72h Accountability SLA Warning: ${params.requestNumber}`,
+    body: `${params.employeeName} has ${params.hoursRemaining} hour(s) remaining to submit retirement deliverables for ${params.requestNumber}.`,
+    category: 'REQUESTS_APPROVALS',
+    priority: 'CRITICAL',
+    actionLabel: 'Open Request',
+    actionUrl: `/requests/${params.requestNumber}`,
+  })).catch(() => {});
   return dispatchNotificationBridge({
     channel: "WHATSAPP",
     recipient: params.recipientPhone,
