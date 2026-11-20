@@ -240,6 +240,14 @@ export async function buildBackendServer() {
     } catch (err) {
       logger.warn({ err }, 'Could not ensure Operations Phase 1 schema tables at startup');
     }
+    try {
+      const { startWalletWorker } = await import('@/lib/wallet/runtime-worker');
+      startWalletWorker();
+      const { ensureMorningDigestSchedulerStarted } = await import('@/lib/notifications/scheduler');
+      ensureMorningDigestSchedulerStarted();
+    } catch (err) {
+      logger.warn({ err }, 'Could not start background wallet worker or scheduler at startup');
+    }
   }
 
   logger.info('Step 2: registering Next API routes onto Fastify');

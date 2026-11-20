@@ -136,6 +136,29 @@ export default function EnterpriseControlCenterClient({
   const metrics = data?.metrics || {};
   const subsidiaries: any[] = data?.subsidiaries || [];
   const departments: any[] = data?.departments || [];
+  const globalPayoutControl = data?.globalPayoutControl || { disabled: false, updatedAt: null, updatedByName: null, reason: null };
+  const [togglingGlobalPayouts, setTogglingGlobalPayouts] = useState(false);
+
+  const handleToggleGlobalPayouts = async () => {
+    const nextDisabled = !globalPayoutControl.disabled;
+    setTogglingGlobalPayouts(true);
+    try {
+      await postAction(
+        {
+          action: 'TOGGLE_GLOBAL_PAYOUTS',
+          disabled: nextDisabled,
+          reason: nextDisabled
+            ? 'Executive emergency payout hold activated from Control Center'
+            : 'Executive resumed payouts from Control Center',
+        },
+        nextDisabled
+          ? 'All payouts (including approval payouts and wallet withdrawals) have been disabled across BEMS Group.'
+          : 'All payouts and wallet withdrawals have been re-enabled across BEMS Group.'
+      );
+    } finally {
+      setTogglingGlobalPayouts(false);
+    }
+  };
 
   const categoryKeyFor = (id: ControlSection) => {
     if (id === 'onboarding' || id === 'mobile_apps' || id === 'org_structure' || id === 'audit_trail') {
@@ -521,6 +544,67 @@ export default function EnterpriseControlCenterClient({
                 ))}
               </div>
 
+              {/* Global Payout Master Kill-Switch Card */}
+              <div
+                className={`rounded-2xl border p-5 shadow-sm transition ${
+                  globalPayoutControl.disabled
+                    ? 'border-rose-300 bg-rose-50/60'
+                    : 'border-slate-200 bg-white'
+                }`}
+              >
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2.5">
+                      <span className="text-[10px] font-extrabold uppercase tracking-[0.14em] text-orange-600">
+                        TREASURY MASTER SWITCH
+                      </span>
+                      <span
+                        className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-extrabold ${
+                          globalPayoutControl.disabled
+                            ? 'bg-rose-100 text-rose-700 border border-rose-300'
+                            : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                        }`}
+                      >
+                        <span
+                          className={`h-1.5 w-1.5 rounded-full ${
+                            globalPayoutControl.disabled ? 'bg-rose-600' : 'bg-emerald-600'
+                          }`}
+                        />
+                        {globalPayoutControl.disabled ? 'ALL PAYOUTS DISABLED' : 'PAYOUTS ACTIVE'}
+                      </span>
+                    </div>
+                    <h2 className="text-sm font-extrabold text-slate-900">
+                      Global Payout &amp; Approval Disbursement Control
+                    </h2>
+                    <p className="text-xs text-slate-600 max-w-2xl">
+                      {globalPayoutControl.disabled
+                        ? `All payouts — including requisition approval payouts, GMD wallet releases, vendor transfers, and staff wallet withdrawals — are currently paused${
+                            globalPayoutControl.updatedByName ? ` by ${globalPayoutControl.updatedByName}` : ''
+                          }.`
+                        : 'Instantly disable all payouts system-wide (including requisition approval payouts, Monnify wallet releases, vendor transfers, and staff wallet withdrawals).'}
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={togglingGlobalPayouts}
+                    onClick={handleToggleGlobalPayouts}
+                    className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-extrabold shadow-sm transition ${
+                      globalPayoutControl.disabled
+                        ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+                        : 'bg-rose-600 text-white hover:bg-rose-700'
+                    } disabled:opacity-50`}
+                  >
+                    <ShieldCheck className="h-4 w-4" />
+                    {togglingGlobalPayouts
+                      ? 'Updating Payout State…'
+                      : globalPayoutControl.disabled
+                        ? 'Enable All Payouts'
+                        : 'Disable All Payouts'}
+                  </button>
+                </div>
+              </div>
+
               {/* Quick Jump Across All BEMS Modules */}
               <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
                 <div className="flex items-center justify-between">
@@ -586,6 +670,65 @@ export default function EnterpriseControlCenterClient({
                   <p className="mt-0.5 text-xs text-slate-600">
                     Manage Monnify release authority, 8-digit approval PINs, GMD email OTP enforcement, and Super Admin lockout recovery.
                   </p>
+                </div>
+              </div>
+              <div
+                className={`rounded-2xl border p-5 shadow-sm transition ${
+                  globalPayoutControl.disabled
+                    ? 'border-rose-300 bg-rose-50/60'
+                    : 'border-slate-200 bg-white'
+                }`}
+              >
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2.5">
+                      <span className="text-[10px] font-extrabold uppercase tracking-[0.14em] text-orange-600">
+                        TREASURY MASTER SWITCH
+                      </span>
+                      <span
+                        className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-extrabold ${
+                          globalPayoutControl.disabled
+                            ? 'bg-rose-100 text-rose-700 border border-rose-300'
+                            : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                        }`}
+                      >
+                        <span
+                          className={`h-1.5 w-1.5 rounded-full ${
+                            globalPayoutControl.disabled ? 'bg-rose-600' : 'bg-emerald-600'
+                          }`}
+                        />
+                        {globalPayoutControl.disabled ? 'ALL PAYOUTS DISABLED' : 'PAYOUTS ACTIVE'}
+                      </span>
+                    </div>
+                    <h2 className="text-sm font-extrabold text-slate-900">
+                      Global Payout &amp; Approval Disbursement Control
+                    </h2>
+                    <p className="text-xs text-slate-600 max-w-2xl">
+                      {globalPayoutControl.disabled
+                        ? `All payouts — including requisition approval payouts, GMD wallet releases, vendor transfers, and staff wallet withdrawals — are currently paused${
+                            globalPayoutControl.updatedByName ? ` by ${globalPayoutControl.updatedByName}` : ''
+                          }.`
+                        : 'Instantly disable all payouts system-wide (including requisition approval payouts, Monnify wallet releases, vendor transfers, and staff wallet withdrawals).'}
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={togglingGlobalPayouts}
+                    onClick={handleToggleGlobalPayouts}
+                    className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-extrabold shadow-sm transition ${
+                      globalPayoutControl.disabled
+                        ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+                        : 'bg-rose-600 text-white hover:bg-rose-700'
+                    } disabled:opacity-50`}
+                  >
+                    <ShieldCheck className="h-4 w-4" />
+                    {togglingGlobalPayouts
+                      ? 'Updating Payout State…'
+                      : globalPayoutControl.disabled
+                        ? 'Enable All Payouts'
+                        : 'Disable All Payouts'}
+                  </button>
                 </div>
               </div>
               <FundApprovalPolicyCard setNotice={(msg) => setNotice(msg)} />

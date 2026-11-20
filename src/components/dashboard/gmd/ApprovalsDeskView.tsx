@@ -181,7 +181,7 @@ export function ApprovalsDeskView({
   const [currentActorId, setCurrentActorId] = useState('');
   const [disbursementAssigneeId, setDisbursementAssigneeId] = useState('');
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'PENDING' | 'TIER3' | 'URGENT' | 'CLARIFICATION' | 'ALL'>('PENDING');
+  const [activeTab, setActiveTab] = useState<'PENDING' | 'TIER3' | 'URGENT' | 'CLARIFICATION' | 'APPROVED' | 'ALL'>('PENDING');
   const initialScope = scope || (businessCode && businessCode !== 'BEMS-GROUP' ? businessCode : 'ALL');
   const [selectedSubsidiary, setSelectedSubsidiary] = useState<string>(initialScope);
   const [selectedPeriod, setSelectedPeriod] = useState<string>('2026-10');
@@ -220,6 +220,39 @@ export function ApprovalsDeskView({
   // Deletion Modal State
   const [deleteModalRequest, setDeleteModalRequest] = useState<RequestItem | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [pausingRequestId, setPausingRequestId] = useState<string | null>(null);
+
+  const handleTogglePayoutHold = async (req: RequestItem) => {
+    const nextPaused = req.paymentStatus !== 'PAUSED';
+    setPausingRequestId(req.id);
+    try {
+      const res = await fetch(`/api/requests/${encodeURIComponent(req.requestNumber)}/payout-hold`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          paused: nextPaused,
+          reason: nextPaused
+            ? 'Executive payout hold triggered from Finance Approvals Desk'
+            : 'Executive resumed payout from Finance Approvals Desk',
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to update payout hold status.');
+      }
+      setNotice(
+        nextPaused
+          ? `Payout for ${req.requestNumber} has been overridden and paused on hold.`
+          : `Payout for ${req.requestNumber} has been resumed.`
+      );
+      await fetchApprovals();
+    } catch (err: any) {
+      alert(err.message || 'Could not update payout hold.');
+    } finally {
+      setPausingRequestId(null);
+    }
+  };
 
   const handleDeleteRequest = async () => {
     if (!deleteModalRequest) return;
@@ -347,6 +380,8 @@ export function ApprovalsDeskView({
         if (!r.isUrgent) return false;
       } else if (activeTab === 'CLARIFICATION') {
         if (r.approvalStatus !== 'CLARIFICATION_REQUESTED') return false;
+      } else if (activeTab === 'APPROVED') {
+        if (r.approvalStatus !== 'APPROVED') return false;
       }
 
       // Search filter
@@ -915,6 +950,7 @@ export function ApprovalsDeskView({
               { id: 'TIER3', label: 'Tier 3 Escalations (>₦2M)', count: summary.tier3Count },
               { id: 'URGENT', label: 'Urgent SLA (<48h)', count: summary.urgentCount },
               { id: 'CLARIFICATION', label: 'In Clarification', count: summary.clarificationCount },
+              { id: 'APPROVED', label: 'Approved Payouts', count: requests.filter((r) => r.approvalStatus === 'APPROVED').length },
               { id: 'ALL', label: 'All History', count: summary.totalRequestsCount },
             ].map((tab) => {
               const isSelected = activeTab === tab.id;
@@ -1277,6 +1313,22 @@ export function ApprovalsDeskView({
                           {req.approvalStatus.replace(/_/g, ' ')}
                         </span>
 
+                        {req.paymentStatus === 'PAUSED' && (
+                          <span
+                            style={{
+                              fontSize: '9px',
+                              fontWeight: 800,
+                              padding: '1px 6px',
+                              borderRadius: '3px',
+                              background: '#fef2f2',
+                              color: '#dc2626',
+                              border: '1px solid #fecaca',
+                            }}
+                          >
+                            PAYOUT PAUSED
+                          </span>
+                        )}
+
                         {req.attachments && req.attachments.length > 0 && (
                           <span
                             style={{
@@ -1509,25 +1561,60 @@ export function ApprovalsDeskView({
                         </button>
                       </div>
                     ) : (
-                      <button
-                        onClick={() => setDossierRequest(req)}
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '4px',
-                          padding: '4px 8px',
-                          borderRadius: '5px',
-                          fontSize: '10px',
-                          fontWeight: 600,
-                          background: '#f8fafc',
-                          color: '#334155',
-                          border: '1px solid #cbd5e1',
-                          cursor: 'pointer',
-                        }}
-                      >
-                        <span>Dossier</span>
-                        <ChevronRight size={11} />
-                      </button>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                        {req.approvalStatus === 'APPROVED' &&
+                          !['PAID', 'RECIPIENT_CONFIRMED', 'MONNIFY_SUCCEEDED', 'AWAITING_RECIPIENT_CONFIRMATION'].includes(req.paymentStatus) && (
+                            <button
+                              type="button"
+                              disabled={pausingRequestId === req.id}
+                              onClick={() => handleTogglePayoutHold(req)}
+                              title={
+                                req.paymentStatus === 'PAUSED'
+                                  ? 'Resume payout for this approved requisition'
+                                  : 'Override and pause payout for this approved requisition'
+                              }
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                padding: '4px 8px',
+                                borderRadius: '5px',
+                                fontSize: '10px',
+                                fontWeight: 700,
+                                background: req.paymentStatus === 'PAUSED' ? '#ecfdf5' : '#fffbeb',
+                                color: req.paymentStatus === 'PAUSED' ? '#047857' : '#b45309',
+                                border: req.paymentStatus === 'PAUSED' ? '1px solid #a7f3d0' : '1px solid #fde68a',
+                                cursor: pausingRequestId === req.id ? 'wait' : 'pointer',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              {pausingRequestId === req.id
+                                ? 'Updating…'
+                                : req.paymentStatus === 'PAUSED'
+                                  ? 'Resume Payout'
+                                  : 'Pause Payout'}
+                            </button>
+                          )}
+                        <button
+                          onClick={() => setDossierRequest(req)}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            padding: '4px 8px',
+                            borderRadius: '5px',
+                            fontSize: '10px',
+                            fontWeight: 600,
+                            background: '#f8fafc',
+                            color: '#334155',
+                            border: '1px solid #cbd5e1',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <span>Dossier</span>
+                          <ChevronRight size={11} />
+                        </button>
+                      </div>
                     )}
                   </div>
                 </article>

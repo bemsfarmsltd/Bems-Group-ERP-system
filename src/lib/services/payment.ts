@@ -1,4 +1,5 @@
 import { walletEnabled, WalletError } from '@/lib/wallet/core';
+import { assertPayoutsEnabled } from '@/lib/wallet/payout-control';
 import { payrollSnapshotHash } from './payroll-snapshot';
 import { accountabilityDeadline } from './accountability-deadline';
 import { createHash, randomUUID } from 'node:crypto';
@@ -24,6 +25,7 @@ export interface TransferInput {
 
 export async function recordTransfer(tx: Prisma.TransactionClient, input: TransferInput) {
   const { actor, receipt } = input;
+  await assertPayoutsEnabled(tx);
   if (walletEnabled()) throw new WalletError('LEGACY_PAYMENT_DISABLED', 'External payment recording is disabled in wallet mode. Use the GMD wallet release flow.', 409);
   if (!['GMD', 'SUPER_ADMIN', 'SYSTEM_ADMIN'].includes(actor.role)) throw new Error('Executive authority is required.');
   if (input.amountMinor <= BigInt(0) || !input.reference.trim()) throw new Error('A positive amount and bank transfer reference are required.');
@@ -47,6 +49,7 @@ export async function recordTransfer(tx: Prisma.TransactionClient, input: Transf
   const payroll = input.payrollItemId ? await tx.payrollItem.findUnique({ where: { id: input.payrollItemId }, include: { employee: true, batch: true } }) : null;
   if (!request && !payroll) throw new Error('Payment target was not found.');
   if (request && request.approvalStatus !== 'APPROVED') throw new Error('Only an approved request can be paid.');
+  if (request && request.paymentStatus === 'PAUSED') throw new Error('Payout for this requisition is currently paused on hold in Finance. Resume the payout before recording a transfer.');
   if (payroll && payroll.batch.status !== 'APPROVED') throw new Error('Only approved payroll can be paid.');
   if (payroll) {
     const items = await tx.payrollItem.findMany({ where: { batchId: payroll.batchId }, include: { allocations: true } });

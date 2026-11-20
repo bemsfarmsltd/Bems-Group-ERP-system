@@ -1,4 +1,5 @@
 import { recordTransfer } from '@/lib/services/payment';
+import { assertPayoutsEnabled, getGlobalPayoutControl } from '@/lib/wallet/payout-control';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requestIdentifierWhere, toSystemRequestId } from '@/lib/request-id';
@@ -43,11 +44,11 @@ export async function GET(req: NextRequest) {
     const orgFilter = !scopedOrgIds.isGroup && scopedOrgIds.organizationIds.length > 0 ? { subsidiaryId: { in: scopedOrgIds.organizationIds } } : {};
     const payerOrgFilter = !scopedOrgIds.isGroup && scopedOrgIds.organizationIds.length > 0 ? { payerOrgId: { in: scopedOrgIds.organizationIds } } : {};
 
-    // 1. Ready for Transfer (Approved, UNPAID)
+    // 1. Ready for Transfer (Approved, UNPAID or PAUSED)
     const approvedRequests = await prisma.expenditureRequest.findMany({
       where: {
         approvalStatus: 'APPROVED',
-        paymentStatus: { in: ['UNPAID', 'RECIPIENT_REPORTED_ISSUE'] },
+        paymentStatus: { in: ['UNPAID', 'RECIPIENT_REPORTED_ISSUE', 'PAUSED'] },
         ...orgFilter
       },
       include: {
@@ -146,10 +147,13 @@ export async function GET(req: NextRequest) {
       } : null
     }));
 
+    const globalPayoutControl = await getGlobalPayoutControl();
+
     const response = NextResponse.json({
       readyForTransfer: safeApproved,
       awaitingChecker: safeAwaiting,
       verifiedDisbursements: safeVerified,
+      globalPayoutControl,
       summary: {
         pendingPayoutTotalFormatted: formatNaira(pendingPayoutTotal),
         awaitingCheckerTotalFormatted: formatNaira(awaitingCheckerTotal),
@@ -173,6 +177,7 @@ export async function POST(req: NextRequest) {
   if (!actor) return NextResponse.json({ error: 'Sign in to record payment.' }, { status: 401 });
   if (!hasAnyRole(actor, ['GMD', 'SUPER_ADMIN', 'SYSTEM_ADMIN'])) return NextResponse.json({ error: 'Executive access required.' }, { status: 403 });
   try {
+    await assertPayoutsEnabled();
     const body = await req.formData();
     const receipt = body.get('receipt');
     if (!(receipt instanceof File)) return NextResponse.json({ error: 'Upload the actual bank receipt.' }, { status: 400 });

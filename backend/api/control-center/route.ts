@@ -4,6 +4,7 @@ import { getServerCache, invalidateServerCache, setServerCache } from '@/lib/ser
 import { getAuthenticatedEmployee, hasAnyRole, hasEmployeePermission } from '@/lib/auth';
 import { getAllowedSubsidiariesForModule } from '@/lib/admin-permissions';
 import { getMobileAppGate } from '@/lib/mobile-gate';
+import { getGlobalPayoutControl, setGlobalPayoutControl } from '@/lib/wallet/payout-control';
 
 export const dynamic = 'force-dynamic';
 
@@ -108,6 +109,8 @@ export async function GET(request: Request) {
       }
     }
 
+    const globalPayoutControl = await getGlobalPayoutControl();
+
     const payload = {
       success: true,
       actor: {
@@ -133,6 +136,7 @@ export async function GET(request: Request) {
       mobileGates: { GMD_APP: gmdGate, STAFF_APP: staffGate },
       mobileReleases,
       aiPolicy,
+      globalPayoutControl,
       auditEvents,
     };
     if (!scopedAdmin) setServerCache(cacheKey, payload, 12_000);
@@ -156,6 +160,13 @@ export async function POST(request: Request) {
 
     const rootOrg = await prisma.organization.findFirst({ orderBy: { createdAt: 'asc' } });
     const groupId = rootOrg?.id || '';
+
+    if (action === 'TOGGLE_GLOBAL_PAYOUTS') {
+      const disabled = Boolean(body.disabled);
+      const reason = body.reason ? String(body.reason).trim() : null;
+      const globalPayoutControl = await setGlobalPayoutControl(actor, disabled, reason);
+      return NextResponse.json({ success: true, globalPayoutControl });
+    }
 
     if (action === 'UPDATE_AI_POLICY') {
       if (!groupId) return NextResponse.json({ error: 'No root organization configured.' }, { status: 400 });

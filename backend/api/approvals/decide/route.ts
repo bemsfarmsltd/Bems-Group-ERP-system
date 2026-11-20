@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getAuthenticatedEmployee } from '@/lib/auth';
 import { executeDashboardCommand } from '@/lib/staged-actions';
+import { assertPayoutsEnabled } from '@/lib/wallet/payout-control';
 
 export async function POST(request: Request) {
   const actor = await getAuthenticatedEmployee(request, { disallowServiceToken: true });
@@ -9,6 +10,9 @@ export async function POST(request: Request) {
     const body = await request.json();
     const ids = Array.isArray(body.requestIds) ? body.requestIds : body.requestId ? [body.requestId] : [];
     if (!ids.length) return NextResponse.json({ error: 'Choose at least one request.' }, { status: 400 });
+    if (String(body.decision || '').toUpperCase() === 'APPROVED') {
+      await assertPayoutsEnabled();
+    }
     const result = await executeDashboardCommand(actor, 'approval_decision', {
       request_id: ids[0], request_ids: ids, decision: body.decision, reason: String(body.note || '').trim(),
       disbursementAssigneeId: body.disbursementAssigneeId,

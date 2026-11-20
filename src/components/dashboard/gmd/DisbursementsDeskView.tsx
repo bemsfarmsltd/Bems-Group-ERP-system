@@ -51,6 +51,7 @@ interface RequestItem {
   };
   disbursementAssignee?: { id: string; legalName: string; role: string } | null;
   canRecord?: boolean;
+  paymentStatus?: string;
   vendor?: {
     id: string;
     name: string;
@@ -150,6 +151,39 @@ export function DisbursementsDeskView({
   // Deletion Modal State
   const [deleteModalRequest, setDeleteModalRequest] = useState<RequestItem | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [pausingRequestId, setPausingRequestId] = useState<string | null>(null);
+
+  const handleTogglePayoutHold = async (req: RequestItem) => {
+    const nextPaused = req.paymentStatus !== 'PAUSED';
+    setPausingRequestId(req.id);
+    try {
+      const res = await fetch(`/api/requests/${encodeURIComponent(req.requestNumber)}/payout-hold`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          paused: nextPaused,
+          reason: nextPaused
+            ? 'Executive payout hold triggered from Finance Disbursements Desk'
+            : 'Executive resumed payout from Finance Disbursements Desk',
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to update payout hold status.');
+      }
+      setNotice(
+        nextPaused
+          ? `Payout for ${req.requestNumber} has been overridden and paused on hold.`
+          : `Payout for ${req.requestNumber} has been resumed.`
+      );
+      await fetchDisbursements();
+    } catch (err: any) {
+      alert(err.message || 'Could not update payout hold.');
+    } finally {
+      setPausingRequestId(null);
+    }
+  };
 
   const handleDeleteRequest = async () => {
     if (!deleteModalRequest) return;
@@ -845,12 +879,19 @@ export function DisbursementsDeskView({
                       fontWeight: 700,
                       padding: '2px 6px',
                       borderRadius: '4px',
-                      background: (!req.vendor && (!req.requester?.role || req.requester.role === 'STAFF')) ? '#ecfdf5' : '#fef3c7',
-                      color: (!req.vendor && (!req.requester?.role || req.requester.role === 'STAFF')) ? '#059669' : '#b45309',
+                      background: req.paymentStatus === 'PAUSED'
+                        ? '#fef2f2'
+                        : (!req.vendor && (!req.requester?.role || req.requester.role === 'STAFF')) ? '#ecfdf5' : '#fef3c7',
+                      color: req.paymentStatus === 'PAUSED'
+                        ? '#dc2626'
+                        : (!req.vendor && (!req.requester?.role || req.requester.role === 'STAFF')) ? '#059669' : '#b45309',
+                      border: req.paymentStatus === 'PAUSED' ? '1px solid #fecaca' : 'none',
                       display: 'inline-block',
                       marginTop: '3px'
                     }}>
-                      {(!req.vendor && (!req.requester?.role || req.requester.role === 'STAFF')) ? 'Approved · Ready for Wallet Credit' : 'Approved · Ready to Pay'}
+                      {req.paymentStatus === 'PAUSED'
+                        ? 'PAYOUT PAUSED (HOLD)'
+                        : (!req.vendor && (!req.requester?.role || req.requester.role === 'STAFF')) ? 'Approved · Ready for Wallet Credit' : 'Approved · Ready to Pay'}
                     </span>
                   </div>
 
@@ -858,7 +899,8 @@ export function DisbursementsDeskView({
                     {(!req.vendor && (!req.requester?.role || req.requester.role === 'STAFF')) ? (
                       <button
                         onClick={() => openStaffWalletModal(req)}
-                        title="Authorize GMD release and credit to staff internal wallet"
+                        disabled={req.paymentStatus === 'PAUSED'}
+                        title={req.paymentStatus === 'PAUSED' ? 'Payout is currently paused on hold. Resume payout first.' : 'Authorize GMD release and credit to staff internal wallet'}
                         style={{
                           padding: '6px 12px',
                           borderRadius: '6px',
@@ -867,7 +909,8 @@ export function DisbursementsDeskView({
                           color: '#fff',
                           fontSize: '10px',
                           fontWeight: 700,
-                          cursor: 'pointer',
+                          cursor: req.paymentStatus === 'PAUSED' ? 'not-allowed' : 'pointer',
+                          opacity: req.paymentStatus === 'PAUSED' ? 0.45 : 1,
                           whiteSpace: 'nowrap',
                           boxShadow: '0 1px 3px rgba(5, 150, 105, 0.25)',
                         }}
@@ -877,8 +920,14 @@ export function DisbursementsDeskView({
                     ) : (
                       <button
                         onClick={() => openMakerModal(req)}
-                        disabled={req.canRecord === false}
-                        title={req.canRecord === false ? `Assigned to ${req.disbursementAssignee?.legalName || 'another executive'}` : 'Record the off-platform payment and upload its receipt'}
+                        disabled={req.canRecord === false || req.paymentStatus === 'PAUSED'}
+                        title={
+                          req.paymentStatus === 'PAUSED'
+                            ? 'Payout is currently paused on hold. Resume payout first.'
+                            : req.canRecord === false
+                              ? `Assigned to ${req.disbursementAssignee?.legalName || 'another executive'}`
+                              : 'Record the off-platform payment and upload its receipt'
+                        }
                         style={{
                           padding: '5px 10px',
                           borderRadius: '6px',
@@ -887,14 +936,48 @@ export function DisbursementsDeskView({
                           color: '#fff',
                           fontSize: '10px',
                           fontWeight: 700,
-                          cursor: req.canRecord === false ? 'not-allowed' : 'pointer',
-                          opacity: req.canRecord === false ? 0.55 : 1,
+                          cursor: (req.canRecord === false || req.paymentStatus === 'PAUSED') ? 'not-allowed' : 'pointer',
+                          opacity: (req.canRecord === false || req.paymentStatus === 'PAUSED') ? 0.45 : 1,
                           whiteSpace: 'nowrap'
                         }}
                       >
                         {req.canRecord === false ? 'Assigned to another executive' : 'Record Transfer ↗'}
                       </button>
                     )}
+
+                    <button
+                      type="button"
+                      disabled={pausingRequestId === req.id}
+                      onClick={() => handleTogglePayoutHold(req)}
+                      title={
+                        req.paymentStatus === 'PAUSED'
+                          ? 'Resume payout for this approved requisition'
+                          : 'Override and pause payout for this approved requisition'
+                      }
+                      style={{
+                        padding: '5px 9px',
+                        borderRadius: '6px',
+                        border: req.paymentStatus === 'PAUSED' ? '1px solid #a7f3d0' : '1px solid #fde68a',
+                        background: req.paymentStatus === 'PAUSED' ? '#ecfdf5' : '#fffbeb',
+                        color: req.paymentStatus === 'PAUSED' ? '#047857' : '#b45309',
+                        fontSize: '10px',
+                        fontWeight: 700,
+                        cursor: pausingRequestId === req.id ? 'wait' : 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      <Lock size={11} />
+                      <span>
+                        {pausingRequestId === req.id
+                          ? 'Updating…'
+                          : req.paymentStatus === 'PAUSED'
+                            ? 'Resume Payout'
+                            : 'Pause Payout'}
+                      </span>
+                    </button>
 
                     <button
                       type="button"

@@ -8,6 +8,7 @@ import {computeThreeWayMatchFromLoadedRequest} from '@/lib/services/three-way-ma
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { WalletActor, WalletError, fundingState, hash, journal, liveWalletActor, requireCommitments, walletJson, walletTransaction } from './core';
+import { assertPayoutsEnabled } from './payout-control';
 import { consumeWalletChallenge, SecurityProof } from './security';
 import { accountabilityDeadline } from '@/lib/services/accountability-deadline';
 import { sendApprovalDecisionEmail } from '@/lib/email';
@@ -17,6 +18,7 @@ type Context={staffRequestOnly?:boolean;allowedOrganizationIds?:string[];convers
 async function sourceItems(tx:Prisma.TransactionClient,type:string,id:string):Promise<{items:Item[];sourceHash:string}> {
   if (type==='REQUEST') {
     const source=await tx.expenditureRequest.findUnique({where:{id},include:{requester:true,vendor:true,invoices:{orderBy:{createdAt:'desc'}},goodsReceipts:{orderBy:{receivedAt:'desc'}},disbursements:{select:{id:true}}}});
+    if (source?.paymentStatus === 'PAUSED') throw new WalletError('REQUEST_PAYOUT_PAUSED', 'Payout for this requisition is currently paused in Finance. Resume the payout before releasing funds.', 409);
     if (!source || !['SUBMITTED','IN_REVIEW','APPROVED'].includes(source.approvalStatus) || !['UNPAID','MONNIFY_FAILED','MONNIFY_REVERSED'].includes(source.paymentStatus) || source.disbursements.length) throw new WalletError('SOURCE_NOT_ELIGIBLE','Select an unpaid staff request. Vendor payments cannot be diverted into staff wallets.');
     const recurringCheck = checkRecurringDisbursementEligibility(source);
     if (!recurringCheck.allowed) throw new WalletError('RECURRING_NOT_DUE', recurringCheck.message || 'Recurring commitment is not yet due.', 409);
@@ -85,6 +87,7 @@ async function batchRequestItems(tx: Prisma.TransactionClient, ids: string[]) {
 }
 
 export async function stageWalletRelease(actor:WalletActor,input:Input,context:Context={}) {
+  await assertPayoutsEnabled();
   const batchIds = input.sourceType === 'REQUEST_BATCH' ? normalizeBatchRequestIds(input.requestIds) : null;
   await prisma.$transaction(tx=>liveWalletActor(tx,actor));
   if(!['GMD','SUPER_ADMIN','SYSTEM_ADMIN'].includes(actor.role))throw new WalletError('NOT_PERMITTED','Executive preparation authority is required.',403);
@@ -95,6 +98,7 @@ export async function stageWalletRelease(actor:WalletActor,input:Input,context:C
     if(request?.vendorId)await verifiedVendorDestination(request.vendorId);
   }
   return walletTransaction(async tx=>{
+    await assertPayoutsEnabled(tx);
     await liveWalletActor(tx,actor);
     if(!['GMD','SUPER_ADMIN','SYSTEM_ADMIN'].includes(actor.role))throw new WalletError('NOT_PERMITTED','Executive preparation authority is required.',403);
     const id=randomUUID(),expiresAt=new Date(Date.now()+600000);
@@ -122,10 +126,12 @@ export async function stageWalletRelease(actor:WalletActor,input:Input,context:C
 }
 export async function approveWalletRelease(actor:WalletActor,id:string,confirmationHash:string,proof?:SecurityProof,note?:string) {
   requireCommitments();
+  await assertPayoutsEnabled();
   if(!(await canActorApproveFunds(actor)))throw new WalletError('GMD_REQUIRED','Only the designated GMD can release funds (unless explicitly permitted in Control Center).',403);
   await (await import('./monnify-balance')).ensureWalletFundingFresh(actor);
   const approvals: Parameters<typeof sendApprovalDecisionEmail>[0][] = [];
   const result = await walletTransaction(async tx=>{
+    await assertPayoutsEnabled(tx);
     await liveWalletActor(tx,actor,true);
     const [p]=await tx.$queryRaw<any[]>`SELECT * FROM "WalletReleaseProposal" WHERE "id"=${id} FOR UPDATE`;
     if(!p)throw new WalletError('NOT_FOUND','Release proposal not found.',404);
@@ -223,5 +229,6 @@ export async function approveWalletRelease(actor:WalletActor,id:string,confirmat
   for (const approval of approvals) {
     void sendApprovalDecisionEmail(approval).catch(err => console.error('[Wallet Release Email Error]', err));
   }
+  void import('./runtime-worker').then(m => m.tickWalletWorker()).catch(() => {});
   return result;
 }

@@ -27,10 +27,15 @@ export function requireWallet() {
 export function requireCommitments() {
   requireWallet();
   const env = process.env.MONNIFY_ENVIRONMENT || process.env.MONNIFY_ENV || 'live';
-  const liveAuthorized = process.env.BEMS_WALLET_LIVE_ENABLED === 'true'
-    && process.env.BEMS_WALLET_TRANSFERS_ENABLED === 'true'
-    && process.env.BEMS_MONNIFY_VALIDATION_ENABLED === 'true'
-    && Boolean(process.env.BEMS_FINANCIAL_GMD_ID?.trim() && process.env.MONNIFY_MERCHANT_CODE?.trim());
+  const liveAuthorized = process.env.BEMS_WALLET_LIVE_ENABLED !== 'false'
+    && process.env.BEMS_WALLET_TRANSFERS_ENABLED !== 'false'
+    && process.env.BEMS_MONNIFY_VALIDATION_ENABLED !== 'false'
+    && Boolean(
+      process.env.MONNIFY_MERCHANT_CODE?.trim() ||
+      process.env.MONNIFY_CONTRACT_CODE?.trim() ||
+      process.env.MONNIFY_WALLET_ACCOUNT_NUMBER?.trim() ||
+      process.env.MONNIFY_SOURCE_ACCOUNT?.trim()
+    );
   if (!['sandbox','live'].includes(env) || (env === 'live' && !liveAuthorized)) {
     throw new WalletError('LIVE_WALLET_NOT_ACTIVATED', 'Live wallet commitments are not activated.', 503);
   }

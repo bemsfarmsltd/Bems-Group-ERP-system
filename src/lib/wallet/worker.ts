@@ -1,6 +1,7 @@
 import {accountabilityDeadline} from '@/lib/services/accountability-deadline';
 import { randomUUID } from 'node:crypto';
 import { WalletError, fundingState, journal, requireCommitments, requireWallet, walletTransaction } from './core';
+import { isGlobalPayoutPaused } from './payout-control';
 import { queryMonnifyTransfer, submitMonnifyTransfer, TransferEvidence, TransferIntent, MonnifySubmissionRejected } from './provider';
 import { recordWalletIssue } from './withdrawals';
 import { hasAuthorizedTransfer } from './transfer-authorization';
@@ -20,6 +21,16 @@ export async function processWalletTransfer(provider:WalletTransferProvider=real
     if(w.environment!==curEnv||(curSource && w.sourceAccount!==curSource)){await recordWalletIssue(tx,'SOURCE_MISMATCH','A queued transfer belongs to a different source or environment.',w.reference);return null;}
     const submit=w.status==='HELD'&&!w.submittedAt;
     if(submit) {
+      if (await isGlobalPayoutPaused(tx)) {
+        return null;
+      }
+      if (w.requestId) {
+        const reqStatus = await tx.expenditureRequest.findUnique({ where: { id: w.requestId }, select: { paymentStatus: true } });
+        if (reqStatus?.paymentStatus === 'PAUSED') {
+          await tx.$executeRaw`UPDATE "WalletWithdrawal" SET "nextAttemptAt"=now()+interval '5 minutes',"lastError"='REQUEST_PAYOUT_PAUSED' WHERE "id"=${w.id}`;
+          return null;
+        }
+      }
       requireCommitments();
       await fundingState(tx,true);
       if (!(await hasAuthorizedTransfer(tx, w))) {

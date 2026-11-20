@@ -2,6 +2,7 @@ import { isStaffAccount } from '@/lib/portal-access';
 import {requiredFeeReserve,backedFeeReserve} from './fees';
 import { randomUUID } from 'node:crypto';
 import { WalletActor, WalletError, fundingState, fundingCommitments, liveWalletActor, requireWallet, walletJson, walletTransaction } from './core';
+import { isGlobalPayoutPaused } from './payout-control';
 import { notifyExecutivesMonnifyWalletFunded } from '@/lib/notifications/monnify-funding';
 
 export function providerAmountMinor(value: unknown): bigint {
@@ -60,10 +61,13 @@ export async function refreshMonnifyFunding(actor: WalletActor, forOwnWithdrawal
       const commitments=await fundingCommitments(tx);
       const feeReserve=backedFeeReserve(amount,commitments.envelopeMinor+commitments.liabilityMinor,BigInt(reserve),requiredFees);
       const observationId = randomUUID();
+      const globalPaused = await isGlobalPayoutPaused(tx);
+      const [issueCount] = await tx.$queryRaw<Array<{ count: number }>>`SELECT count(*)::integer AS "count" FROM "WalletReconciliationIssue" WHERE "resolvedAt" IS NULL`;
+      const shouldPause = globalPaused || Number(issueCount?.count || 0) > 0;
       await tx.$executeRaw`INSERT INTO "WalletBalanceObservation" ("id","environment","sourceAccount","availableMinor","observedAt") VALUES (${observationId},${environment!},${sourceAccount},${amount},${observedAt})`;
       await tx.$executeRaw`INSERT INTO "WalletFundingPool" ("id","environment","sourceAccount","availableMinor","feeReserveMinor","observedAt","observationId","paused")
-        VALUES ('MONNIFY_NGN',${environment!},${sourceAccount},${amount},${feeReserve},${observedAt},${observationId},true)
-        ON CONFLICT ("id") DO UPDATE SET "availableMinor" = EXCLUDED."availableMinor", "feeReserveMinor" = EXCLUDED."feeReserveMinor", "observedAt" = EXCLUDED."observedAt", "observationId" = EXCLUDED."observationId", "version" = "WalletFundingPool"."version" + 1`;
+        VALUES ('MONNIFY_NGN',${environment!},${sourceAccount},${amount},${feeReserve},${observedAt},${observationId},${shouldPause})
+        ON CONFLICT ("id") DO UPDATE SET "availableMinor" = EXCLUDED."availableMinor", "feeReserveMinor" = EXCLUDED."feeReserveMinor", "observedAt" = EXCLUDED."observedAt", "observationId" = EXCLUDED."observationId", "paused" = ${shouldPause}, "version" = "WalletFundingPool"."version" + 1`;
     }
     return walletJson(await fundingState(tx));
   });

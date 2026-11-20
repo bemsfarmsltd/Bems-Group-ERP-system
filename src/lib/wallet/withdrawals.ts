@@ -2,6 +2,7 @@ import { isStaffAccount } from '@/lib/portal-access';
 import { randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { WalletActor, WalletError, fundingState, hash, journal, liveWalletActor, minorUnits, requireWallet, requireCommitments, walletJson, walletTransaction } from './core';
+import { assertPayoutsEnabled } from './payout-control';
 import { SecurityProof, challengePayload, consumeWalletChallenge, verifyWalletPassword } from './security';
 import { verifyMonnifyDestination } from './provider';
 function normalizedName(value:string){return value.normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/[^A-Z0-9]/g,'');}
@@ -24,13 +25,15 @@ export async function requestWalletWithdrawal(actor:WalletActor,input:any,proof?
   requireWallet();
   if(process.env.BEMS_WALLET_TRANSFERS_ENABLED==='false')throw new WalletError('WITHDRAWALS_NOT_ACTIVATED','Secure withdrawals have not been enabled for this environment.',503);
   requireCommitments();
+  await assertPayoutsEnabled();
   await (await import('./monnify-balance')).ensureWalletFundingFresh(actor,true);
   const intent=challengePayload('WITHDRAWAL',input) as {amountMinor:string;bankAccountId:string;idempotencyKey:string;creditAllocations:Array<{creditLotId:string;amountMinor:string}>};
   const amount=minorUnits(intent.amountMinor),feeLimit=minorUnits(process.env.BEMS_WALLET_MAX_TRANSFER_FEE_MINOR || '4500');
   const maximum=minorUnits(process.env.BEMS_WALLET_DAILY_LIMIT_MINOR||'2500000000');
   const minimum=minorUnits(process.env.BEMS_WALLET_MIN_WITHDRAWAL_MINOR||'10000');
   if(amount<minimum||amount>maximum)throw new WalletError('WITHDRAWAL_LIMIT','The amount is outside the configured withdrawal limits.');
-  return walletTransaction(async tx=>{
+  const result = await walletTransaction(async tx=>{
+    await assertPayoutsEnabled(tx);
     const employee=await liveWalletActor(tx,actor);
     if(!isStaffAccount(employee.role))throw new WalletError('OWNER_REQUIRED','Only staff can withdraw their own approved funds.',403);
     const [old]=await tx.$queryRaw<any[]>`SELECT "id","intentHash","status","reference" FROM "WalletWithdrawal" WHERE "employeeId"=${actor.id} AND "idempotencyKey"=${intent.idempotencyKey}`;
@@ -56,6 +59,8 @@ export async function requestWalletWithdrawal(actor:WalletActor,input:any,proof?
     await journal(tx,actor.id,'WITHDRAWAL_HELD',id,'STAFF:'+actor.id,'HELD:'+id,amount);
     return {id,reference,status:'HELD',amountMinor:amount.toString(),alreadyExecuted:false,message:'Withdrawal reserved and queued. No second GMD approval is required.'};
   });
+  void import('./runtime-worker').then(m => m.tickWalletWorker()).catch(() => {});
+  return result;
 }
 export async function recordWalletIssue(tx:Prisma.TransactionClient,code:string,detail:string,reference:string|null=null){
   await tx.$executeRaw`INSERT INTO "WalletReconciliationIssue" ("id","code","detail","reference") SELECT ${randomUUID()},${code},${detail},${reference} WHERE NOT EXISTS (SELECT 1 FROM "WalletReconciliationIssue" WHERE "code"=${code} AND "reference" IS NOT DISTINCT FROM ${reference} AND "resolvedAt" IS NULL)`;
@@ -78,11 +83,18 @@ export async function cancelQueuedWithdrawal(actor:WalletActor,id:string){
 export async function planWalletWithdrawal(actor:WalletActor,input:{amountMinor:string;bankAccountId:string;idempotencyKey:string}){
  const amount=minorUnits(input.amountMinor);
  return walletTransaction(async tx=>{
+  await assertPayoutsEnabled(tx);
   await liveWalletActor(tx,actor);if(!isStaffAccount(actor.role))throw new WalletError('OWNER_REQUIRED','Only staff can plan their own withdrawal.',403);
   const rows=await tx.$queryRaw<any[]>`SELECT c."id",c."availableMinor",c."category" FROM "WalletCreditLot" c JOIN "WalletReleaseProposal" p ON p."id"=c."proposalId" WHERE c."employeeId"=${actor.id} AND c."availableMinor">0 AND NOT c."frozen" AND p."status"='EXECUTED' ORDER BY c."createdAt",c."id" LIMIT 1000`;
   let remaining=amount;const creditAllocations=[];
   for(const c of rows){if(remaining===BigInt(0))break;const part=remaining<c.availableMinor?remaining:c.availableMinor;creditAllocations.push({creditLotId:c.id,amountMinor:part.toString()});remaining-=part;}
-  if(remaining>BigInt(0))throw new WalletError('INSUFFICIENT_WALLET_BALANCE','Your available approved sources cannot cover this withdrawal.',409);
+  if(remaining>BigInt(0)){
+    const [frozenCheck]=await tx.$queryRaw<any[]>`SELECT COALESCE(sum("availableMinor"),0)::bigint AS "frozenMinor" FROM "WalletCreditLot" WHERE "employeeId"=${actor.id} AND "availableMinor">0 AND "frozen"=true`;
+    if(frozenCheck && BigInt(frozenCheck.frozenMinor || 0) >= remaining){
+      throw new WalletError('REQUEST_PAYOUT_PAUSED','Payout for your approved request is currently paused on hold by Finance.',409);
+    }
+    throw new WalletError('INSUFFICIENT_WALLET_BALANCE','Your available approved sources cannot cover this withdrawal.',409);
+  }
   return {intent:challengePayload('WITHDRAWAL',{...input,creditAllocations}),allocationPreview:creditAllocations.map(a=>({...a,category:rows.find(r=>r.id===a.creditLotId).category}))};
  });
 }
