@@ -11,6 +11,33 @@ export async function GET(request: Request) {
     const gate = await getMobileAppGate(appId).catch(() => null);
     const isStaffApp = appId.toUpperCase().includes('STAFF');
 
+    // Web browsers running /staff-app/index.html send Origin/Sec-Fetch-Mode/Mozilla UA;
+    // native Flutter APKs use Dart HTTP client (no Origin/Sec-Fetch-Mode, Dart/ UA).
+    const origin = request.headers.get('origin') || '';
+    const referer = request.headers.get('referer') || '';
+    const secFetchMode = request.headers.get('sec-fetch-mode') || '';
+    const userAgent = request.headers.get('user-agent') || '';
+    const isWebClient =
+      Boolean(origin) ||
+      referer.includes('/staff-app') ||
+      Boolean(secFetchMode) ||
+      (userAgent.includes('Mozilla/') && !userAgent.includes('Dart/'));
+
+    if (isWebClient) {
+      return NextResponse.json({
+        appId: gate?.appId || appId,
+        appName: gate?.appName || (isStaffApp ? 'BEMS Staff Portal' : 'BEMS Executive'),
+        packageName: gate?.packageName || '',
+        clientVersion,
+        minimumAllowedVersion: clientVersion,
+        latestVersionAvailable: clientVersion,
+        forceUpdate: false,
+        upgradeRequired: false,
+        directDownloadUrl: 'https://bemserp.work/staff-app/index.html',
+        upgradePromptNotes: '',
+      });
+    }
+
     return NextResponse.json({
       appId: gate?.appId || appId,
       appName: gate?.appName || (isStaffApp ? 'BEMS Staff Portal' : 'BEMS Executive'),
