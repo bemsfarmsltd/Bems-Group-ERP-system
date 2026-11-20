@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getAuthenticatedEmployee, hasAnyRole } from '@/lib/auth';
 import { computeMonthlyDeductionMinor, getEmployeeMonthlyGrossMinor } from '@/lib/services/attendance-absence-sweeper';
+import { sendStaffAttendanceDeductionEmail } from '@/lib/notifications/attendance-deduction-email';
 import {
   calculateHaversineDistance,
   verifyStationQrToken,
@@ -266,6 +267,21 @@ export async function POST(request: Request) {
 
       // Dispatch async notification to GMD & Super Admin (only on new check-in)
       if (!existing?.checkInTime) {
+        if (status === 'LATE' && deductionPercent > 0) {
+          void sendStaffAttendanceDeductionEmail({
+            employeeId: employee.id,
+            employeeName: employee.legalName,
+            employeeNumber: employee.employeeNumber,
+            workEmail: employee.workEmail,
+            workDate,
+            reasonType: 'LATE',
+            checkInTimeStr: currentTimeStr,
+            deductionPercent,
+            deductionMinor,
+            monthlyGrossMinor,
+          }).catch(() => {});
+        }
+
         const subsidiaryName = employee.assignments[0]?.subsidiary?.legalName || 'BEMS Group';
         const departmentName = employee.assignments[0]?.department?.name;
 

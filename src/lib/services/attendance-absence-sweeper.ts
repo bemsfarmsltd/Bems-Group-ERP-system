@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { getLagosTime } from '@/lib/attendance/token';
+import { sendStaffAttendanceDeductionEmail } from '@/lib/notifications/attendance-deduction-email';
 
 export function computeMonthlyDeductionMinor(
   monthlyGrossMinor: number | bigint,
@@ -150,6 +151,19 @@ export async function markDailyAbsences(params: MarkDailyAbsencesParams = {}) {
           excuseStatus: 'NONE',
         },
       });
+      if (absencePercent > 0) {
+        await sendStaffAttendanceDeductionEmail({
+          employeeId: emp.id,
+          employeeName: emp.legalName,
+          employeeNumber: emp.employeeNumber,
+          workEmail: emp.workEmail,
+          workDate: targetDate,
+          reasonType: 'ABSENT',
+          deductionPercent: absencePercent,
+          deductionMinor,
+          monthlyGrossMinor: grossMinor,
+        }).catch(() => {});
+      }
     }
 
     marked.push({

@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getLagosTime, serializeAttendanceRecord } from '@/lib/attendance/token';
 import { notifyGmdStaffClockIn } from '@/lib/notifications/attendance';
+import { sendStaffAttendanceDeductionEmail } from '@/lib/notifications/attendance-deduction-email';
 import { checkRateLimit, getClientIp } from '@/lib/rate-limiter';
 import { computeMonthlyDeductionMinor, getEmployeeMonthlyGrossMinor } from '@/lib/services/attendance-absence-sweeper';
 
@@ -168,6 +169,21 @@ export async function POST(request: Request) {
     // Dispatch async notification to GMD & Super Admin
     const subsidiaryName = matched.assignments?.[0]?.subsidiary?.legalName || 'BEMS Group';
     const departmentName = matched.assignments?.[0]?.department?.name;
+
+    if (isLate && deductionPercent > 0) {
+      void sendStaffAttendanceDeductionEmail({
+        employeeId: matched.id,
+        employeeName: matched.legalName,
+        employeeNumber: matched.employeeNumber,
+        workEmail: matched.workEmail,
+        workDate,
+        reasonType: 'LATE',
+        checkInTimeStr: currentTimeStr,
+        deductionPercent,
+        deductionMinor,
+        monthlyGrossMinor,
+      }).catch(() => {});
+    }
 
     notifyGmdStaffClockIn({
       employee: {
