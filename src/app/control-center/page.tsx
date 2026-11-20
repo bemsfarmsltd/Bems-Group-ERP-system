@@ -31,16 +31,14 @@ export default async function ControlCenterPage({
 }) {
   const actor = await getSsrActor();
 
-  if (!actor) {
-    redirect('/?redirect=/control-center');
-  }
+  if (actor) {
+    if (!['GMD', 'SUPER_ADMIN', 'SYSTEM_ADMIN', 'CUSTOM_ADMIN'].includes(String(actor.role).toUpperCase())) {
+      redirect('/');
+    }
 
-  if (!['GMD', 'SUPER_ADMIN', 'SYSTEM_ADMIN', 'CUSTOM_ADMIN'].includes(String(actor.role).toUpperCase())) {
-    redirect('/');
-  }
-
-  if (actor.role === 'CUSTOM_ADMIN' && !hasModuleAccess(actor.role, actor.customAdminPermissions as CustomAdminPermissionsMap | null, 'control-center')) {
-    redirect('/');
+    if (actor.role === 'CUSTOM_ADMIN' && !hasModuleAccess(actor.role, actor.customAdminPermissions as CustomAdminPermissionsMap | null, 'control-center')) {
+      redirect('/');
+    }
   }
 
   const resolvedParams = await searchParams;

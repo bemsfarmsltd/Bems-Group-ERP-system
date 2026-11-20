@@ -96,7 +96,11 @@ export default function EnterpriseControlCenterClient({
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/control-center', { cache: 'no-store' });
+      const res = await fetch('/api/control-center', { cache: 'no-store', credentials: 'include' });
+      if (res.status === 401 && typeof window !== 'undefined') {
+        window.location.href = '/?redirect=/control-center';
+        return;
+      }
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || 'Failed to load Control Center.');
       setData(json);
@@ -119,6 +123,7 @@ export default function EnterpriseControlCenterClient({
     setNotice(null);
     const res = await fetch('/api/control-center', {
       method: 'POST',
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
