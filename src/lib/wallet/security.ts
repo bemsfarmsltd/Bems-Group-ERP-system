@@ -78,7 +78,12 @@ async function issueReleaseChallenge(actor: WalletActor, input: unknown, pin: un
 
     const otpRequired = await approvalOtpRequired(tx);
     const gmd = otpRequired && await tx.employee.findFirst({
-      where: { id: process.env.BEMS_FINANCIAL_GMD_ID || '', role: 'GMD', status: 'ACTIVE', approvalStatus: 'APPROVED' },
+      where: {
+        ...(process.env.BEMS_FINANCIAL_GMD_ID?.trim() ? { id: process.env.BEMS_FINANCIAL_GMD_ID.trim() } : {}),
+        role: 'GMD',
+        status: 'ACTIVE',
+        approvalStatus: 'APPROVED',
+      },
       select: { workEmail: true },
     });
     if (otpRequired && (!gmd || !/^[^@\s,;<>]+@[^@\s,;<>]+\.[^@\s,;<>]+$/.test(gmd.workEmail))) {
