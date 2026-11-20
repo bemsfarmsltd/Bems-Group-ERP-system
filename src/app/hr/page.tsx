@@ -76,6 +76,10 @@ const NAV_GROUPS: { label: string; items: NavItemDef[] }[] = [
 
 const ALL_NAV_ITEMS = NAV_GROUPS.flatMap((g) => g.items);
 
+function isValidHrSection(value: string | null): value is HrSectionId {
+  return Boolean(value && ALL_NAV_ITEMS.some((item) => item.id === value));
+}
+
 function computeTintHex(hex: string): string {
   const clean = /^#[0-9a-fA-F]{6}$/.test(hex) ? hex.slice(1) : 'ea580c';
   const r = parseInt(clean.slice(0, 2), 16);
@@ -117,6 +121,23 @@ export default function HumanResourcesPortalPage() {
   }, []);
   const [employeesView, setEmployeesView] = useState<'DIRECTORY' | 'PROFILES'>('DIRECTORY');
   const [visitedSections, setVisitedSections] = useState<HrSectionId[]>(['overview']);
+
+  useEffect(() => {
+    const syncFromUrl = () => {
+      const params = new URLSearchParams(window.location.search);
+      const tabParam = params.get('tab');
+      const filterParam = params.get('filter');
+      const targetSection: HrSectionId = isValidHrSection(tabParam) ? tabParam : 'overview';
+      setActiveSection(targetSection);
+      setVisitedSections((prev) => (prev.includes(targetSection) ? prev : [...prev, targetSection]));
+      if (filterParam) {
+        setPresetFilter(filterParam);
+      }
+    };
+    syncFromUrl();
+    window.addEventListener('popstate', syncFromUrl);
+    return () => window.removeEventListener('popstate', syncFromUrl);
+  }, []);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
 
   const actorRoleUpper = (overview?.actor?.role || '').toUpperCase();
@@ -219,6 +240,16 @@ export default function HumanResourcesPortalPage() {
     setVisitedSections((prev) => (prev.includes(section) ? prev : [...prev, section]));
     setMotionKey((k) => k + 1);
     setSearch('');
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      url.searchParams.set('tab', section);
+      if (filter && filter !== 'ALL') {
+        url.searchParams.set('filter', filter);
+      } else {
+        url.searchParams.delete('filter');
+      }
+      window.history.pushState(null, '', url.toString());
+    }
   };
 
   const searchResults = useMemo(() => {
