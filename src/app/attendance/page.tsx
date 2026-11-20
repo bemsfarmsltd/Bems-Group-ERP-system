@@ -158,9 +158,9 @@ export default function AttendanceDeskPage() {
     earliestCheckInTime: '07:00',
     resumptionTime: '08:00',
     closingTime: '17:00',
-    gracePeriodMinutes: 15,
-    latenessDeductionPercent: 5.0,
-    absenceDeductionPercent: 100.0,
+    gracePeriodMinutes: 30,
+    latenessDeductionPercent: 2.0,
+    absenceDeductionPercent: 5.0,
     requireGeofence: true,
     requireQrScan: true,
     requireStarlinkIp: true,
@@ -869,7 +869,7 @@ export default function AttendanceDeskPage() {
               <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
                 Arrival Window: <strong>{policy.earliestCheckInTime || '07:00'} AM – {policy.resumptionTime || '08:00'} AM</strong> (Grace up to {(() => {
                   const [rH, rM] = String(policy.resumptionTime || '08:00').split(':').map(Number);
-                  const tot = (Number.isFinite(rH) ? rH : 8) * 60 + (Number.isFinite(rM) ? rM : 0) + Number(policy.gracePeriodMinutes ?? 15);
+                  const tot = (Number.isFinite(rH) ? rH : 8) * 60 + (Number.isFinite(rM) ? rM : 0) + Number(policy.gracePeriodMinutes ?? 30);
                   return `${String(Math.floor(tot / 60) % 24).padStart(2, '0')}:${String(tot % 60).padStart(2, '0')} AM`;
                 })()})
               </div>
@@ -1284,7 +1284,7 @@ export default function AttendanceDeskPage() {
                 <div style={{ fontSize: '11px', color: '#94a3b8' }}>
                   Punched before {(() => {
                     const [rH, rM] = String(policy.resumptionTime || '08:00').split(':').map(Number);
-                    const tot = (Number.isFinite(rH) ? rH : 8) * 60 + (Number.isFinite(rM) ? rM : 0) + Number(policy.gracePeriodMinutes ?? 15);
+                    const tot = (Number.isFinite(rH) ? rH : 8) * 60 + (Number.isFinite(rM) ? rM : 0) + Number(policy.gracePeriodMinutes ?? 30);
                     return `${String(Math.floor(tot / 60) % 24).padStart(2, '0')}:${String(tot % 60).padStart(2, '0')} AM`;
                   })()}
                 </div>
@@ -1297,7 +1297,7 @@ export default function AttendanceDeskPage() {
                 <div style={{ fontSize: '24px', fontWeight: 900, color: 'var(--brand-primary, #0d8a70)', marginTop: '4px' }}>
                   {dailyCounts.late}
                 </div>
-                <div style={{ fontSize: '11px', color: '#94a3b8' }}>-{Number(policy.latenessDeductionPercent ?? 5).toFixed(1)}% salary deduction applied</div>
+                <div style={{ fontSize: '11px', color: '#94a3b8' }}>-{Number(policy.latenessDeductionPercent ?? 2).toFixed(1)}% monthly salary deduction applied</div>
               </div>
 
               <div style={{ padding: '14px', background: '#ffffff', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
@@ -2114,7 +2114,7 @@ export default function AttendanceDeskPage() {
                         {selectedCalendarDay.checkInTime || 'No Arrival Recorded'}
                       </div>
                       <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>
-                        Status: <strong>{selectedCalendarDay.status === 'PRESENT' ? `On-Time (Within ${policy.gracePeriodMinutes ?? 15}m grace)` : selectedCalendarDay.status === 'LATE' ? `Late Arrival (Flagged -${Number(policy.latenessDeductionPercent ?? 5)}%)` : selectedCalendarDay.status === 'OFF_DAY' ? 'Weekly Off-Day' : selectedCalendarDay.status === 'ABSENT' ? 'Unexcused Absent' : 'Pending'}</strong>
+                        Status: <strong>{selectedCalendarDay.status === 'PRESENT' ? `On-Time (Within ${policy.gracePeriodMinutes ?? 30}m grace)` : selectedCalendarDay.status === 'LATE' ? `Late Arrival (Flagged -${Number(policy.latenessDeductionPercent ?? 2)}%)` : selectedCalendarDay.status === 'OFF_DAY' ? 'Weekly Off-Day' : selectedCalendarDay.status === 'ABSENT' ? `Unexcused Absent (-${Number(policy.absenceDeductionPercent ?? 5)}%)` : 'Pending'}</strong>
                       </div>
                     </div>
 
@@ -3009,7 +3009,7 @@ export default function AttendanceDeskPage() {
                 </div>
 
                 <div style={{ fontSize: '11px', color: '#64748b', paddingTop: '10px', borderTop: '1px solid #f1f5f9', marginTop: '10px' }}>
-                  Penalty applies: Punches after resumption + grace period deduct <strong>{policy.latenessDeductionPercent}%</strong> of the daily pro-rated wage.
+                  Penalty applies: Punches after resumption + grace period deduct <strong>{policy.latenessDeductionPercent}%</strong> of monthly salary (unexcused absences deduct <strong>{policy.absenceDeductionPercent}%</strong> of monthly salary).
                 </div>
               </div>
             </div>
@@ -3246,10 +3246,10 @@ export default function AttendanceDeskPage() {
               <div style={{ padding: '16px', background: '#f8fafc', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
                 <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 700 }}>ACTIVE LATENESS PENALTY RATE</span>
                 <strong style={{ display: 'block', fontSize: '18px', color: '#ea580c', marginTop: '4px' }}>
-                  {policy.latenessDeductionPercent}% of Daily Base Wage
+                  {policy.latenessDeductionPercent}% Late · {policy.absenceDeductionPercent}% Absent (Monthly Salary)
                 </strong>
                 <span style={{ fontSize: '11px', color: '#64748b', marginTop: '2px', display: 'block' }}>
-                  Grace window: {policy.gracePeriodMinutes} mins (08:15 AM)
+                  Grace window: {policy.gracePeriodMinutes} mins (08:30 AM)
                 </span>
               </div>
 

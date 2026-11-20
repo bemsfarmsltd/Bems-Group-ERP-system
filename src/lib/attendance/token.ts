@@ -277,7 +277,7 @@ export function validateCheckInTimeWindow(
   currentTimeStr: string,
   earliestCheckInTime: string = '07:00',
   resumptionTime: string = '08:00',
-  gracePeriodMinutes: number = 15
+  gracePeriodMinutes: number = 30
 ): { allowed: boolean; reason?: string } {
   if (currentTimeStr < earliestCheckInTime) {
     const [rH, rM] = resumptionTime.split(':').map(Number);

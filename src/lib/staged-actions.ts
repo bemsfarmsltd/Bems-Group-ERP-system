@@ -2786,8 +2786,8 @@ export async function executeBusinessCommand(tx: Prisma.TransactionClient, input
           const todayWat = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Lagos' }).format(new Date());
           const targetOrgIds = targetOrgs.map((o) => o.id);
           const effectiveResumption = updateData.resumptionTime || current?.resumptionTime || '08:00';
-          const effectiveGrace = updateData.gracePeriodMinutes ?? current?.gracePeriodMinutes ?? 15;
-          const effectivePenalty = updateData.latenessDeductionPercent ?? current?.latenessDeductionPercent ?? 5.0;
+          const effectiveGrace = updateData.gracePeriodMinutes ?? current?.gracePeriodMinutes ?? 30;
+          const effectivePenalty = updateData.latenessDeductionPercent ?? current?.latenessDeductionPercent ?? 2.0;
           const [rH, rM] = String(effectiveResumption).split(':').map(Number);
           const cutoffMinutes = (Number.isFinite(rH) ? rH : 8) * 60 + (Number.isFinite(rM) ? rM : 0) + Number(effectiveGrace);
 
@@ -3017,11 +3017,11 @@ export async function executeBusinessCommand(tx: Prisma.TransactionClient, input
         } else if (targetStatus === 'PRESENT' || targetStatus === 'EXCUSED' || targetStatus === 'ON_LEAVE') {
           deductionPercent = 0.0;
         } else if (targetStatus === 'LATE') {
-          deductionPercent = Number(policy?.latenessDeductionPercent ?? 5.0);
+          deductionPercent = Number(policy?.latenessDeductionPercent ?? 2.0);
         } else if (targetStatus === 'HALF_DAY') {
           deductionPercent = 50.0;
         } else if (targetStatus === 'ABSENT') {
-          deductionPercent = Number(policy?.absenceDeductionPercent ?? 100.0);
+          deductionPercent = Number(policy?.absenceDeductionPercent ?? 5.0);
         } else {
           deductionPercent = 0.0;
         }
@@ -3254,9 +3254,9 @@ export async function executeBusinessCommand(tx: Prisma.TransactionClient, input
           earliestCheckInTime: '07:00',
           resumptionTime: '08:00',
           closingTime: '17:00',
-          gracePeriodMinutes: 15,
-          latenessDeductionPercent: 5.0,
-          absenceDeductionPercent: 100.0,
+          gracePeriodMinutes: 30,
+          latenessDeductionPercent: 2.0,
+          absenceDeductionPercent: 5.0,
           requireGeofence: true,
           requireQrScan: true,
           requireStarlinkIp: true,

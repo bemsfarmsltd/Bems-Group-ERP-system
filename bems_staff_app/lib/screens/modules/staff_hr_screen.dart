@@ -1690,7 +1690,7 @@ class _StaffHrScreenState extends State<StaffHrScreen> {
                   style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
                 ),
                 Text(
-                  'Grace: ${schedule['gracePeriodMinutes'] ?? 15}m',
+                  'Grace: ${schedule['gracePeriodMinutes'] ?? 30}m',
                   style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: accent),
                 ),
               ],

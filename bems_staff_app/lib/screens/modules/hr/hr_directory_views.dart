@@ -51,7 +51,7 @@ class HrScheduleScreen extends StatelessWidget {
                 const SizedBox(height: 12),
                 _row('Resumption Time', '${schedule['shiftStart'] ?? '08:00'} AM'),
                 _row('Closing Time', '${schedule['shiftEnd'] ?? '17:00'}'),
-                _row('Grace Period', '${schedule['gracePeriodMinutes'] ?? 15} minutes'),
+                _row('Grace Period', '${schedule['gracePeriodMinutes'] ?? 30} minutes'),
                 _row('Rest Days', offDays.isEmpty ? 'Saturday, Sunday' : offDays.join(', ')),
                 _row('Attendance Exemption', schedule['isExempt'] == true ? 'Exempt' : 'Standard Clock-In Required'),
                 if (schedule['notes'] != null) _row('Schedule Notes', schedule['notes'].toString()),
