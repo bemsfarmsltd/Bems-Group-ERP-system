@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { checkRateLimit, getClientIp } from '@/lib/rate-limiter';
 import {
   getOrganizationsWithStreamlinedDepartments,
   STREAMLINED_STAFF_GRADES,
@@ -7,8 +8,15 @@ import {
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const rl = await checkRateLimit(`meta-structure:${getClientIp(request)}`, {
+      maxAttempts: 30,
+      windowMs: 60 * 1000,
+    });
+    if (!rl.allowed) {
+      return NextResponse.json({ error: 'Too many requests.' }, { status: 429 });
+    }
     const orgs = await getOrganizationsWithStreamlinedDepartments(prisma);
 
     return NextResponse.json({

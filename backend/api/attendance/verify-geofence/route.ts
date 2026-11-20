@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { checkRateLimit, getClientIp } from '@/lib/rate-limiter';
 import {
   calculateHaversineDistance,
   extractClientIp,
@@ -12,6 +13,13 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
   try {
+    const rl = await checkRateLimit(`verify-geofence:${getClientIp(request)}`, {
+      maxAttempts: 30,
+      windowMs: 60 * 1000,
+    });
+    if (!rl.allowed) {
+      return NextResponse.json({ error: 'Too many location check requests.' }, { status: 429 });
+    }
     const body = await request.json();
     const { employeeId, latitude, longitude, stationCode } = body;
 

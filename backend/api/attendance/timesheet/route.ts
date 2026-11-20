@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getLagosTime, serializeAttendanceRecord } from '@/lib/attendance/token';
 import { getAuthenticatedEmployee, hasAnyRole } from '@/lib/auth';
+import { checkRateLimit, getClientIp } from '@/lib/rate-limiter';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,16 +11,26 @@ export async function GET(request: Request) {
   try {
     const user = await getAuthenticatedEmployee(request);
     const { searchParams } = new URL(request.url);
-    const employeeId = searchParams.get('employeeId');
     const isKioskStream = searchParams.get('kiosk') === 'true';
-    const dateParam = searchParams.get('date'); // YYYY-MM-DD
-    const monthParam = searchParams.get('month'); // 1-12
-    const yearParam = searchParams.get('year'); // e.g. 2026
 
-    // Unauthenticated callers can ONLY access sanitized recent arrivals for the public kiosk screen
+    // Unauthenticated callers can ONLY access sanitized today's recent arrivals for the public kiosk screen
     if (!user && !isKioskStream) {
       return NextResponse.json({ error: 'Unauthorized: Executive or HR access required' }, { status: 401 });
     }
+
+    if (!user && isKioskStream) {
+      const clientIp = getClientIp(request);
+      const rl = await checkRateLimit(`kiosk-stream:${clientIp}`, { maxAttempts: 60, windowMs: 60 * 1000 });
+      if (!rl.allowed) {
+        return NextResponse.json({ error: 'Too many requests.' }, { status: 429 });
+      }
+    }
+
+    // Disallow employeeId, date, month, or year filtering for unauthenticated kiosk stream requests
+    const employeeId = user ? searchParams.get('employeeId') : null;
+    const dateParam = user ? searchParams.get('date') : null; // YYYY-MM-DD
+    const monthParam = user ? searchParams.get('month') : null; // 1-12
+    const yearParam = user ? searchParams.get('year') : null; // e.g. 2026
 
     const now = new Date();
     const { workDate: todayStr } = getLagosTime(now);
@@ -214,7 +225,7 @@ export async function GET(request: Request) {
       prisma.employee.findMany({
         where: {
           status: 'ACTIVE',
-          role: { in: ['STAFF', 'CUSTOM_ADMIN'] },
+          role: 'STAFF',
           isAttendanceExempt: false,
         },
         select: {
@@ -327,8 +338,8 @@ export async function GET(request: Request) {
         policy: {
           resumptionTime: policy?.resumptionTime || '08:00',
           closingTime: policy?.closingTime || '17:00',
-          gracePeriodMinutes: policy?.gracePeriodMinutes || 15,
-          latenessDeductionPercent: policy?.latenessDeductionPercent || 5.0,
+          gracePeriodMinutes: policy?.gracePeriodMinutes || 30,
+          latenessDeductionPercent: policy?.latenessDeductionPercent || 2.0,
         },
         counts: {
           total: employees.length,
@@ -383,7 +394,7 @@ export async function GET(request: Request) {
         excuseRequestNote: record?.excuseRequestNote || null,
         excuseRequestedByName: record?.excuseRequestedByName || null,
         isOfflineStaff: emp.isOfflineStaff,
-        kioskPin: emp.kioskPin,
+        ...(user && hasAnyRole(user, ['GMD', 'SUPER_ADMIN', 'SYSTEM_ADMIN']) ? { kioskPin: emp.kioskPin } : {}),
         recordId: record?.id,
       };
     });
