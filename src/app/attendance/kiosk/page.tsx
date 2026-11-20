@@ -75,10 +75,6 @@ export default function AttendanceKioskPage() {
     try {
       const res = await fetch(`/api/attendance/timesheet?kiosk=true&_t=${Date.now()}`, {
         cache: 'no-store',
-        headers: {
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Pragma': 'no-cache',
-        },
       });
       if (res.ok) {
         const data = await res.json();

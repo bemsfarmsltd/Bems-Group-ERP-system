@@ -127,13 +127,13 @@ export async function POST(request: Request) {
     }
 
     const resumptionTime = policy?.resumptionTime || '08:00';
-    const graceMinutes = policy?.gracePeriodMinutes ?? 15;
+    const graceMinutes = policy?.gracePeriodMinutes ?? 30;
     const [rH, rM] = resumptionTime.split(':').map(Number);
     const cutoffMinutes = rH * 60 + rM + graceMinutes;
 
     const isLate = minutesSinceMidnight > cutoffMinutes;
     const status = isLate ? 'LATE' : 'PRESENT';
-    const deductionPercent = isLate ? (policy?.latenessDeductionPercent ?? 5.0) : 0.0;
+    const deductionPercent = isLate ? (policy?.latenessDeductionPercent ?? 10.0) : 0.0;
 
     const record = await prisma.attendanceRecord.upsert({
       where: {

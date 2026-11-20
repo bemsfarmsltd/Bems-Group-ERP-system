@@ -110,8 +110,8 @@ export async function POST(request: Request) {
     const earliestCheckInTime = policy?.earliestCheckInTime || '07:00';
     const resumptionTime = policy?.resumptionTime || '08:00';
     const closingTime = policy?.closingTime || '17:00';
-    const graceMinutes = policy?.gracePeriodMinutes ?? 15;
-    const latenessDeductionPercent = policy?.latenessDeductionPercent ?? 5.0;
+    const graceMinutes = policy?.gracePeriodMinutes ?? 30;
+    const latenessDeductionPercent = policy?.latenessDeductionPercent ?? 10.0;
 
     // Dual-Factor Check 1: Geofence Verification (Honors policy bypass & outage buffer)
     const distanceMeters = calculateHaversineDistance(latNum, lngNum, station.latitude, station.longitude);

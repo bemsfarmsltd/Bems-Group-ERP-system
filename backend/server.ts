@@ -48,7 +48,18 @@ export async function buildBackendServer() {
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'x-app-id', 'x-app-version', 'x-employee-id'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-Requested-With',
+      'Cache-Control',
+      'Pragma',
+      'Expires',
+      'x-app-id',
+      'x-app-version',
+      'x-employee-id',
+      'x-cron-secret',
+    ],
   });
 
   await app.register(cookie);

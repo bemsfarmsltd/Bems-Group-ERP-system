@@ -88,8 +88,8 @@ export async function queryDailyAttendanceRoster(
     earliestCheckInTime: '07:00',
     resumptionTime: '08:00',
     closingTime: '17:00',
-    gracePeriodMinutes: 15,
-    latenessDeductionPercent: 5.0,
+    gracePeriodMinutes: 30,
+    latenessDeductionPercent: 10.0,
     absenceDeductionPercent: 100.0,
   };
 
@@ -231,7 +231,7 @@ export async function queryDailyAttendanceRoster(
     const deductionPercent = rec?.isManualOverride
       ? rec.deductionPercent
       : morningStatus === 'LATE'
-      ? empPolicy.latenessDeductionPercent ?? 5.0
+      ? empPolicy.latenessDeductionPercent ?? 10.0
       : morningStatus === 'ABSENT'
       ? empPolicy.absenceDeductionPercent ?? 100.0
       : rec?.deductionPercent || 0;
