@@ -89,7 +89,7 @@ export async function GET(req: Request) {
       // Staff perspective
       const channelFilter = channelParam === 'HR' ? { channel: 'HR' } : channelParam === 'GMD' ? { channel: 'GMD' } : {};
 
-      const [unreadCount, latest] = await Promise.all([
+      const [unreadCount, latest, unreadRequestNotifs] = await Promise.all([
         prisma.staffAdminMessage.count({
           where: {
             employeeId: actor.id,
@@ -107,7 +107,33 @@ export async function GET(req: Request) {
           },
           orderBy: { createdAt: 'desc' },
         }),
+        prisma.systemNotification.findMany({
+          where: {
+            employeeId: actor.id,
+            kind: 'CHAT',
+            readAt: null,
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 50,
+          select: {
+            id: true,
+            title: true,
+            body: true,
+            linkUrl: true,
+            createdAt: true,
+          },
+        }),
       ]);
+
+      const extractReqNum = (linkUrl?: string | null) => {
+        if (!linkUrl) return null;
+        const m = linkUrl.match(/\/requests\/([^/?#]+)/);
+        return m ? decodeURIComponent(m[1]) : null;
+      };
+      const unreadRequestNumbers = Array.from(
+        new Set(unreadRequestNotifs.map((n) => extractReqNum(n.linkUrl)).filter((v): v is string => Boolean(v)))
+      );
+      const latestReq = unreadRequestNotifs[0] || null;
 
       const response = NextResponse.json({
         isAdmin: false,
@@ -119,6 +145,17 @@ export async function GET(req: Request) {
               senderName: latest.senderName,
               message: latest.message,
               createdAt: latest.createdAt.toISOString(),
+            }
+          : null,
+        requestUnreadCount: unreadRequestNotifs.length,
+        unreadRequestNumbers,
+        latestRequestMessage: latestReq
+          ? {
+              id: latestReq.id,
+              requestNumber: extractReqNum(latestReq.linkUrl),
+              title: latestReq.title,
+              message: latestReq.body,
+              createdAt: latestReq.createdAt.toISOString(),
             }
           : null,
       });

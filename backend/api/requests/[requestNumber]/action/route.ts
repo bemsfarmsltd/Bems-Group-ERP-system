@@ -70,6 +70,17 @@ export async function GET(
     orderBy: { createdAt: 'asc' },
     take: 200,
   });
+
+  await prisma.systemNotification.updateMany({
+    where: {
+      employeeId: actor.id,
+      kind: 'CHAT',
+      readAt: null,
+      linkUrl: `/requests/${request.requestNumber}`,
+    },
+    data: { readAt: new Date() },
+  }).catch(() => {});
+
   return NextResponse.json({
     request: { systemId: toSystemRequestId(request.id), requestNumber: request.requestNumber, title: request.title },
     actor: { id: actor.id, name: actor.legalName, role: actor.role },

@@ -148,6 +148,9 @@ class _StaffMainScreenState extends State<StaffMainScreen> {
   }
 
   bool _weeklyDeductionPopupShown = false;
+  int _supportUnreadCount = 0;
+  Set<String> _unreadRequestNumbers = <String>{};
+  String? _lastPromptedMessageKey;
 
   @override
   void initState() {
@@ -156,11 +159,243 @@ class _StaffMainScreenState extends State<StaffMainScreen> {
     _currentUser = widget.user;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkWeeklyDeductionPopup();
+      _refreshUnreadMessages(showModalIfNew: true);
     });
     if (!_currentUser.staffAppModules.contains('finance')) return;
     _loadData();
     _loadBiometricSettings();
     StaffNotificationService().startPeriodicSync(_currentUser);
+  }
+
+  Future<void> _refreshUnreadMessages({bool showModalIfNew = false}) async {
+    if (!mounted) return;
+    final summary = await StaffApiService.fetchUnreadChatSummary(employeeId: _currentUser.id);
+    if (!mounted) return;
+    final supportCount = (summary['unreadCount'] as num?)?.toInt() ?? 0;
+    final reqCount = (summary['requestUnreadCount'] as num?)?.toInt() ?? 0;
+    final reqNumbersRaw = summary['unreadRequestNumbers'];
+    final reqNumbers = reqNumbersRaw is List
+        ? reqNumbersRaw.map((e) => e.toString()).where((e) => e.isNotEmpty).toSet()
+        : <String>{};
+
+    setState(() {
+      _supportUnreadCount = supportCount;
+      _unreadRequestNumbers = reqNumbers;
+    });
+
+    if (supportCount == 0 && reqCount == 0) return;
+
+    final latestSupport = summary['latestMessage'] as Map<String, dynamic>?;
+    final latestReq = summary['latestRequestMessage'] as Map<String, dynamic>?;
+    final promptKey = '${latestSupport?['id'] ?? ''}|${latestReq?['id'] ?? ''}|$supportCount|$reqCount';
+
+    if ((showModalIfNew || _lastPromptedMessageKey != null) && _lastPromptedMessageKey != promptKey) {
+      _lastPromptedMessageKey = promptKey;
+      _showUnreadMessageModal(summary, supportCount, reqCount);
+    }
+  }
+
+  void _showUnreadMessageModal(Map<String, dynamic> summary, int supportCount, int reqCount) {
+    if (!mounted) return;
+    final latestSupport = summary['latestMessage'] is Map
+        ? Map<String, dynamic>.from(summary['latestMessage'] as Map)
+        : null;
+    final latestReq = summary['latestRequestMessage'] is Map
+        ? Map<String, dynamic>.from(summary['latestRequestMessage'] as Map)
+        : null;
+    if (latestSupport == null && latestReq == null) return;
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(9),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFF7ED),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFFED7AA)),
+                    ),
+                    child: const Icon(Icons.mark_chat_unread_rounded, color: Color(0xFFEA580C), size: 22),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'New Executive / Support Message',
+                          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: Color(0xFF0F172A)),
+                        ),
+                        Text(
+                          '${supportCount + reqCount} unread ${(supportCount + reqCount) == 1 ? 'message' : 'messages'} waiting',
+                          style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B), fontWeight: FontWeight.w600),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    icon: const Icon(Icons.close_rounded, color: Color(0xFF94A3B8), size: 20),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              if (latestReq != null) ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFF7ED),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: const Color(0xFFFED7AA)),
+                        ),
+                        child: Text(
+                          'REQUEST LOOP · ${latestReq['requestNumber'] ?? 'REQUISITION'}',
+                          style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.w900, color: Color(0xFFEA580C)),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        latestReq['title']?.toString() ?? 'New message in request thread',
+                        style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        latestReq['message']?.toString() ?? '',
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 12, color: Color(0xFF334155), height: 1.35),
+                      ),
+                      const SizedBox(height: 10),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: () {
+                            final reqNum = latestReq['requestNumber']?.toString() ?? '';
+                            Navigator.pop(ctx);
+                            if (reqNum.isNotEmpty) {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => RequestChatScreen(
+                                    requestNumber: reqNum,
+                                    requestTitle: latestReq['title']?.toString() ?? reqNum,
+                                    currentUser: _currentUser,
+                                  ),
+                                ),
+                              ).then((_) => _refreshUnreadMessages());
+                            }
+                          },
+                          icon: const Icon(Icons.forum_rounded, size: 16),
+                          label: const Text('Open Request Chat', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800)),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFEA580C),
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (latestSupport != null) const SizedBox(height: 10),
+              ],
+              if (latestSupport != null)
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFEF2F2),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: const Color(0xFFFECACA)),
+                        ),
+                        child: Text(
+                          'SUPPORT HELPDESK · $supportCount UNREAD',
+                          style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.w900, color: Color(0xFFDC2626)),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'From ${latestSupport['senderName'] ?? 'Executive Admin'}',
+                        style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        latestSupport['message']?.toString() ?? '',
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 12, color: Color(0xFF334155), height: 1.35),
+                      ),
+                      const SizedBox(height: 10),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: () {
+                            Navigator.pop(ctx);
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => StaffAdminChatScreen(currentUser: _currentUser),
+                              ),
+                            ).then((_) => _refreshUnreadMessages());
+                          },
+                          icon: const Icon(Icons.support_agent_rounded, size: 16),
+                          label: const Text('Open Support Chat', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800)),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF0F172A),
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              const SizedBox(height: 10),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Dismiss', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF64748B))),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   String _formatMinorNaira(dynamic minorVal) {
@@ -3252,7 +3487,7 @@ class _StaffMainScreenState extends State<StaffMainScreen> {
             MaterialPageRoute(
               builder: (_) => StaffAdminChatScreen(currentUser: _currentUser),
             ),
-          );
+          ).then((_) => _refreshUnreadMessages());
         },
         backgroundColor: SubsidiaryTheme.current.color,
         elevation: 6,
@@ -3260,21 +3495,42 @@ class _StaffMainScreenState extends State<StaffMainScreen> {
         tooltip: 'Admin Helpdesk Chat',
         child: Stack(
           alignment: Alignment.center,
+          clipBehavior: Clip.none,
           children: [
             const Icon(Icons.support_agent_rounded, color: Colors.white, size: 28),
-            Positioned(
-              right: 1,
-              top: 1,
-              child: Container(
-                width: 9,
-                height: 9,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF22C55E),
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white, width: 1.5),
+            if (_supportUnreadCount > 0)
+              Positioned(
+                right: -6,
+                top: -6,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                  constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFDC2626),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.white, width: 1.5),
+                  ),
+                  child: Text(
+                    _supportUnreadCount > 9 ? '9+' : '$_supportUnreadCount',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w900),
+                  ),
+                ),
+              )
+            else
+              Positioned(
+                right: 1,
+                top: 1,
+                child: Container(
+                  width: 9,
+                  height: 9,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF22C55E),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 1.5),
+                  ),
                 ),
               ),
-            ),
           ],
         ),
       ),
@@ -5014,25 +5270,57 @@ class _StaffMainScreenState extends State<StaffMainScreen> {
                               currentUser: _currentUser,
                             ),
                           ),
-                        );
+                        ).then((_) => _refreshUnreadMessages());
                       },
                       borderRadius: BorderRadius.circular(8),
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFFFF7ED),
+                          color: _unreadRequestNumbers.contains(req.requestNumber)
+                              ? const Color(0xFFFEF2F2)
+                              : const Color(0xFFFFF7ED),
                           borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: const Color(0xFFFED7AA)),
+                          border: Border.all(
+                            color: _unreadRequestNumbers.contains(req.requestNumber)
+                                ? const Color(0xFFFCA5A5)
+                                : const Color(0xFFFED7AA),
+                          ),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.chat_bubble_outline_rounded, size: 12, color: SubsidiaryTheme.current.color),
-                            SizedBox(width: 4),
+                            Icon(
+                              Icons.chat_bubble_outline_rounded,
+                              size: 12,
+                              color: _unreadRequestNumbers.contains(req.requestNumber)
+                                  ? const Color(0xFFDC2626)
+                                  : SubsidiaryTheme.current.color,
+                            ),
+                            const SizedBox(width: 4),
                             Text(
                               'Request Chat',
-                              style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: SubsidiaryTheme.current.color),
+                              style: TextStyle(
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w800,
+                                color: _unreadRequestNumbers.contains(req.requestNumber)
+                                    ? const Color(0xFFDC2626)
+                                    : SubsidiaryTheme.current.color,
+                              ),
                             ),
+                            if (_unreadRequestNumbers.contains(req.requestNumber)) ...[
+                              const SizedBox(width: 5),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFDC2626),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: const Text(
+                                  'NEW',
+                                  style: TextStyle(color: Colors.white, fontSize: 8.5, fontWeight: FontWeight.w900),
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                       ),
@@ -5901,14 +6189,32 @@ class _StaffMainScreenState extends State<StaffMainScreen> {
                 ),
                 title: const Text('Finance & Admin Helpdesk Chat', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: Color(0xFF0F172A))),
                 subtitle: const Text('Direct messaging with Executive Admin & GMD', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
-                trailing: const Icon(Icons.chevron_right_rounded, color: Color(0xFF94A3B8)),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (_supportUnreadCount > 0)
+                      Container(
+                        margin: const EdgeInsets.only(right: 6),
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFDC2626),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          '$_supportUnreadCount new',
+                          style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800),
+                        ),
+                      ),
+                    const Icon(Icons.chevron_right_rounded, color: Color(0xFF94A3B8)),
+                  ],
+                ),
                 onTap: () {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
                       builder: (_) => StaffAdminChatScreen(currentUser: _currentUser),
                     ),
-                  );
+                  ).then((_) => _refreshUnreadMessages());
                 },
               ),
               const Divider(color: Color(0xFFF1F5F9)),

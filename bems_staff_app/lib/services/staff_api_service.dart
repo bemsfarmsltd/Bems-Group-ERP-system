@@ -1033,6 +1033,34 @@ class StaffApiService {
     throw Exception(data['error']?.toString() ?? 'Could not send message to admin.');
   }
 
+  /// Fetch unread Support Helpdesk and Request-Loop message counts for Staff
+  static Future<Map<String, dynamic>> fetchUnreadChatSummary({
+    required String employeeId,
+    String? token,
+  }) async {
+    try {
+      final res = await _executeWithFailover(
+        (host) => http.get(
+          Uri.parse('$host/api/staff/chat/unread'),
+          headers: _headers(token: token, employeeId: employeeId),
+        ),
+      );
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        final data = jsonDecode(res.body);
+        if (data is Map) {
+          return Map<String, dynamic>.from(data);
+        }
+      }
+    } catch (_) {}
+    return {
+      'unreadCount': 0,
+      'latestMessage': null,
+      'requestUnreadCount': 0,
+      'unreadRequestNumbers': <String>[],
+      'latestRequestMessage': null,
+    };
+  }
+
   /// Update staff avatar in database
   static Future<bool> updateEmployeeAvatar({
     required String employeeId,
