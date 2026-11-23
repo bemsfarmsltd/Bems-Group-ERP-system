@@ -410,15 +410,41 @@ export async function GET(request: Request) {
     };
 
     if (isKioskStream) {
-      // Return ALL staff members who marked attendance today, ordered by most recent check-in
+      const requestedStationCode = (searchParams.get('stationCode') || '').trim();
+      let targetStationId: string | null = null;
+      let isPrimaryStation = false;
+
+      if (requestedStationCode) {
+        const allActiveStations = await prisma.attendanceStation.findMany({
+          where: { status: 'ACTIVE' },
+          orderBy: { createdAt: 'asc' },
+          select: { id: true, code: true },
+        });
+        const matchedStation = allActiveStations.find(
+          (s) => s.code.toLowerCase() === requestedStationCode.toLowerCase()
+        );
+        if (matchedStation) {
+          targetStationId = matchedStation.id;
+          isPrimaryStation = allActiveStations[0]?.id === matchedStation.id;
+        }
+      }
+
+      // Return staff members who marked attendance today at the selected kiosk location, ordered by most recent check-in
       const allTodayAttendees = records
-        .filter((r: any) => r.checkInTime)
+        .filter((r: any) => {
+          if (!r.checkInTime) return false;
+          if (!targetStationId) return true;
+          if (r.stationId === targetStationId) return true;
+          if (!r.stationId && isPrimaryStation) return true;
+          return false;
+        })
         .map((r: any) => {
           const emp = r.employee || employees.find(e => e.id === r.employeeId);
           return {
             employeeId: r.employeeId,
             legalName: emp?.legalName || 'Staff Member',
             employeeNumber: emp?.employeeNumber || '',
+            avatarUrl: emp?.avatarUrl || null,
             role: emp?.role || 'STAFF',
             workLocation: emp?.workLocation || 'BEMS Group',
             department: emp?.assignments?.[0]?.department?.name || 'Operations',
@@ -426,11 +452,14 @@ export async function GET(request: Request) {
             checkInTime: r.checkInTime,
             checkOutTime: r.checkOutTime,
             status: r.status,
+            stationId: r.stationId || targetStationId || null,
+            stationCode: r.station?.code || requestedStationCode || null,
             stationName: r.station?.name || 'Main Gate Kiosk',
           };
         });
 
       const response = NextResponse.json({
+        stationCode: requestedStationCode || null,
         totalPresent: allTodayAttendees.length,
         employees: allTodayAttendees,
       });

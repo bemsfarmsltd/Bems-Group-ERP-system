@@ -59,6 +59,7 @@ export async function POST(request: Request) {
         employeeNumber: true,
         legalName: true,
         workEmail: true,
+        avatarUrl: true,
         role: true,
         isOfflineStaff: true,
         kioskPin: true,
@@ -70,11 +71,14 @@ export async function POST(request: Request) {
     });
 
     const q = staffIdentifier.toLowerCase();
-    const matched = candidates.find(
-      (c) =>
-        c.employeeNumber.toLowerCase() === q ||
-        c.workEmail.toLowerCase() === q
-    );
+    const matched =
+      candidates.find(
+        (c) =>
+          c.employeeNumber.toLowerCase() === q ||
+          c.workEmail.toLowerCase() === q ||
+          c.legalName.toLowerCase() === q
+      ) ||
+      candidates.find((c) => c.legalName.toLowerCase().includes(q));
 
     if (!matched) {
       return NextResponse.json(
@@ -137,14 +141,22 @@ export async function POST(request: Request) {
         where: { id: existing.id },
         data: {
           checkOutTime: now,
+          ...(station?.id && !existing.stationId ? { stationId: station.id } : {}),
         },
       });
 
       return NextResponse.json({
         success: true,
         action: 'CHECK_OUT',
+        employeeId: matched.id,
         employeeName: matched.legalName,
         employeeNumber: matched.employeeNumber,
+        avatarUrl: matched.avatarUrl || null,
+        department: matched.assignments?.[0]?.department?.name || 'Operations',
+        subsidiary: matched.assignments?.[0]?.subsidiary?.legalName || 'BEMS Group',
+        stationName: station.name,
+        stationCode: station.code,
+        status: updated.status,
         timeStr: currentTimeStr,
         message: `Goodbye ${matched.legalName}! Checked out at ${currentTimeStr}.`,
         record: serializeAttendanceRecord(updated),
@@ -240,8 +252,14 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       action: 'CHECK_IN',
+      employeeId: matched.id,
       employeeName: matched.legalName,
       employeeNumber: matched.employeeNumber,
+      avatarUrl: matched.avatarUrl || null,
+      department: matched.assignments?.[0]?.department?.name || 'Operations',
+      subsidiary: matched.assignments?.[0]?.subsidiary?.legalName || 'BEMS Group',
+      stationName: station?.name || 'Office Attendance Kiosk',
+      stationCode: station?.code || null,
       status,
       timeStr: currentTimeStr,
       message: isLate

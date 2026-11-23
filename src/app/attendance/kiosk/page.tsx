@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import {
   Clock,
@@ -85,25 +85,145 @@ export default function AttendanceKioskPage() {
   const [pinBusy, setPinBusy] = useState<boolean>(false);
   const [pinResult, setPinResult] = useState<{ ok: boolean; message: string } | null>(null);
 
-  // Poll recent arrivals & all staff who marked attendance today (cache-busted)
-  const fetchRecent = useCallback(async () => {
-    setIsSyncingRecent(true);
-    try {
-      const res = await fetch(`/api/attendance/timesheet?kiosk=true&_t=${Date.now()}`, {
-        cache: 'no-store',
-      });
-      if (res.ok) {
-        const data = await res.json();
-        const activeToday = (data.employees || []).filter((e: any) => Boolean(e.checkInTime));
-        setRecentPunches(activeToday);
-        setTotalPresentCount(data.totalPresent ?? activeToday.length);
+  // Real-time Big-Photo Welcome / Goodbye Celebration Modal
+  const [celebrationCard, setCelebrationCard] = useState<{
+    action: 'CHECK_IN' | 'CHECK_OUT';
+    employeeId: string;
+    legalName: string;
+    employeeNumber: string;
+    avatarUrl?: string | null;
+    department?: string;
+    subsidiary?: string;
+    stationName?: string;
+    status?: string;
+    timeStr: string;
+  } | null>(null);
+  const seenPunchesRef = useRef<Map<string, { checkIn?: string; checkOut?: string }>>(new Map());
+  const baselineStationRef = useRef<string | null>(null);
+  const celebrationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const triggerCelebration = useCallback(
+    (payload: {
+      action: 'CHECK_IN' | 'CHECK_OUT';
+      employeeId: string;
+      legalName: string;
+      employeeNumber: string;
+      avatarUrl?: string | null;
+      department?: string;
+      subsidiary?: string;
+      stationName?: string;
+      status?: string;
+      timeStr: string;
+    }) => {
+      if (celebrationTimerRef.current) clearTimeout(celebrationTimerRef.current);
+      setCelebrationCard(payload);
+      celebrationTimerRef.current = setTimeout(() => {
+        setCelebrationCard(null);
+      }, 7500);
+    },
+    []
+  );
+
+  // Poll recent arrivals & all staff who marked attendance today at this Kiosk Location (cache-busted)
+  const fetchRecent = useCallback(
+    async (overrideStationCode?: string | React.MouseEvent, resetBaseline = false) => {
+      setIsSyncingRecent(true);
+      try {
+        let codeToUse =
+          typeof overrideStationCode === 'string'
+            ? overrideStationCode
+            : selectedStationCode || stationData?.stationCode || '';
+        if (!codeToUse && typeof window !== 'undefined') {
+          codeToUse =
+            new URLSearchParams(window.location.search).get('station') ||
+            localStorage.getItem('bems_kiosk_station_code') ||
+            '';
+        }
+        const stationParam = codeToUse ? `&stationCode=${encodeURIComponent(codeToUse)}` : '';
+        const res = await fetch(`/api/attendance/timesheet?kiosk=true${stationParam}&_t=${Date.now()}`, {
+          cache: 'no-store',
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const activeToday = (data.employees || []).filter((e: any) => Boolean(e.checkInTime));
+          const stationKey = codeToUse || 'DEFAULT';
+          const isInitialForStation = resetBaseline || baselineStationRef.current !== stationKey;
+
+          if (isInitialForStation) {
+            const nextMap = new Map<string, { checkIn?: string; checkOut?: string }>();
+            for (const emp of activeToday) {
+              nextMap.set(emp.employeeId, {
+                checkIn: emp.checkInTime ? String(emp.checkInTime) : undefined,
+                checkOut: emp.checkOutTime ? String(emp.checkOutTime) : undefined,
+              });
+            }
+            seenPunchesRef.current = nextMap;
+            baselineStationRef.current = stationKey;
+          } else {
+            // Detect any newly arrived check-in or check-out at this kiosk location (e.g. Mobile QR Scan)
+            for (const emp of activeToday) {
+              const prev = seenPunchesRef.current.get(emp.employeeId);
+              const currIn = emp.checkInTime ? String(emp.checkInTime) : undefined;
+              const currOut = emp.checkOutTime ? String(emp.checkOutTime) : undefined;
+
+              if (currOut && (!prev || prev.checkOut !== currOut)) {
+                const outFormatted = new Date(currOut).toLocaleTimeString('en-US', {
+                  timeZone: 'Africa/Lagos',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  hour12: true,
+                });
+                triggerCelebration({
+                  action: 'CHECK_OUT',
+                  employeeId: emp.employeeId,
+                  legalName: emp.legalName,
+                  employeeNumber: emp.employeeNumber,
+                  avatarUrl: emp.avatarUrl,
+                  department: emp.department,
+                  subsidiary: emp.subsidiary,
+                  stationName: emp.stationName || stationData?.stationName || 'BEMS Attendance Kiosk',
+                  status: emp.status,
+                  timeStr: outFormatted,
+                });
+              } else if (currIn && (!prev || prev.checkIn !== currIn)) {
+                const inFormatted = new Date(currIn).toLocaleTimeString('en-US', {
+                  timeZone: 'Africa/Lagos',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  hour12: true,
+                });
+                triggerCelebration({
+                  action: 'CHECK_IN',
+                  employeeId: emp.employeeId,
+                  legalName: emp.legalName,
+                  employeeNumber: emp.employeeNumber,
+                  avatarUrl: emp.avatarUrl,
+                  department: emp.department,
+                  subsidiary: emp.subsidiary,
+                  stationName: emp.stationName || stationData?.stationName || 'BEMS Attendance Kiosk',
+                  status: emp.status,
+                  timeStr: inFormatted,
+                });
+              }
+
+              seenPunchesRef.current.set(emp.employeeId, {
+                checkIn: currIn,
+                checkOut: currOut,
+              });
+            }
+          }
+
+          setRecentPunches(activeToday);
+          setTotalPresentCount(data.totalPresent ?? activeToday.length);
+        }
+      } catch (e) {
+        // quiet ignore
+      } finally {
+        setIsSyncingRecent(false);
       }
-    } catch (e) {
-      // quiet ignore
-    } finally {
-      setIsSyncingRecent(false);
-    }
-  }, []);
+    },
+    [selectedStationCode, stationData?.stationCode, stationData?.stationName, triggerCelebration]
+  );
 
   const handlePinPunch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -125,11 +245,30 @@ export default function AttendanceKioskPage() {
       setPinResult({ ok: true, message: data.message });
       setStaffIdentifier('');
       setKioskPin('');
+      setPinModalOpen(false);
+      setPinResult(null);
+
+      // Immediately show Big-Photo Welcome / Goodbye Celebration Modal and mark seen
+      if (data.employeeId && data.record) {
+        seenPunchesRef.current.set(data.employeeId, {
+          checkIn: data.record.checkInTime ? String(data.record.checkInTime) : undefined,
+          checkOut: data.record.checkOutTime ? String(data.record.checkOutTime) : undefined,
+        });
+      }
+      triggerCelebration({
+        action: data.action === 'CHECK_OUT' ? 'CHECK_OUT' : 'CHECK_IN',
+        employeeId: data.employeeId || 'staff',
+        legalName: data.employeeName || 'Staff Member',
+        employeeNumber: data.employeeNumber || '',
+        avatarUrl: data.avatarUrl || null,
+        department: data.department || 'Operations',
+        subsidiary: data.subsidiary || stationData?.organizationName || 'BEMS Group',
+        stationName: data.stationName || stationData?.stationName || 'BEMS Attendance Kiosk',
+        status: data.status || 'PRESENT',
+        timeStr: data.timeStr || currentTime,
+      });
+
       void fetchRecent();
-      setTimeout(() => {
-        setPinModalOpen(false);
-        setPinResult(null);
-      }, 2800);
     } catch (err: any) {
       setPinResult({ ok: false, message: err.message || 'Check-in failed.' });
     } finally {
@@ -254,10 +393,10 @@ export default function AttendanceKioskPage() {
     return () => clearInterval(timer);
   }, [fetchToken]);
 
-  // Poll recent arrivals & all staff who marked attendance today
+  // Poll recent arrivals & detect live QR clock-in/clock-out every 3 seconds
   useEffect(() => {
     void fetchRecent();
-    const interval = setInterval(fetchRecent, 10000);
+    const interval = setInterval(() => void fetchRecent(), 3000);
     return () => clearInterval(interval);
   }, [fetchRecent]);
 
@@ -446,6 +585,7 @@ export default function AttendanceKioskPage() {
                         window.history.replaceState({}, '', url.toString());
                       }
                       void fetchToken(nextCode);
+                      void fetchRecent(nextCode, true);
                     }}
                     style={{
                       padding: '3px 8px',
@@ -1106,7 +1246,8 @@ export default function AttendanceKioskPage() {
                     </button>
                   </div>
                   <div style={{ fontSize: '12px', color: '#64748b', marginTop: '1px' }}>
-                    Real-time confirmed presence via Starlink Wi-Fi
+                    Signed in from <strong>{stationData?.stationName || 'this Kiosk Location'}</strong>
+                    {stationData?.stateLocation ? ` (${stationData.stateLocation})` : ''}
                   </div>
                 </div>
               </div>
@@ -1250,29 +1391,46 @@ export default function AttendanceKioskPage() {
                       }}
                     >
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <div
-                          style={{
-                            width: '38px',
-                            height: '38px',
-                            borderRadius: '10px',
-                            background: isLate ? '#fef2f2' : '#ecfdf5',
-                            border: `1px solid ${isLate ? '#fecaca' : '#a7f3d0'}`,
-                            color: isLate ? '#dc2626' : '#059669',
-                            fontWeight: 800,
-                            fontSize: '13px',
-                            display: 'grid',
-                            placeItems: 'center',
-                            flexShrink: 0,
-                          }}
-                        >
-                          {initials}
-                        </div>
+                        {staff.avatarUrl ? (
+                          <img
+                            src={staff.avatarUrl}
+                            alt={staff.legalName}
+                            style={{
+                              width: '40px',
+                              height: '40px',
+                              borderRadius: '10px',
+                              objectFit: 'cover',
+                              border: `1.5px solid ${isLate ? '#fecaca' : '#a7f3d0'}`,
+                              flexShrink: 0,
+                              background: '#ffffff',
+                            }}
+                          />
+                        ) : (
+                          <div
+                            style={{
+                              width: '40px',
+                              height: '40px',
+                              borderRadius: '10px',
+                              background: isLate ? '#fef2f2' : '#ecfdf5',
+                              border: `1px solid ${isLate ? '#fecaca' : '#a7f3d0'}`,
+                              color: isLate ? '#dc2626' : '#059669',
+                              fontWeight: 800,
+                              fontSize: '13px',
+                              display: 'grid',
+                              placeItems: 'center',
+                              flexShrink: 0,
+                            }}
+                          >
+                            {initials}
+                          </div>
+                        )}
                         <div>
                           <div style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a' }}>
                             {staff.legalName}
                           </div>
                           <div style={{ fontSize: '11px', color: '#64748b' }}>
-                            {staff.role} {staff.department ? `· ${staff.department}` : ''}
+                            {staff.employeeNumber ? `${staff.employeeNumber} · ` : ''}{staff.department || staff.role}
+                            {staff.checkOutTime ? ' · Checked Out' : ''}
                           </div>
                         </div>
                       </div>
@@ -2076,11 +2234,232 @@ export default function AttendanceKioskPage() {
         </div>
       )}
 
+      {/* Instant Big-Photo Staff Clock-In / Clock-Out Welcome & Goodbye Celebration Modal */}
+      {celebrationCard && (() => {
+        const isClockOut = celebrationCard.action === 'CHECK_OUT';
+        const isLate = !isClockOut && celebrationCard.status === 'LATE';
+        const accentColor = isClockOut ? '#2563eb' : isLate ? '#ea580c' : '#059669';
+        const accentBg = isClockOut ? '#eff6ff' : isLate ? '#fff7ed' : '#ecfdf5';
+        const accentBorder = isClockOut ? '#bfdbfe' : isLate ? '#fed7aa' : '#a7f3d0';
+        const initials = (celebrationCard.legalName || 'ST')
+          .split(' ')
+          .map((n) => n[0])
+          .slice(0, 2)
+          .join('')
+          .toUpperCase();
+
+        return (
+          <div
+            onClick={() => setCelebrationCard(null)}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 12000,
+              background: 'rgba(15, 23, 42, 0.68)',
+              backdropFilter: 'blur(10px)',
+              WebkitBackdropFilter: 'blur(10px)',
+              display: 'grid',
+              placeItems: 'center',
+              padding: '24px',
+              animation: 'fadeInCelebration 0.22s ease-out',
+            }}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                background: '#ffffff',
+                borderRadius: '28px',
+                border: `2px solid ${accentBorder}`,
+                maxWidth: '560px',
+                width: '100%',
+                padding: '36px 32px 30px',
+                boxShadow: '0 30px 70px -15px rgba(15, 23, 42, 0.38)',
+                textAlign: 'center',
+                position: 'relative',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: '16px',
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => setCelebrationCard(null)}
+                style={{
+                  position: 'absolute',
+                  top: '18px',
+                  right: '18px',
+                  width: '34px',
+                  height: '34px',
+                  borderRadius: '50%',
+                  border: '1px solid #e2e8f0',
+                  background: '#f8fafc',
+                  color: '#64748b',
+                  display: 'grid',
+                  placeItems: 'center',
+                  cursor: 'pointer',
+                }}
+                title="Dismiss"
+              >
+                <X size={18} />
+              </button>
+
+              {/* Status Top Pill */}
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '7px',
+                  padding: '6px 16px',
+                  borderRadius: '999px',
+                  background: accentBg,
+                  color: accentColor,
+                  border: `1.5px solid ${accentBorder}`,
+                  fontSize: '12px',
+                  fontWeight: 900,
+                  letterSpacing: '0.06em',
+                  textTransform: 'uppercase',
+                }}
+              >
+                <CheckCircle2 size={15} />
+                {isClockOut
+                  ? `🌙 SHIFT COMPLETED & SIGNED OUT · ${celebrationCard.timeStr}`
+                  : isLate
+                  ? `⚠️ LATE ARRIVAL RECORDED · ${celebrationCard.timeStr}`
+                  : `☀️ ON-TIME ARRIVAL VERIFIED · ${celebrationCard.timeStr}`}
+              </span>
+
+              {/* BIG STAFF PICTURE (172x172) */}
+              <div
+                style={{
+                  width: '176px',
+                  height: '176px',
+                  borderRadius: '50%',
+                  padding: '5px',
+                  background: `linear-gradient(135deg, ${accentColor}, #10b981)`,
+                  boxShadow: `0 16px 36px ${accentColor}33`,
+                  display: 'grid',
+                  placeItems: 'center',
+                  marginTop: '4px',
+                }}
+              >
+                {celebrationCard.avatarUrl ? (
+                  <img
+                    src={celebrationCard.avatarUrl}
+                    alt={celebrationCard.legalName}
+                    style={{
+                      width: '166px',
+                      height: '166px',
+                      borderRadius: '50%',
+                      objectFit: 'cover',
+                      background: '#ffffff',
+                      border: '4px solid #ffffff',
+                    }}
+                  />
+                ) : (
+                  <div
+                    style={{
+                      width: '166px',
+                      height: '166px',
+                      borderRadius: '50%',
+                      background: accentBg,
+                      color: accentColor,
+                      border: '4px solid #ffffff',
+                      display: 'grid',
+                      placeItems: 'center',
+                      fontSize: '56px',
+                      fontWeight: 900,
+                      letterSpacing: '-1px',
+                    }}
+                  >
+                    {initials}
+                  </div>
+                )}
+              </div>
+
+              {/* Staff Name & Meta */}
+              <div>
+                <h2
+                  style={{
+                    margin: '4px 0 4px',
+                    fontSize: '26px',
+                    fontWeight: 900,
+                    color: '#0f172a',
+                    letterSpacing: '-0.02em',
+                    lineHeight: 1.2,
+                  }}
+                >
+                  {isClockOut
+                    ? `Goodbye, ${celebrationCard.legalName}!`
+                    : `Welcome, ${celebrationCard.legalName}!`}
+                </h2>
+                <div style={{ fontSize: '13px', fontWeight: 700, color: '#64748b' }}>
+                  {celebrationCard.employeeNumber ? `${celebrationCard.employeeNumber} · ` : ''}
+                  {celebrationCard.department || 'Operations'} · {celebrationCard.subsidiary || 'BEMS Group'}
+                </div>
+              </div>
+
+              {/* Structured Greeting Card */}
+              <div
+                style={{
+                  width: '100%',
+                  padding: '16px 20px',
+                  borderRadius: '16px',
+                  background: '#f8fafc',
+                  border: '1px solid #e2e8f0',
+                  fontSize: '14.5px',
+                  lineHeight: 1.55,
+                  color: '#334155',
+                  fontWeight: 600,
+                }}
+              >
+                {isClockOut ? (
+                  <>
+                    Your evening sign-out at <strong style={{ color: '#0f172a' }}>{celebrationCard.stationName || 'BEMS Office Kiosk'}</strong> is complete at <strong style={{ color: accentColor }}>{celebrationCard.timeStr}</strong>. Thank you for your hard work and dedication today — have a restful evening and a safe journey home!
+                  </>
+                ) : isLate ? (
+                  <>
+                    You clocked in at <strong style={{ color: '#0f172a' }}>{celebrationCard.stationName || 'BEMS Office Kiosk'}</strong> at <strong style={{ color: accentColor }}>{celebrationCard.timeStr}</strong> (after the morning resumption grace window). Have a focused and productive workday ahead!
+                  </>
+                ) : (
+                  <>
+                    You are <strong style={{ color: accentColor }}>on time</strong> at <strong style={{ color: '#0f172a' }}>{celebrationCard.stationName || 'BEMS Office Kiosk'}</strong> (<strong style={{ color: '#0f172a' }}>{celebrationCard.timeStr}</strong>). Thank you for your punctuality — have a great and productive workday!
+                  </>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setCelebrationCard(null)}
+                style={{
+                  marginTop: '4px',
+                  padding: '11px 28px',
+                  borderRadius: '12px',
+                  border: 'none',
+                  background: accentColor,
+                  color: '#ffffff',
+                  fontSize: '13.5px',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  boxShadow: `0 6px 18px ${accentColor}40`,
+                }}
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Animation Styles */}
       <style>{`
         @keyframes scanLaser {
           0% { top: 8%; }
           100% { top: 92%; }
+        }
+        @keyframes fadeInCelebration {
+          0% { opacity: 0; transform: scale(0.95); }
+          100% { opacity: 1; transform: scale(1); }
         }
       `}</style>
     </div>
