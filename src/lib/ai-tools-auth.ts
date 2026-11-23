@@ -1,4 +1,4 @@
-import { hasGmdFeatureAccess } from '@/lib/gmd-access';
+import { hasGmdFeatureAccess, superAdminGmdAccessEnabled } from '@/lib/gmd-access';
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthenticatedEmployee, hasAnyRole } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
@@ -106,7 +106,8 @@ export async function authenticateAiToolRequest(
     }
 
     const del = verified.delegation;
-    if(!hasGmdFeatureAccess(del.requesterRole))return {actor:null,errorResponse:NextResponse.json({error_code:'GMD_AI_ONLY',message:'AI access requires GMD or an authorized Super Admin.'},{status:403})};
+    const allowSuperAdmin = superAdminGmdAccessEnabled() || (del.requesterRole === 'SUPER_ADMIN' && Boolean(del.allowAuthorizedSuperAdmin));
+    if(!hasGmdFeatureAccess(del.requesterRole, allowSuperAdmin))return {actor:null,errorResponse:NextResponse.json({error_code:'GMD_AI_ONLY',message:'AI access requires GMD or an authorized Super Admin.'},{status:403})};
     if (mode === 'write' && del.operationMode === 'READ_ONLY') {
       return {
         actor: null,
@@ -161,7 +162,7 @@ export async function authenticateAiToolRequest(
       };
     }
 
-    if (!hasGmdFeatureAccess(canonicalRole)) {
+    if (!hasGmdFeatureAccess(canonicalRole, allowSuperAdmin)) {
       return {
         actor: null,
         errorResponse: NextResponse.json(
