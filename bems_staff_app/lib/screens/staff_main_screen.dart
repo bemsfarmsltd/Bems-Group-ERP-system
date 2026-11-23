@@ -3777,6 +3777,17 @@ class _StaffMainScreenState extends State<StaffMainScreen> {
             const SizedBox(width: 8),
             OutlinedButton.icon(
               onPressed: () async {
+                final lagosNow = DateTime.now().toUtc().add(const Duration(hours: 1));
+                if (lagosNow.hour < 17) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Sign-out is locked until 5:00 PM (17:00). You cannot clock out early.'),
+                      backgroundColor: Color(0xFFD97706),
+                      duration: Duration(seconds: 4),
+                    ),
+                  );
+                  return;
+                }
                 final result = await Navigator.push<bool>(
                   context,
                   MaterialPageRoute(
@@ -3789,14 +3800,32 @@ class _StaffMainScreenState extends State<StaffMainScreen> {
                 if (result == true) _loadData();
               },
               style: OutlinedButton.styleFrom(
-                foregroundColor: const Color(0xFF15803D),
-                side: const BorderSide(color: Color(0xFF86EFAC)),
+                foregroundColor: DateTime.now().toUtc().add(const Duration(hours: 1)).hour < 17
+                    ? const Color(0xFF64748B)
+                    : const Color(0xFF15803D),
+                side: BorderSide(
+                  color: DateTime.now().toUtc().add(const Duration(hours: 1)).hour < 17
+                      ? const Color(0xFFCBD5E1)
+                      : const Color(0xFF86EFAC),
+                ),
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                backgroundColor: Colors.white,
+                backgroundColor: DateTime.now().toUtc().add(const Duration(hours: 1)).hour < 17
+                    ? const Color(0xFFF8FAFC)
+                    : Colors.white,
               ),
-              icon: const Icon(Icons.logout_rounded, size: 14),
-              label: const Text('Check Out', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800)),
+              icon: Icon(
+                DateTime.now().toUtc().add(const Duration(hours: 1)).hour < 17
+                    ? Icons.lock_clock_rounded
+                    : Icons.logout_rounded,
+                size: 14,
+              ),
+              label: Text(
+                DateTime.now().toUtc().add(const Duration(hours: 1)).hour < 17
+                    ? 'Locked until 5 PM'
+                    : 'Check Out',
+                style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800),
+              ),
             ),
           ],
         ),

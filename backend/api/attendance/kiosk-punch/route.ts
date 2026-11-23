@@ -98,6 +98,33 @@ export async function POST(request: Request) {
         );
       }
 
+      if (existing.checkOutTime) {
+        const existingOutStr = getLagosTime(existing.checkOutTime).currentTimeStr;
+        return NextResponse.json({
+          success: true,
+          alreadyCheckedOut: true,
+          action: 'CHECK_OUT',
+          employeeName: matched.legalName,
+          employeeNumber: matched.employeeNumber,
+          timeStr: existingOutStr,
+          message: `${matched.legalName} already checked out today at ${existingOutStr}.`,
+          record: serializeAttendanceRecord(existing),
+        });
+      }
+
+      const closingTime = policy?.closingTime || '17:00';
+      const [cHour, cMin] = closingTime.split(':').map(Number);
+      const closingMinutes = (Number.isFinite(cHour) ? cHour : 17) * 60 + (Number.isFinite(cMin) ? cMin : 0);
+      if (minutesSinceMidnight < closingMinutes) {
+        return NextResponse.json(
+          {
+            error: `Sign-out is locked until ${closingTime} (5:00 PM). ${matched.legalName} cannot check out early (current time: ${currentTimeStr}).`,
+            lockedUntil: closingTime,
+          },
+          { status: 400 }
+        );
+      }
+
       const updated = await prisma.attendanceRecord.update({
         where: { id: existing.id },
         data: {

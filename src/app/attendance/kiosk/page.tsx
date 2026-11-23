@@ -39,7 +39,9 @@ interface StationData {
   requireGeofence?: boolean;
   earliestCheckInTime?: string;
   resumptionTime?: string;
+  closingTime?: string;
   gracePeriodMinutes?: number;
+  latenessDeductionPercent?: number;
 }
 
 export default function AttendanceKioskPage() {
@@ -400,7 +402,7 @@ export default function AttendanceKioskPage() {
                 </span>
               </div>
               <div style={{ fontSize: '12px', color: '#64748b', marginTop: '1px' }}>
-                {stationData?.stationName || 'BEMS Group'} · Victoria Island
+                {stationData?.stationName || 'BEMS Office Station'} · {stationData?.organizationName || 'BEMS Group'}
               </div>
             </div>
           </div>
@@ -648,15 +650,27 @@ export default function AttendanceKioskPage() {
               <strong style={{ fontSize: '15px', color: '#0284c7', fontWeight: 800, display: 'block', marginTop: '2px' }}>
                 {stationData?.earliestCheckInTime || '07:00'} – {stationData?.resumptionTime || '08:00'} AM
               </strong>
-              <span style={{ fontSize: '11px', color: '#94a3b8' }}>Prior to 7 AM locked</span>
+              <span style={{ fontSize: '11px', color: '#94a3b8' }}>
+                Prior to {stationData?.earliestCheckInTime || '07:00'} locked
+              </span>
             </div>
 
             <div>
               <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 600 }}>Grace Period Limit</div>
               <strong style={{ fontSize: '15px', color: '#d97706', fontWeight: 800, display: 'block', marginTop: '2px' }}>
-                08:15 AM
+                {(() => {
+                  const [rh, rm] = (stationData?.resumptionTime || '08:00').split(':').map(Number);
+                  const total = (Number.isFinite(rh) ? rh : 8) * 60 + (Number.isFinite(rm) ? rm : 0) + (stationData?.gracePeriodMinutes ?? 15);
+                  const gh = Math.floor(total / 60) % 24;
+                  const gm = total % 60;
+                  const suffix = gh >= 12 ? 'PM' : 'AM';
+                  const h12 = gh % 12 === 0 ? 12 : gh % 12;
+                  return `${String(h12).padStart(2, '0')}:${String(gm).padStart(2, '0')} ${suffix}`;
+                })()}
               </strong>
-              <span style={{ fontSize: '11px', color: '#dc2626' }}>5% salary deduction after</span>
+              <span style={{ fontSize: '11px', color: '#dc2626' }}>
+                {stationData?.latenessDeductionPercent ?? 2}% salary deduction after
+              </span>
             </div>
 
             <div>
@@ -1882,22 +1896,39 @@ export default function AttendanceKioskPage() {
               >
                 ☀️ Morning Check-In
               </button>
-              <button
-                type="button"
-                onClick={() => setPinAction('CHECK_OUT')}
-                style={{
-                  padding: '10px',
-                  borderRadius: 10,
-                  border: pinAction === 'CHECK_OUT' ? '2px solid #2563eb' : '1px solid #cbd5e1',
-                  background: pinAction === 'CHECK_OUT' ? '#eff6ff' : '#ffffff',
-                  color: pinAction === 'CHECK_OUT' ? '#1d4ed8' : '#475569',
-                  fontWeight: 800,
-                  fontSize: 13,
-                  cursor: 'pointer',
-                }}
-              >
-                🌙 Evening Check-Out
-              </button>
+              {(() => {
+                const closingStr = stationData?.closingTime || '17:00';
+                const [ch, cm] = closingStr.split(':').map(Number);
+                const closingMins = (Number.isFinite(ch) ? ch : 17) * 60 + (Number.isFinite(cm) ? cm : 0);
+                const lagosNow = new Date(Date.now() + 60 * 60 * 1000);
+                const nowMins = lagosNow.getUTCHours() * 60 + lagosNow.getUTCMinutes();
+                const locked = nowMins < closingMins;
+                return (
+                  <button
+                    type="button"
+                    disabled={locked}
+                    onClick={() => {
+                      if (!locked) setPinAction('CHECK_OUT');
+                    }}
+                    style={{
+                      padding: '10px',
+                      borderRadius: 10,
+                      border: locked
+                        ? '1px solid #e2e8f0'
+                        : pinAction === 'CHECK_OUT'
+                          ? '2px solid #2563eb'
+                          : '1px solid #cbd5e1',
+                      background: locked ? '#f8fafc' : pinAction === 'CHECK_OUT' ? '#eff6ff' : '#ffffff',
+                      color: locked ? '#94a3b8' : pinAction === 'CHECK_OUT' ? '#1d4ed8' : '#475569',
+                      fontWeight: 800,
+                      fontSize: 12.5,
+                      cursor: locked ? 'not-allowed' : 'pointer',
+                    }}
+                  >
+                    {locked ? `🔒 Locked until ${closingStr}` : '🌙 Evening Check-Out'}
+                  </button>
+                );
+              })()}
             </div>
 
             {pinResult && (

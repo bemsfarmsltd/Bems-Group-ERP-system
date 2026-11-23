@@ -322,9 +322,44 @@ export async function POST(request: Request) {
       });
     } else {
       // CHECK OUT
+      if (!existing || !existing.checkInTime) {
+        return NextResponse.json(
+          { error: `You have not clocked in yet today (${workDate}). Please clock in first.` },
+          { status: 400 }
+        );
+      }
+
+      if (existing.checkOutTime) {
+        const existingOutStr = getLagosTime(existing.checkOutTime).currentTimeStr;
+        return NextResponse.json({
+          success: true,
+          alreadyCheckedOut: true,
+          type: 'CHECK_OUT',
+          employeeName: employee.legalName,
+          employeeNumber: employee.employeeNumber,
+          workDate,
+          time: existingOutStr,
+          status: existing.status,
+          distanceMeters,
+          stationName: station.name,
+          message: `You already signed out today (${workDate}) at ${existingOutStr}.`,
+          record: serializeAttendanceRecord(existing),
+        });
+      }
+
       const [cHour, cMin] = closingTime.split(':').map(Number);
-      const closingMinutes = cHour * 60 + cMin;
+      const closingMinutes = (Number.isFinite(cHour) ? cHour : 17) * 60 + (Number.isFinite(cMin) ? cMin : 0);
       const currentMinutes = hours * 60 + minutes;
+      if (currentMinutes < closingMinutes) {
+        return NextResponse.json(
+          {
+            error: `Sign-out is locked until ${closingTime} (5:00 PM). You cannot clock out early (current time: ${currentTimeStr}).`,
+            lockedUntil: closingTime,
+          },
+          { status: 400 }
+        );
+      }
+
       const isEarly = currentMinutes < closingMinutes;
 
       const record = await prisma.attendanceRecord.upsert({

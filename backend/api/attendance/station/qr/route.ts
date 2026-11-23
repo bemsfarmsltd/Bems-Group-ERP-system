@@ -62,7 +62,9 @@ export async function GET(request: Request) {
       requireGeofence: policy?.requireGeofence ?? true,
       earliestCheckInTime: policy?.earliestCheckInTime || '07:00',
       resumptionTime: policy?.resumptionTime || '08:00',
-      gracePeriodMinutes: policy?.gracePeriodMinutes || 15,
+      closingTime: policy?.closingTime || '17:00',
+      gracePeriodMinutes: policy?.gracePeriodMinutes ?? 15,
+      latenessDeductionPercent: policy?.latenessDeductionPercent ?? 2,
       timestamp: new Date().toISOString(),
     }, {
       headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0' },
