@@ -135,6 +135,12 @@ export function ExecutiveRequisitionModal({
 }: ExecutiveRequisitionModalProps) {
   const [copiedSystemId, setCopiedSystemId] = useState(false);
   const [evidenceTab, setEvidenceTab] = useState<'ALL' | 'PRE_APPROVAL' | 'POST_RETIREMENT' | 'COMPARE'>('ALL');
+  const [showExternalPaidModal, setShowExternalPaidModal] = useState(false);
+  const [externalNote, setExternalNote] = useState('This payment was made already (not paid via the system).');
+  const [externalRef, setExternalRef] = useState('');
+  const [externalPassword, setExternalPassword] = useState('');
+  const [externalError, setExternalError] = useState<string | null>(null);
+  const [externalBusy, setExternalBusy] = useState(false);
   const systemId = request.systemId || toSystemRequestId(request.id);
 
   const preApprovalEvidence = (request.attachments || []).filter(
@@ -1230,12 +1236,18 @@ export function ExecutiveRequisitionModal({
             )}
 
             {(request.paymentStatus === 'UNPAID' || !request.paymentStatus) && (
-              <a
-                href={`/requests/${encodeURIComponent(request.requestNumber)}`}
+              <button
+                type="button"
+                onClick={() => {
+                  setExternalError(null);
+                  setExternalPassword('');
+                  setShowExternalPaidModal(true);
+                }}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
+                  width: '100%',
                   padding: '10px 14px',
                   borderRadius: '10px',
                   background: '#f8fafc',
@@ -1243,16 +1255,155 @@ export function ExecutiveRequisitionModal({
                   color: '#334155',
                   fontSize: '11px',
                   fontWeight: 700,
-                  textDecoration: 'none',
+                  cursor: 'pointer',
+                  textAlign: 'left',
                 }}
               >
-                <span>Paid externally? Open Full Dossier / Off-System Channel</span>
+                <span>Paid externally? Record Off-System Settlement →</span>
                 <ExternalLink size={13} color="#ea580c" />
-              </a>
+              </button>
             )}
           </div>
         </div>
       </div>
+
+      {showExternalPaidModal && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 1300,
+            background: 'rgba(15, 23, 42, 0.5)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px',
+          }}
+        >
+          <div
+            style={{
+              width: '100%',
+              maxWidth: '460px',
+              background: '#ffffff',
+              borderRadius: '16px',
+              border: '1px solid #e2e8f0',
+              padding: '20px',
+              boxShadow: '0 24px 48px rgba(15, 23, 42, 0.22)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '12px',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: '#0f172a' }}>
+                Record External / Off-System Payment
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowExternalPaidModal(false)}
+                style={{ background: 'none', border: 0, color: '#64748b', cursor: 'pointer' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <p style={{ margin: 0, fontSize: '12px', color: '#475569', lineHeight: 1.45 }}>
+              Mark <strong>{request.requestNumber}</strong> ({request.amountFormatted}) as paid outside the system. Keeps full audit, disbursement, and email records without touching Monnify.
+            </p>
+            {externalError && (
+              <div style={{ padding: '10px 12px', borderRadius: '10px', background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', fontSize: '12px', fontWeight: 600 }}>
+                {externalError}
+              </div>
+            )}
+            <div>
+              <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>
+                Settlement Note *
+              </label>
+              <textarea
+                rows={2}
+                value={externalNote}
+                onChange={(e) => setExternalNote(e.target.value)}
+                style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box', background: '#f8fafc', color: '#0f172a' }}
+              />
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>
+                External Reference (Optional)
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. Direct Bank / Card Receipt Ref"
+                value={externalRef}
+                onChange={(e) => setExternalRef(e.target.value)}
+                style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box', background: '#f8fafc', color: '#0f172a' }}
+              />
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>
+                Your Account Password *
+              </label>
+              <input
+                type="password"
+                placeholder="Enter password to confirm"
+                value={externalPassword}
+                onChange={(e) => setExternalPassword(e.target.value)}
+                style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box', background: '#f8fafc', color: '#0f172a' }}
+              />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '4px' }}>
+              <button
+                type="button"
+                onClick={() => setShowExternalPaidModal(false)}
+                style={{ padding: '8px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#fff', color: '#475569', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={externalBusy || !externalPassword || !externalNote.trim()}
+                onClick={async () => {
+                  setExternalBusy(true);
+                  setExternalError(null);
+                  try {
+                    const res = await fetch(`/api/requests/${encodeURIComponent(request.requestNumber)}/mark-paid-external`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      credentials: 'include',
+                      body: JSON.stringify({
+                        note: externalNote.trim(),
+                        reference: externalRef.trim() || undefined,
+                        password: externalPassword,
+                      }),
+                    });
+                    const data = await res.json().catch(() => ({}));
+                    if (!res.ok) throw new Error(data?.error || 'Failed to record external payment.');
+                    setShowExternalPaidModal(false);
+                    onClose();
+                    window.location.reload();
+                  } catch (err: any) {
+                    setExternalError(err?.message || 'Failed to record external payment.');
+                  } finally {
+                    setExternalBusy(false);
+                  }
+                }}
+                style={{
+                  padding: '8px 14px',
+                  borderRadius: '8px',
+                  border: 0,
+                  background: '#ea580c',
+                  color: '#fff',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  cursor: externalBusy || !externalPassword || !externalNote.trim() ? 'not-allowed' : 'pointer',
+                  opacity: externalBusy || !externalPassword || !externalNote.trim() ? 0.5 : 1,
+                }}
+              >
+                {externalBusy ? 'Recording...' : 'Confirm External Payment'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <style jsx>{`
         @keyframes modalBackdropFade {
