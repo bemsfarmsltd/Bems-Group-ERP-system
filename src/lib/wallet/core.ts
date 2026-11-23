@@ -277,6 +277,19 @@ export async function readFundingDashboard(actor: WalletActor) {
     const organizations = await tx.organization.findMany({ where: { status: 'ACTIVE', defaultCurrency: 'NGN' }, select: { id: true, code: true, legalName: true, type: true, departments: { select: { id: true, name: true, code: true }, orderBy: { name: 'asc' } } } });
     const staffWallets = await tx.$queryRaw<any[]>`SELECT e."id", e."legalName", e."employeeNumber", e."role", COALESCE(a."subsidiaryId", '') AS "subsidiaryId", COALESCE(o."legalName", 'Unassigned') AS "organizationName", COALESCE(sum(c."availableMinor"),0)::bigint AS "availableMinor", COALESCE(sum(c."heldMinor"),0)::bigint AS "heldMinor", COALESCE(sum(c."settledMinor"),0)::bigint AS "settledMinor" FROM "Employee" e LEFT JOIN "EmployeeAssignment" a ON a."employeeId"=e."id" AND a."status"='ACTIVE' AND a."isPrimary"=true LEFT JOIN "Organization" o ON o."id"=a."subsidiaryId" LEFT JOIN "WalletCreditLot" c ON c."employeeId"=e."id" WHERE e."role" IN ('STAFF','CUSTOM_ADMIN') AND e."approvalStatus"='APPROVED' AND e."status" IN ('ACTIVE','ON_LEAVE') GROUP BY e."id", e."legalName", e."employeeNumber", e."role", a."subsidiaryId", o."legalName" ORDER BY "availableMinor" DESC, e."legalName" ASC LIMIT 100`;
     const journals = await tx.$queryRaw<any[]>`SELECT j."id", j."kind", j."reference", j."createdAt", j."actorId", actor."legalName" AS "actorName", actor."role" AS "actorRole", COALESCE(json_agg(json_build_object('id', je."id", 'accountKey', je."accountKey", 'amountMinor', je."amountMinor"::text)) FILTER (WHERE je."id" IS NOT NULL), '[]'::json) AS "entries" FROM "WalletJournal" j LEFT JOIN "Employee" actor ON actor."id"=j."actorId" LEFT JOIN "WalletJournalEntry" je ON je."journalId"=j."id" GROUP BY j."id", j."kind", j."reference", j."createdAt", j."actorId", actor."legalName", actor."role" ORDER BY j."createdAt" DESC LIMIT 50`;
-    return walletJson({ walletMode:walletEnabled(), processing:walletWorkerStatus(), funding, envelopes, proposals, requests, organizations, vendors, transfers, payrollBatches, issues, staffWallets, journals, approvalLabel: financialApproverLabel(), canApprove: walletEnabled() && (await canActorApproveFunds(actor)) });
+    const [chargeMetrics] = await tx.$queryRaw<Array<{ transferChargesMinor: bigint; chargebackMinor: bigint; chargebackCount: number }>>`
+      SELECT
+        COALESCE(sum("feeMinor") FILTER (WHERE "feeMinor" > 0), 0)::bigint AS "transferChargesMinor",
+        COALESCE(sum("amountMinor") FILTER (WHERE "status" IN ('FAILED', 'REVERSED')), 0)::bigint AS "chargebackMinor",
+        count(*) FILTER (WHERE "status" IN ('FAILED', 'REVERSED'))::integer AS "chargebackCount"
+      FROM "WalletWithdrawal"
+    `;
+    const chargesSummary = {
+      feeReserveMinor: funding?.feeReserveMinor ?? BigInt(0),
+      transferChargesMinor: chargeMetrics?.transferChargesMinor ?? BigInt(0),
+      chargebackMinor: chargeMetrics?.chargebackMinor ?? BigInt(0),
+      chargebackCount: Number(chargeMetrics?.chargebackCount ?? 0),
+    };
+    return walletJson({ walletMode:walletEnabled(), processing:walletWorkerStatus(), funding, chargesSummary, envelopes, proposals, requests, organizations, vendors, transfers, payrollBatches, issues, staffWallets, journals, approvalLabel: financialApproverLabel(), canApprove: walletEnabled() && (await canActorApproveFunds(actor)) });
   }, { maxWait: 10000, timeout: 30000, isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
 }

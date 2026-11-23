@@ -408,7 +408,19 @@ export async function PATCH(
       return NextResponse.json({ error: "Permission denied. You can only edit your own fund requests." }, { status: 403 });
     }
 
-    if (expenditure.paymentStatus !== "UNPAID") {
+    const body = await request.json().catch(() => ({}));
+    const rawInterval = typeof body.recurringInterval === "string" ? body.recurringInterval.trim().toUpperCase() : undefined;
+    const normalizedInterval = rawInterval === "YEARLY" ? "ANNUAL" : rawInterval;
+    const isIntervalOnlyUpdate =
+      expenditure.isRecurring &&
+      normalizedInterval !== undefined &&
+      ["WEEKLY", "BI_WEEKLY", "MONTHLY", "QUARTERLY", "ANNUAL"].includes(normalizedInterval) &&
+      body.title === undefined &&
+      body.amountMinor === undefined &&
+      body.amountNaira === undefined &&
+      body.justification === undefined;
+
+    if (expenditure.paymentStatus !== "UNPAID" && !(isExecutiveAdmin && isIntervalOnlyUpdate)) {
       return NextResponse.json(
         { error: "Cannot edit request: Funds have already been scheduled or disbursed." },
         { status: 400 }
@@ -430,7 +442,6 @@ export async function PATCH(
       }
     }
 
-    const body = await request.json().catch(() => ({}));
     const title = typeof body.title === "string" ? body.title.trim() : expenditure.title;
     const justification = typeof body.justification === "string" ? body.justification.trim() : expenditure.justification;
     const deliverable = typeof body.deliverable === "string"
@@ -467,7 +478,9 @@ export async function PATCH(
           category,
           amountMinor,
           isRecurring: typeof body.isRecurring === "boolean" ? body.isRecurring : expenditure.isRecurring,
-          recurringInterval: typeof body.recurringInterval === "string" ? body.recurringInterval : expenditure.recurringInterval,
+          recurringInterval: normalizedInterval && ["WEEKLY", "BI_WEEKLY", "MONTHLY", "QUARTERLY", "ANNUAL"].includes(normalizedInterval)
+            ? normalizedInterval
+            : expenditure.recurringInterval,
           approvalStatus: nextApprovalStatus,
           requestVersion: { increment: 1 },
         },

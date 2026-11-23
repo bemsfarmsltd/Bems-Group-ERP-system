@@ -30,6 +30,7 @@ import {
   Check,
   X,
   AlertTriangle,
+  Activity,
 } from 'lucide-react';
 import { walletApi as api, walletMoney, nairaToMinor } from './WalletView';
 
@@ -662,6 +663,66 @@ export default function FundingView({
             </strong>
             <p style={{ margin: '2px 0 0', fontSize: '10px', color: '#64748b' }}>
               Available to allocate to subsidiary budgets
+            </p>
+          </div>
+        </div>
+
+        {/* Metric 5: Charges & Fee Reserve */}
+        <div
+          style={{
+            background: '#ffffff',
+            border: '1px solid #e2e8f0',
+            borderRadius: '10px',
+            padding: '10px 14px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '4px',
+            boxShadow: '0 1px 4px rgba(0,0,0,0.02)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: '8px', fontWeight: 700, letterSpacing: '0.6px', color: '#64748b', textTransform: 'uppercase' }}>
+              Charges &amp; Fee Reserve
+            </span>
+            <Activity size={13} color="#475569" />
+          </div>
+          <div>
+            <strong style={{ fontSize: '18px', fontWeight: 800, letterSpacing: '-0.3px', lineHeight: 1.2, color: '#0f172a', display: 'block' }}>
+              {data?.chargesSummary ? walletMoney(data.chargesSummary.transferChargesMinor) : '₦0.00'}
+            </strong>
+            <p style={{ margin: '2px 0 0', fontSize: '10px', color: '#64748b' }}>
+              Fee reserve held: {data?.funding ? walletMoney(data.funding.feeReserveMinor) : '₦0.00'}
+            </p>
+          </div>
+        </div>
+
+        {/* Metric 6: Chargebacks & Reversals */}
+        <div
+          style={{
+            background: '#ffffff',
+            border: Number(data?.chargesSummary?.chargebackCount || 0) > 0 || (data?.issues?.length || 0) > 0
+              ? '1px solid #fecaca'
+              : '1px solid #e2e8f0',
+            borderRadius: '10px',
+            padding: '10px 14px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '4px',
+            boxShadow: '0 1px 4px rgba(0,0,0,0.02)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: '8px', fontWeight: 700, letterSpacing: '0.6px', color: '#dc2626', textTransform: 'uppercase' }}>
+              Chargebacks &amp; Reversals
+            </span>
+            <AlertTriangle size={13} color="#dc2626" />
+          </div>
+          <div>
+            <strong style={{ fontSize: '18px', fontWeight: 800, letterSpacing: '-0.3px', lineHeight: 1.2, color: '#dc2626', display: 'block' }}>
+              {data?.chargesSummary ? walletMoney(data.chargesSummary.chargebackMinor) : '₦0.00'}
+            </strong>
+            <p style={{ margin: '2px 0 0', fontSize: '10px', color: '#64748b' }}>
+              {data?.chargesSummary?.chargebackCount || 0} reversed · {data?.issues?.length || 0} open issues
             </p>
           </div>
         </div>

@@ -495,20 +495,49 @@ export function RecurringCommitmentsView({ businessName }: { businessName: strin
                       {/* Amount & Cadence */}
                       <td style={{ padding: '12px 14px', whiteSpace: 'nowrap' }}>
                         <strong style={{ display: 'block', color: '#0f172a', fontSize: 13 }}>{formatNaira(request.amountMinor)}</strong>
-                        <span
+                        <select
+                          aria-label={`Change cadence for ${request.requestNumber}`}
+                          value={
+                            request.recurringInterval === 'ANNUAL' || request.recurringInterval === 'YEARLY'
+                              ? 'ANNUAL'
+                              : request.recurringInterval === 'QUARTERLY'
+                                ? 'QUARTERLY'
+                                : 'MONTHLY'
+                          }
+                          onChange={async (e) => {
+                            const nextInterval = e.target.value;
+                            try {
+                              const res = await fetch(`/api/requests/${encodeURIComponent(request.requestNumber)}`, {
+                                method: 'PATCH',
+                                headers: { 'Content-Type': 'application/json' },
+                                credentials: 'include',
+                                body: JSON.stringify({ recurringInterval: nextInterval }),
+                              });
+                              if (!res.ok) {
+                                const err = await res.json().catch(() => ({}));
+                                throw new Error(err?.error || 'Could not update recurring cadence.');
+                              }
+                              await load();
+                            } catch (err: any) {
+                              setError(err?.message || 'Could not update recurring cadence.');
+                            }
+                          }}
                           style={{
-                            display: 'inline-block',
-                            marginTop: 2,
-                            padding: '2px 7px',
+                            marginTop: 3,
+                            padding: '2px 6px',
                             borderRadius: 6,
+                            border: '1px solid #cbd5e1',
                             background: cadence === 'Monthly' ? '#eff6ff' : '#faf5ff',
                             color: cadence === 'Monthly' ? '#1d4ed8' : '#7c3aed',
                             fontSize: 10,
                             fontWeight: 800,
+                            cursor: 'pointer',
                           }}
                         >
-                          {cadence}
-                        </span>
+                          <option value="MONTHLY">Monthly</option>
+                          <option value="QUARTERLY">Quarterly</option>
+                          <option value="ANNUAL">Yearly (Annual)</option>
+                        </select>
                       </td>
 
                       {/* Needed By */}
