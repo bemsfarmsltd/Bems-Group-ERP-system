@@ -56,15 +56,33 @@ type NavTabKey =
   | 'analytics_budget'
   | 'governance_approvals';
 
-const NAV_TABS: Array<{ id: NavTabKey; label: string; badgeKey?: string }> = [
-  { id: 'overview', label: '1. Overview & Portfolios' },
-  { id: 'product_board', label: '2. Product Board & RICE' },
-  { id: 'brainstorming', label: '3. Brainstorming Canvas' },
-  { id: 'ideas_discovery', label: '4. Ideas, Discovery & Research' },
-  { id: 'strategy_prds', label: '5. Strategy, OKRs, Roadmaps & PRDs' },
-  { id: 'delivery_releases', label: '6. Design, Experiments, PM Handoff & Launch' },
-  { id: 'analytics_budget', label: '7. Analytics & Product Budget' },
-  { id: 'governance_approvals', label: '8. Risks, Decisions & Approvals' },
+const NAV_GROUPS: Array<{
+  label: string;
+  items: Array<{ id: NavTabKey; label: string; subtitle: string; icon: string }>;
+}> = [
+  {
+    label: 'PORTFOLIO & BOARDS',
+    items: [
+      { id: 'overview', label: 'Overview & Portfolios', subtitle: 'Executive KPIs & product registry', icon: '◈' },
+      { id: 'product_board', label: 'Product Board & RICE', subtitle: '10-stage Kanban, RICE & PM handoff', icon: '☰' },
+      { id: 'brainstorming', label: 'Brainstorming Canvas', subtitle: 'Infinite whiteboard & templates', icon: '✦' },
+    ],
+  },
+  {
+    label: 'DISCOVERY & PLANNING',
+    items: [
+      { id: 'ideas_discovery', label: 'Ideas & Discovery OST', subtitle: 'Ideas, voting, OST, feedback & research', icon: '◎' },
+      { id: 'strategy_prds', label: 'Strategy, OKRs & PRDs', subtitle: 'Vision, OKRs, roadmaps & 14-section PRDs', icon: '▤' },
+    ],
+  },
+  {
+    label: 'DELIVERY & GOVERNANCE',
+    items: [
+      { id: 'delivery_releases', label: 'Experiments & Launch', subtitle: 'Designs, MVP pilots, releases & Go/No-Go', icon: '⚑' },
+      { id: 'analytics_budget', label: 'Analytics & Budget', subtitle: 'Adoption telemetry & Finance ledger', icon: '◫' },
+      { id: 'governance_approvals', label: 'Risks & Approvals', subtitle: 'Risk register, decisions & gate sign-off', icon: '✓' },
+    ],
+  },
 ];
 
 function formatNaira(amount: number): string {
@@ -86,6 +104,9 @@ export default function InnovationWorkspaceClient({
 }) {
   const isAiAuthorized = useGmdAccess(actorRole);
   const [activeTab, setActiveTab] = useState<NavTabKey>('overview');
+  const [collapsed, setCollapsed] = useState(true);
+  const [switcher, setSwitcher] = useState(false);
+  const [logoFailed, setLogoFailed] = useState(false);
   const [data, setData] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState<string | null>(null);
@@ -442,265 +463,481 @@ export default function InnovationWorkspaceClient({
   };
 
   const kpis = data?.kpis || {};
+  const activeSub = (data?.subsidiaries || []).find((s: any) => s.id === selectedOrgId) || null;
+  const activeBusinessName = activeSub ? activeSub.legalName : 'BEMS Group';
+  const activeBrandColor = activeSub?.brandColor || '#ea580c';
+  const activeLogoUrl = activeSub?.logoUrl || '/bems-group-logo.png?v=20261024';
+  const allNavItems = NAV_GROUPS.flatMap((g) => g.items);
+  const currentNavItem = allNavItems.find((i) => i.id === activeTab) || allNavItems[0];
+  const actorInitials = (actorName || 'BG')
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase())
+    .join('') || 'BG';
 
   return (
     <div
-      style={{
-        minHeight: '100vh',
-        background: '#f8fafc',
-        color: '#0f172a',
-        fontFamily: "'Outfit', 'Plus Jakarta Sans', system-ui, sans-serif",
-        paddingBottom: 96,
-      }}
+      className={`app-shell ${collapsed ? 'collapsed' : ''} ${String(actorRole || '').toUpperCase() === 'GMD' ? 'gmd-view' : ''}`}
+      style={{ '--brand-accent': activeBrandColor } as React.CSSProperties}
     >
-      {/* Top Enterprise Header */}
-      <header
-        style={{
-          position: 'sticky',
-          top: 0,
-          zIndex: 40,
-          background: '#ffffff',
-          borderBottom: '1px solid #e2e8f0',
-          padding: '12px 24px',
-        }}
-      >
+      <style>{`
+        :root, .app-shell, body {
+          --brand-primary: ${activeBrandColor} !important;
+          --brand-soft: ${activeBrandColor}14 !important;
+          --brand-border: ${activeBrandColor}55 !important;
+        }
+        .sidebar {
+          background-color: #070c16 !important;
+          background: radial-gradient(circle at 18% 10%, ${activeBrandColor}30, transparent 42%),
+                      linear-gradient(180deg, #070c16 0%, #0b111e 50%, #050811 100%) !important;
+          position: sticky !important;
+          top: 0 !important;
+          height: 100vh !important;
+          overflow: hidden !important;
+        }
+        .nav-item.active {
+          background: linear-gradient(90deg, ${activeBrandColor}, ${activeBrandColor}cc) !important;
+          box-shadow: inset 3px 0 #ffffff, 0 6px 16px ${activeBrandColor}40 !important;
+        }
+        .nav-group > p {
+          color: ${activeBrandColor} !important;
+        }
+        .help-button > span {
+          background: ${activeBrandColor} !important;
+        }
+        .topbar .avatar, .avatar {
+          background: ${activeBrandColor}18 !important;
+          color: ${activeBrandColor} !important;
+          border-color: ${activeBrandColor}45 !important;
+        }
+      `}</style>
+
+      {/* LEFT DARK ENTERPRISE SIDEBAR (matching Finance, HR, Projects & Operations) */}
+      <aside className="sidebar">
+        <div className="sidebar-circuit" aria-hidden="true" />
+        <div className="sidebar-glow" aria-hidden="true">
+          <i /><i /><i /><i /><i /><i />
+        </div>
         <div
-          style={{
-            maxWidth: 1440,
-            margin: '0 auto',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            flexWrap: 'wrap',
-            gap: 12,
-          }}
+          className="side-brand"
+          style={{ cursor: 'pointer' }}
+          onClick={() => setCollapsed((c) => !c)}
+          title="Toggle sidebar"
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <span
+            style={{
+              width: 38,
+              height: 38,
+              borderRadius: 8,
+              background: logoFailed ? activeBrandColor : '#ffffff',
+              border: `1.5px solid ${activeBrandColor}50`,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              overflow: 'hidden',
+              padding: logoFailed ? 0 : 2,
+              flexShrink: 0,
+              color: '#ffffff',
+              fontWeight: 850,
+              fontSize: 13,
+            }}
+          >
+            {!logoFailed ? (
+              <img
+                src={activeLogoUrl}
+                alt={activeBusinessName}
+                onError={() => setLogoFailed(true)}
+                style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+              />
+            ) : (
+              'BG'
+            )}
+          </span>
+          <div className="brand-title-wrap" style={{ display: 'inline-flex', alignItems: 'center', minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap' }}>
+            <span
+              className="brand-name"
+              title={activeBusinessName}
+              style={{
+                display: 'block',
+                fontFamily: "'Outfit', 'Plus Jakarta Sans', system-ui, sans-serif",
+                fontSize: '15px',
+                fontWeight: 850,
+                letterSpacing: '-0.01em',
+                color: '#ffffff',
+                lineHeight: 1.2,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                maxWidth: 155,
+              }}
+            >
+              {activeBusinessName}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setCollapsed((c) => !c);
+            }}
+            aria-label="Toggle sidebar"
+            title="Collapse or expand sidebar"
+          >
+            {collapsed ? '»' : '«'}
+          </button>
+        </div>
+
+        <nav aria-label="Product Management navigation">
+          {NAV_GROUPS.map((group) => (
+            <div className="nav-group" key={group.label}>
+              <p>{group.label}</p>
+              {group.items.map((item) => {
+                const isActive = activeTab === item.id;
+                return (
+                  <button
+                    type="button"
+                    key={item.id}
+                    title={item.label}
+                    aria-current={isActive ? 'page' : undefined}
+                    className={isActive ? 'nav-item active' : 'nav-item'}
+                    onClick={() => {
+                      setActiveTab(item.id);
+                      setSwitcher(false);
+                    }}
+                  >
+                    <span>{item.icon}</span>
+                    <b>{item.label}</b>
+                  </button>
+                );
+              })}
+            </div>
+          ))}
+        </nav>
+
+        <button
+          type="button"
+          className="help-button"
+          onClick={() => setActiveTab('governance_approvals')}
+        >
+          <span>?</span>
+          <div>
+            <strong>Product Governance</strong>
+            <small>Decisions &amp; gates</small>
+          </div>
+        </button>
+      </aside>
+
+      {/* MAIN WORKSPACE */}
+      <section className="workspace" style={{ paddingBottom: 96 }}>
+        <header className="topbar">
+          {/* Subsidiary Switcher */}
+          <div className="business-switch-wrap">
+            <button
+              type="button"
+              className="business-switch"
+              onClick={() => setSwitcher((s) => !s)}
+            >
+              <div style={{ textAlign: 'left' }}>
+                <strong style={{ fontSize: 13, fontWeight: 800, color: '#0f172a', display: 'block', lineHeight: 1.25 }}>
+                  {activeBusinessName}
+                </strong>
+                <small style={{ fontSize: 10.5, color: '#64748b', display: 'block', marginTop: 2 }}>
+                  Product Management &amp; Innovation
+                </small>
+              </div>
+              <b style={{ color: '#94a3b8', fontSize: 12, marginLeft: 6 }}>⌄</b>
+            </button>
+
+            {switcher && (
+              <div
+                className="switch-menu"
+                style={{
+                  position: 'absolute',
+                  top: 'calc(100% + 6px)',
+                  left: 0,
+                  width: 300,
+                  padding: 8,
+                  borderRadius: 14,
+                  background: '#ffffff',
+                  border: '1px solid #e2e8f0',
+                  boxShadow: '0 16px 40px -8px rgba(15, 23, 42, 0.16)',
+                  zIndex: 60,
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 8px 8px', borderBottom: '1px solid #f1f5f9' }}>
+                  <span style={{ fontSize: 10, fontWeight: 750, letterSpacing: '0.08em', color: '#64748b', textTransform: 'uppercase' }}>
+                    Select Subsidiary
+                  </span>
+                  <span style={{ fontSize: 10, fontWeight: 650, color: '#94a3b8' }}>
+                    {(data?.subsidiaries || []).length} entities
+                  </span>
+                </div>
+                <div style={{ maxHeight: 260, overflowY: 'auto', padding: '6px 0', display: 'flex', flexDirection: 'column', gap: 3 }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedOrgId('');
+                      setSwitcher(false);
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '8px 10px',
+                      borderRadius: 10,
+                      background: !selectedOrgId ? '#fff7ed' : 'transparent',
+                      border: !selectedOrgId ? '1px solid #fed7aa' : '1px solid transparent',
+                      textAlign: 'left',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 10,
+                      fontSize: 12.5,
+                      fontWeight: 700,
+                      color: '#0f172a',
+                    }}
+                  >
+                    <img src="/bems-group-logo.png?v=20261024" alt="BEMS Group" style={{ width: 24, height: 24, borderRadius: 6, objectFit: 'contain', background: '#fff', border: '1px solid #e2e8f0' }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 800 }}>BEMS Group</div>
+                      <div style={{ fontSize: 10.5, color: '#64748b', fontWeight: 500 }}>All Subsidiaries · Holding</div>
+                    </div>
+                    {!selectedOrgId && <span style={{ color: '#ea580c', fontWeight: 900 }}>✓</span>}
+                  </button>
+                  {(data?.subsidiaries || []).map((sub: any) => (
+                    <button
+                      type="button"
+                      key={sub.id}
+                      onClick={() => {
+                        setSelectedOrgId(sub.id);
+                        setSwitcher(false);
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '8px 10px',
+                        borderRadius: 10,
+                        background: selectedOrgId === sub.id ? `${sub.brandColor || '#ea580c'}14` : 'transparent',
+                        border: selectedOrgId === sub.id ? `1px solid ${sub.brandColor || '#ea580c'}55` : '1px solid transparent',
+                        textAlign: 'left',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 10,
+                        fontSize: 12.5,
+                        fontWeight: 700,
+                        color: '#0f172a',
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: 24,
+                          height: 24,
+                          borderRadius: 6,
+                          background: sub.logoUrl ? '#ffffff' : (sub.brandColor || '#ea580c'),
+                          border: '1px solid #e2e8f0',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          overflow: 'hidden',
+                          color: '#ffffff',
+                          fontSize: 10,
+                          fontWeight: 800,
+                          flexShrink: 0,
+                        }}
+                      >
+                        {sub.logoUrl ? (
+                          <img src={sub.logoUrl} alt={sub.legalName} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                        ) : (
+                          sub.code?.slice(0, 2) || sub.legalName.slice(0, 2).toUpperCase()
+                        )}
+                      </span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sub.legalName}</div>
+                        <div style={{ fontSize: 10.5, color: '#64748b', fontWeight: 500 }}>{sub.type} · {sub.code}</div>
+                      </div>
+                      {selectedOrgId === sub.id && <span style={{ color: sub.brandColor || '#ea580c', fontWeight: 900 }}>✓</span>}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Global Search (⌘ K) */}
+          <div className="global-search">
+            <span>⌕</span>
+            <input
+              aria-label="Search Product Management workspace"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder={`Search ${activeBusinessName} Products, Features, Ideas...`}
+            />
+            <kbd>⌘ K</kbd>
+          </div>
+
+          {/* Top Actions (matching Finance, HR, Projects & Operations) */}
+          <div className="top-actions">
+            <select
+              value={selectedProductId}
+              onChange={(e) => setSelectedProductId(e.target.value)}
+              style={{
+                height: '28px',
+                padding: '0 8px',
+                borderRadius: '8px',
+                border: '1px solid #fed7aa',
+                background: '#fff7ed',
+                fontSize: '11.5px',
+                fontWeight: 700,
+                color: '#9a3412',
+                maxWidth: 190,
+              }}
+            >
+              <option value="">All Products ({products.length})</option>
+              {products.map((p: any) => (
+                <option key={p.id} value={p.id}>
+                  {p.productCode} · {p.name}
+                </option>
+              ))}
+            </select>
+
+            <button
+              type="button"
+              onClick={() => setShowNewProductModal(true)}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '5px',
+                padding: '4px 10px',
+                height: '28px',
+                borderRadius: '8px',
+                background: activeBrandColor,
+                border: 'none',
+                color: '#ffffff',
+                fontSize: '11.5px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              <Plus size={12} />
+              <span>New Product</span>
+            </button>
+
+            <Link
+              href="/staff/innovation"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '5px',
+                padding: '4px 10px',
+                height: '28px',
+                borderRadius: '8px',
+                background: '#f8fafc',
+                border: '1px solid #e2e8f0',
+                color: '#334155',
+                fontSize: '11.5px',
+                fontWeight: 700,
+                textDecoration: 'none',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              <span>Staff App View</span>
+              <ArrowUpRight size={12} />
+            </Link>
+
             <Link
               href="/"
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
-                gap: 5,
-                padding: '6px 11px',
-                borderRadius: 8,
-                background: '#f1f5f9',
-                border: '1px solid #e2e8f0',
-                color: '#334155',
-                fontSize: 12,
-                fontWeight: 700,
-                textDecoration: 'none',
-              }}
-            >
-              <ArrowLeft size={13} /> All Systems
-            </Link>
-
-            <img
-              src="/bems-group-logo.png?v=20261024"
-              alt="BEMS"
-              style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid #fed7aa', padding: 2 }}
-            />
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <strong style={{ fontSize: 16, fontWeight: 900, color: '#0f172a' }}>
-                  Product Management &amp; Innovation System
-                </strong>
-                <span
-                  style={{
-                    fontSize: 10,
-                    fontWeight: 800,
-                    padding: '2px 8px',
-                    borderRadius: 99,
-                    background: '#fff7ed',
-                    color: '#ea580c',
-                    border: '1px solid #fed7aa',
-                  }}
-                >
-                  ENTERPRISE COMMAND CENTER
-                </span>
-              </div>
-              <div style={{ fontSize: 11, color: '#64748b' }}>
-                Portfolios · Product Boards · Real-Time Canvas · Discovery OST · RICE Scoring · Versioned PRDs · PM Handoff · Releases
-                {data?.dataAsOf && ` · Data as of ${new Date(data.dataAsOf).toLocaleTimeString('en-GB')}`}
-              </div>
-            </div>
-          </div>
-
-          {/* Right Filters & Actions */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <select
-              value={selectedOrgId}
-              onChange={(e) => setSelectedOrgId(e.target.value)}
-              style={{
-                padding: '7px 11px',
-                borderRadius: 9,
-                border: '1px solid #cbd5e1',
-                background: '#f8fafc',
-                fontSize: 12,
-                fontWeight: 700,
-                color: '#0f172a',
-              }}
-            >
-              <option value="">All Subsidiaries (BEMS Group)</option>
-              {(data?.subsidiaries || []).map((s: any) => (
-                <option key={s.id} value={s.id}>
-                  {s.legalName} ({s.code})
-                </option>
-              ))}
-            </select>
-
-            <select
-              value={selectedProductId}
-              onChange={(e) => setSelectedProductId(e.target.value)}
-              style={{
-                padding: '7px 11px',
-                borderRadius: 9,
-                border: '1px solid #fed7aa',
-                background: '#fff7ed',
-                fontSize: 12,
-                fontWeight: 800,
-                color: '#9a3412',
-              }}
-            >
-              <option value="">All Active Products ({products.length})</option>
-              {products.map((p: any) => (
-                <option key={p.id} value={p.id}>
-                  {p.productCode} · {p.name} [{p.lifecycleStage}]
-                </option>
-              ))}
-            </select>
-
-            <Link
-              href="/staff/innovation"
-              style={{
-                padding: '7px 12px',
-                borderRadius: 9,
-                border: '1px solid #cbd5e1',
+                gap: '6px',
+                padding: '4px 10px',
+                height: '28px',
+                borderRadius: '8px',
                 background: '#ffffff',
+                border: '1px solid #e2e8f0',
                 color: '#0f172a',
-                fontSize: 12,
+                fontSize: '11.5px',
                 fontWeight: 700,
                 textDecoration: 'none',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 5,
+                whiteSpace: 'nowrap',
               }}
             >
-              <span>Staff Product Workspace</span>
-              <ArrowUpRight size={13} />
+              <span>❖ All Systems</span>
             </Link>
 
             <button
               type="button"
               onClick={() => void fetchOverview()}
+              title="Refresh live data"
               style={{
-                padding: '7px 11px',
-                borderRadius: 9,
-                border: '1px solid #e2e8f0',
-                background: '#ffffff',
-                color: '#334155',
-                fontSize: 12,
-                fontWeight: 700,
-                cursor: 'pointer',
                 display: 'inline-flex',
                 alignItems: 'center',
-                gap: 5,
+                justifyContent: 'center',
+                width: '28px',
+                height: '28px',
+                borderRadius: '8px',
+                background: '#ffffff',
+                border: '1px solid #e2e8f0',
+                color: '#475569',
+                cursor: 'pointer',
               }}
             >
               <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
-              <span>Sync</span>
+            </button>
+
+            <span className="avatar" title={`${actorName} (${actorRole})`}>
+              {actorInitials}
+            </span>
+          </div>
+        </header>
+
+        {/* Toast Notification Banner */}
+        {notice && (
+          <div
+            style={{
+              margin: '12px 24px 0',
+              padding: '10px 16px',
+              borderRadius: 12,
+              background: '#ecfdf5',
+              border: '1px solid #a7f3d0',
+              color: '#065f46',
+              fontSize: 12.5,
+              fontWeight: 700,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+            }}
+          >
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+              <CheckCircle2 size={15} color="#059669" />
+              {notice}
+            </span>
+            <button
+              type="button"
+              onClick={() => setNotice(null)}
+              style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#065f46', fontWeight: 800 }}
+            >
+              ✕
             </button>
           </div>
-        </div>
+        )}
 
-        {/* Navigation Pill Ribbon (Section 64) */}
-        <div
-          style={{
-            maxWidth: 1440,
-            margin: '10px auto 0',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            overflowX: 'auto',
-            paddingBottom: 2,
-          }}
-        >
-          {NAV_TABS.map((t) => {
-            const active = activeTab === t.id;
-            return (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() => setActiveTab(t.id)}
-                style={{
-                  padding: '7px 13px',
-                  borderRadius: 9,
-                  border: active ? '1px solid #ea580c' : '1px solid #e2e8f0',
-                  background: active ? '#ea580c' : '#f8fafc',
-                  color: active ? '#ffffff' : '#334155',
-                  fontSize: 12,
-                  fontWeight: 800,
-                  whiteSpace: 'nowrap',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease',
-                }}
-              >
-                {t.label}
-                {t.id === 'governance_approvals' && kpis.pendingApprovalsCount > 0 && (
-                  <span
-                    style={{
-                      marginLeft: 6,
-                      padding: '1px 6px',
-                      borderRadius: 99,
-                      background: active ? '#ffffff' : '#ea580c',
-                      color: active ? '#ea580c' : '#ffffff',
-                      fontSize: 10,
-                      fontWeight: 900,
-                    }}
-                  >
-                    {kpis.pendingApprovalsCount}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
-      </header>
-
-      {/* Toast Notification Banner */}
-      {notice && (
-        <div
-          style={{
-            maxWidth: 1440,
-            margin: '12px auto 0',
-            padding: '10px 16px',
-            borderRadius: 12,
-            background: '#ecfdf5',
-            border: '1px solid #a7f3d0',
-            color: '#065f46',
-            fontSize: 12.5,
-            fontWeight: 700,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-          }}
-        >
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-            <CheckCircle2 size={15} color="#059669" />
-            {notice}
-          </span>
-          <button
-            type="button"
-            onClick={() => setNotice(null)}
-            style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#065f46', fontWeight: 800 }}
-          >
-            ✕
-          </button>
-        </div>
-      )}
-
-      {/* Main Content Container */}
-      <main style={{ maxWidth: 1440, margin: '18px auto 0', padding: '0 24px', display: 'flex', flexDirection: 'column', gap: 18 }}>
+        {/* Main Content Container */}
+        <main className="content-area" style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 18 }}>
+          {/* Standard BEMS Module Title Banner */}
+          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: activeBrandColor }}>
+                PRODUCT MANAGEMENT &amp; INNOVATION · {activeBusinessName.toUpperCase()}
+              </div>
+              <h1 style={{ margin: '2px 0 0', fontSize: 24, fontWeight: 900, color: '#0f172a', letterSpacing: '-0.02em' }}>
+                {currentNavItem.label}
+              </h1>
+              <p style={{ margin: '3px 0 0', fontSize: 12.5, color: '#64748b' }}>
+                {currentNavItem.subtitle}
+                {data?.dataAsOf && ` · Live data as of ${new Date(data.dataAsOf).toLocaleTimeString('en-GB')}`}
+              </p>
+            </div>
+          </div>
         {/* Executive KPI Cards with 1-Click Drill-Down (Section 3) */}
         <div
           style={{
@@ -2403,7 +2640,7 @@ export default function InnovationWorkspaceClient({
       {isAiAuthorized && (
         <AmbientBottomAiBar
           currentPage="Product Management & Innovation System"
-          businessName="BEMS Group"
+          businessName={activeBusinessName}
           userName={actorName}
           userRole={actorRole}
           messages={aiManager.messages}
@@ -2415,6 +2652,7 @@ export default function InnovationWorkspaceClient({
           onOpenFullCockpit={() => {}}
         />
       )}
+      </section>
     </div>
   );
 }
