@@ -339,6 +339,10 @@ export const ReleaseToStaffWalletModal: React.FC<ReleaseToStaffWalletModalProps>
               </label>
               <input
                 type="text"
+                name="executive_release_directive_note"
+                autoComplete="off"
+                autoCorrect="off"
+                spellCheck={false}
                 placeholder="e.g., Authorized within Q4 operational plan."
                 maxLength={1000}
                 disabled={submitting}
