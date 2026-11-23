@@ -20,6 +20,7 @@ services:
       - BACKEND_HOST=0.0.0.0
       - BACKEND_PORT=4000
       - PORT=4000
+      - COOKIE_DOMAIN=.bemserp.work
       - REDIS_URL=redis://bemserp-redis:6379
       - NODE_OPTIONS=--dns-result-order=ipv4first
     depends_on:

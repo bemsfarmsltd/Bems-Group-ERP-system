@@ -105,7 +105,13 @@ export async function verifyPassword(password: string, encoded: string | null) {
 }
 
 export function getSessionCookieOptions(expiresAt?: Date, maxAge = SESSION_MAX_AGE) {
-  const domain = process.env.COOKIE_DOMAIN?.trim() || undefined;
+  let domain = process.env.COOKIE_DOMAIN?.trim() || undefined;
+  if (!domain && process.env.NODE_ENV === 'production') {
+    const appUrl = (process.env.NEXT_PUBLIC_APP_URL || '').toLowerCase();
+    if (appUrl.includes('bemserp.work')) {
+      domain = '.bemserp.work';
+    }
+  }
   return {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
