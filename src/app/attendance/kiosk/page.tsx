@@ -1290,20 +1290,51 @@ export default function AttendanceKioskPage() {
                   )}
                 </div>
 
-                {/* Badge Count */}
-                <span
-                  style={{
-                    fontSize: '12px',
-                    fontWeight: 800,
-                    padding: '4px 12px',
-                    borderRadius: '20px',
-                    background: '#ecfdf5',
-                    color: '#059669',
-                    border: '1px solid #a7f3d0',
-                  }}
-                >
-                  {searchTerm ? `${filteredStaff.length} of ${recentPunches.length}` : `${recentPunches.length}`} Present
-                </span>
+                {/* Badge Counts: Clocked In, On Shift, Clocked Out */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                  <span
+                    style={{
+                      fontSize: '11.5px',
+                      fontWeight: 800,
+                      padding: '4px 10px',
+                      borderRadius: '20px',
+                      background: '#ecfdf5',
+                      color: '#059669',
+                      border: '1px solid #a7f3d0',
+                    }}
+                    title="Total staff who clocked in at this location today"
+                  >
+                    {searchTerm ? `${filteredStaff.length} / ${recentPunches.length}` : `${recentPunches.length}`} Clocked In
+                  </span>
+                  <span
+                    style={{
+                      fontSize: '11.5px',
+                      fontWeight: 800,
+                      padding: '4px 10px',
+                      borderRadius: '20px',
+                      background: '#eff6ff',
+                      color: '#1d4ed8',
+                      border: '1px solid #bfdbfe',
+                    }}
+                    title="Staff currently active on shift (not yet clocked out)"
+                  >
+                    {recentPunches.filter((p: any) => !p.checkOutTime).length} On Shift
+                  </span>
+                  <span
+                    style={{
+                      fontSize: '11.5px',
+                      fontWeight: 800,
+                      padding: '4px 10px',
+                      borderRadius: '20px',
+                      background: '#f5f3ff',
+                      color: '#6d28d9',
+                      border: '1px solid #ddd6fe',
+                    }}
+                    title="Staff who have completed shift sign-out today"
+                  >
+                    {recentPunches.filter((p: any) => Boolean(p.checkOutTime)).length} Clocked Out
+                  </span>
+                </div>
               </div>
             </div>
 
@@ -1367,6 +1398,16 @@ export default function AttendanceKioskPage() {
                       })
                     : '--:--';
 
+                  const hasCheckedOut = Boolean(staff.checkOutTime);
+                  const checkOutFormatted = staff.checkOutTime
+                    ? new Date(staff.checkOutTime).toLocaleTimeString('en-US', {
+                        timeZone: 'Africa/Lagos',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        hour12: true,
+                      })
+                    : null;
+
                   const isLate = staff.status === 'LATE';
                   const initials = (staff.legalName || 'ST')
                     .split(' ')
@@ -1387,6 +1428,7 @@ export default function AttendanceKioskPage() {
                         alignItems: 'center',
                         justifyContent: 'space-between',
                         gap: '12px',
+                        flexWrap: 'wrap',
                         transition: 'all 0.15s ease',
                       }}
                     >
@@ -1396,8 +1438,8 @@ export default function AttendanceKioskPage() {
                             src={staff.avatarUrl}
                             alt={staff.legalName}
                             style={{
-                              width: '40px',
-                              height: '40px',
+                              width: '42px',
+                              height: '42px',
                               borderRadius: '10px',
                               objectFit: 'cover',
                               border: `1.5px solid ${isLate ? '#fecaca' : '#a7f3d0'}`,
@@ -1408,8 +1450,8 @@ export default function AttendanceKioskPage() {
                         ) : (
                           <div
                             style={{
-                              width: '40px',
-                              height: '40px',
+                              width: '42px',
+                              height: '42px',
                               borderRadius: '10px',
                               background: isLate ? '#fef2f2' : '#ecfdf5',
                               border: `1px solid ${isLate ? '#fecaca' : '#a7f3d0'}`,
@@ -1430,40 +1472,78 @@ export default function AttendanceKioskPage() {
                           </div>
                           <div style={{ fontSize: '11px', color: '#64748b' }}>
                             {staff.employeeNumber ? `${staff.employeeNumber} · ` : ''}{staff.department || staff.role}
-                            {staff.checkOutTime ? ' · Checked Out' : ''}
+                            {staff.subsidiary ? ` · ${staff.subsidiary}` : ''}
                           </div>
                         </div>
                       </div>
 
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span
+                      {/* Dual Clock-In & Clock-Out Status Block */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        {/* 1. CLOCK IN STATUS */}
+                        <div
                           style={{
-                            fontSize: '12px',
-                            fontWeight: 800,
-                            color: '#0f172a',
                             display: 'flex',
                             alignItems: 'center',
-                            gap: '4px',
-                          }}
-                        >
-                          <Clock size={13} color="#64748b" />
-                          {checkInFormatted}
-                        </span>
-
-                        <span
-                          style={{
-                            fontSize: '10px',
-                            fontWeight: 800,
-                            padding: '3px 8px',
-                            borderRadius: '6px',
-                            background: isLate ? '#fef2f2' : '#ecfdf5',
-                            color: isLate ? '#dc2626' : '#059669',
+                            gap: '6px',
+                            padding: '5px 10px',
+                            borderRadius: '10px',
+                            background: '#ffffff',
                             border: `1px solid ${isLate ? '#fecaca' : '#a7f3d0'}`,
-                            letterSpacing: '0.4px',
                           }}
                         >
-                          {isLate ? 'LATE' : 'ON TIME'}
-                        </span>
+                          <span style={{ fontSize: '10px', fontWeight: 800, color: '#64748b', textTransform: 'uppercase' }}>
+                            IN:
+                          </span>
+                          <span style={{ fontSize: '11.5px', fontWeight: 800, color: '#0f172a' }}>
+                            {checkInFormatted}
+                          </span>
+                          <span
+                            style={{
+                              fontSize: '9.5px',
+                              fontWeight: 800,
+                              padding: '2px 6px',
+                              borderRadius: '5px',
+                              background: isLate ? '#fef2f2' : '#ecfdf5',
+                              color: isLate ? '#dc2626' : '#059669',
+                              letterSpacing: '0.3px',
+                            }}
+                          >
+                            {isLate ? 'LATE' : 'ON TIME'}
+                          </span>
+                        </div>
+
+                        {/* 2. CLOCK OUT STATUS */}
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            padding: '5px 10px',
+                            borderRadius: '10px',
+                            background: '#ffffff',
+                            border: `1px solid ${hasCheckedOut ? '#ddd6fe' : '#bfdbfe'}`,
+                          }}
+                        >
+                          <span style={{ fontSize: '10px', fontWeight: 800, color: '#64748b', textTransform: 'uppercase' }}>
+                            OUT:
+                          </span>
+                          <span style={{ fontSize: '11.5px', fontWeight: 800, color: hasCheckedOut ? '#0f172a' : '#64748b' }}>
+                            {checkOutFormatted || '--:--'}
+                          </span>
+                          <span
+                            style={{
+                              fontSize: '9.5px',
+                              fontWeight: 800,
+                              padding: '2px 6px',
+                              borderRadius: '5px',
+                              background: hasCheckedOut ? '#f5f3ff' : '#eff6ff',
+                              color: hasCheckedOut ? '#6d28d9' : '#1d4ed8',
+                              letterSpacing: '0.3px',
+                            }}
+                          >
+                            {hasCheckedOut ? 'CLOCKED OUT' : 'ON SHIFT'}
+                          </span>
+                        </div>
                       </div>
                     </div>
                   );
@@ -1487,8 +1567,10 @@ export default function AttendanceKioskPage() {
                 }}
               >
                 <span>
-                  Showing all <strong style={{ color: '#0f172a' }}>{filteredStaff.length}</strong> of{' '}
-                  <strong style={{ color: '#0f172a' }}>{recentPunches.length}</strong> staff clock-ins today
+                  Showing <strong style={{ color: '#0f172a' }}>{filteredStaff.length}</strong> of{' '}
+                  <strong style={{ color: '#0f172a' }}>{recentPunches.length}</strong> clocked in ·{' '}
+                  <strong style={{ color: '#1d4ed8' }}>{recentPunches.filter((p: any) => !p.checkOutTime).length}</strong> on shift ·{' '}
+                  <strong style={{ color: '#6d28d9' }}>{recentPunches.filter((p: any) => Boolean(p.checkOutTime)).length}</strong> clocked out
                 </span>
                 <span style={{ color: '#059669', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                   <ShieldCheck size={13} />

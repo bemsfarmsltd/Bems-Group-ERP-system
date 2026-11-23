@@ -317,36 +317,47 @@ export function useAiFinancialManager({ userRole, userName, businessName, busine
       setIsTyping(true);
 
       try {
-        const res = await fetch('/api/ai/chat', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            message: payloadText || text,
-            conversation_id: activeSessionId.startsWith(`conv_${accountId}_`) ? activeSessionId : `conv_${accountId}_${crypto.randomUUID()}`,
+        const requestBody = JSON.stringify({
+          message: payloadText || text,
+          conversation_id: activeSessionId.startsWith(`conv_${accountId}_`) ? activeSessionId : `conv_${accountId}_${crypto.randomUUID()}`,
+          attachments: attachments || [],
+          history: messages.slice(-4).map((m) => ({
+            role: m.sender === 'assistant' ? 'assistant' : 'user',
+            content: typeof m.content === 'string' && m.content.length > 350
+              ? m.content.slice(0, 350) + '... [prior context summarized]'
+              : m.content,
+          })),
+          context: {
+            agent_mode: effectiveMode,
+            module_domain: moduleDomain || null,
+            is_tag_locked: isTagLocked,
+            thread_domain: effectiveMode !== 'auto' ? effectiveMode : threadDomain,
+            active_business_id: businessId,
+            business_name: businessName,
+            is_group_scope: isGroupScope,
+            target_element: elementContext,
             attachments: attachments || [],
-            history: messages.slice(-4).map((m) => ({
-              role: m.sender === 'assistant' ? 'assistant' : 'user',
-              content: typeof m.content === 'string' && m.content.length > 350
-                ? m.content.slice(0, 350) + '... [prior context summarized]'
-                : m.content,
-            })),
-            context: {
-              agent_mode: effectiveMode,
-              module_domain: moduleDomain || null,
-              is_tag_locked: isTagLocked,
-              thread_domain: effectiveMode !== 'auto' ? effectiveMode : threadDomain,
-              active_business_id: businessId,
-              business_name: businessName,
-              is_group_scope: isGroupScope,
-              target_element: elementContext,
-              attachments: attachments || [],
-            },
-          }),
+          },
         });
 
-        if (res.ok) {
+        let res: Response | null = null;
+        for (let attempt = 0; attempt < 2; attempt++) {
+          try {
+            res = await fetch('/api/ai/chat', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: requestBody,
+            });
+            if (res.status < 502) break;
+          } catch (fetchErr) {
+            if (attempt === 1) throw fetchErr;
+          }
+          await new Promise((r) => setTimeout(r, 1500));
+        }
+
+        if (res && res.ok) {
           const data = await res.json();
           if (data.conversation_id) setActiveSessionId(data.conversation_id);
           if (data.thread_domain) setThreadDomain(data.thread_domain);
@@ -479,7 +490,7 @@ export function useAiFinancialManager({ userRole, userName, businessName, busine
           setMessages((prev) => [...prev, aiReply]);
           setIsTyping(false);
           return;
-        } else {
+        } else if (res) {
           const errData = await res.json().catch(() => ({}));
           const serverMsg = errData?.message || errData?.error;
           if (serverMsg) {

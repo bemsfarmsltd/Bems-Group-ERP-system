@@ -188,18 +188,30 @@ export function FormattedAiMessage({
     const reqNumber = reqMatch[1].toUpperCase();
     const amount = amountMatch ? amountMatch[1] : null;
 
+    const STATUS_TOKEN_RE = /^(pending|in[\s_-]?review|approved|paid|settled|unpaid|clarification|in[\s_-]?clarification|declined|rejected|draft|active|awaiting[\s_-]?approval|pending[\s_-]?approval)$/i;
+
     let title = '';
     let subsidiary = '';
+    let rawParenStatus = '';
     const parenMatch = clean.match(/\(([^)]+)\)/);
 
     if (parenMatch) {
       const insideParens = parenMatch[1].trim();
-      const parts = insideParens.split(',').map((p) => p.trim());
-      if (parts.length > 1) {
-        title = parts[0];
-        subsidiary = parts.slice(1).join(', ');
+      if (STATUS_TOKEN_RE.test(insideParens)) {
+        rawParenStatus = insideParens.toLowerCase();
       } else {
-        title = insideParens;
+        const parts = insideParens.split(',').map((p) => p.trim());
+        if (parts.length > 1) {
+          if (STATUS_TOKEN_RE.test(parts[0])) {
+            rawParenStatus = parts[0].toLowerCase();
+            title = parts.slice(1).join(', ');
+          } else {
+            title = parts[0];
+            subsidiary = parts.slice(1).join(', ');
+          }
+        } else {
+          title = insideParens;
+        }
       }
     }
 
@@ -209,20 +221,73 @@ export function FormattedAiMessage({
       deadline = dateMatch[1].trim();
     }
 
-    let narrative = clean
+    let remainder = clean
       .replace(reqMatch[0], '')
       .replace(parenMatch ? parenMatch[0] : '', '')
       .replace(amountMatch ? amountMatch[0] : '', '')
+      .replace(/\*\*/g, '')
       .trim();
 
-    narrative = narrative
-      .replace(/^[\s,.:;—-]+/, '')
-      .replace(/[\s,.:;—-]+$/, '')
-      .replace(/:\s*\./g, '.')
-      .replace(/\s{2,}/g, ' ')
-      .trim();
+    // Split dot/bullet/pipe/em-dash separated segments to extract real title, subsidiary, and requester metadata
+    const rawSegments = remainder
+      .split(/\s*(?:·|•|\||—|–)\s*/)
+      .map((s) => s.replace(/^[\s,.:;-]+|[\s,.:;-]+$/g, '').trim())
+      .filter(Boolean);
 
-    const lowerNarrative = clean.toLowerCase();
+    const metaParts: string[] = [];
+    for (const seg of rawSegments) {
+      // Split out trailing sentence like ". Approval stage: GMD"
+      const subSentences = seg
+        .split(/\.\s+(?=(?:Approval stage|Stage|Status|Submitted by|Category|Vendor|Needed by|Due)\b)/i)
+        .map((s) => s.trim())
+        .filter(Boolean);
+
+      for (const piece of subSentences) {
+        const cleanPiece = piece.replace(/\.$/, '').trim();
+        if (!cleanPiece) continue;
+
+        if (STATUS_TOKEN_RE.test(cleanPiece)) {
+          if (!rawParenStatus) rawParenStatus = cleanPiece.toLowerCase();
+          continue;
+        }
+
+        if (
+          !subsidiary &&
+          /\b(Bems|BemsSoft|Arella|Gogo|Critical|Subsidiary|Holdings|Group|Farms|Logistic|Luxe|Build|Academy)\b/i.test(cleanPiece) &&
+          !/^(submitted by|requested by|approval stage|stage|vendor)/i.test(cleanPiece) &&
+          cleanPiece.length <= 48
+        ) {
+          subsidiary = cleanPiece;
+          continue;
+        }
+
+        if (/^(submitted by|requested by|owner:|requester:|approval stage:|stage:|status:|category:|department:)/i.test(cleanPiece)) {
+          metaParts.push(cleanPiece.charAt(0).toUpperCase() + cleanPiece.slice(1));
+          continue;
+        }
+
+        if (!title) {
+          title = cleanPiece;
+        } else {
+          metaParts.push(cleanPiece);
+        }
+      }
+    }
+
+    let narrative = metaParts.length > 0
+      ? metaParts.join(' · ')
+      : remainder
+          .replace(/^[\s,.:;—·-]+/, '')
+          .replace(/[\s,.:;—·-]+$/, '')
+          .replace(/:\s*\./g, '.')
+          .replace(/\s{2,}/g, ' ')
+          .trim();
+
+    if (title && narrative === title) {
+      narrative = '';
+    }
+
+    const lowerNarrative = `${clean} ${rawParenStatus}`.toLowerCase();
     let statusLabel = 'ACTIVE';
     let statusBg = '#eff6ff';
     let statusColor = '#1d4ed8';
@@ -231,11 +296,11 @@ export function FormattedAiMessage({
       statusLabel = 'ROUTING MISSING';
       statusBg = '#fef2f2';
       statusColor = '#dc2626';
-    } else if (lowerNarrative.includes('requires clarification')) {
+    } else if (lowerNarrative.includes('requires clarification') || lowerNarrative.includes('clarification')) {
       statusLabel = 'CLARIFICATION NEEDED';
       statusBg = '#fff7ed';
       statusColor = '#c2410c';
-    } else if (lowerNarrative.includes('approved and unpaid')) {
+    } else if (lowerNarrative.includes('approved and unpaid') || lowerNarrative.includes('ready for payment')) {
       statusLabel = 'READY FOR PAYMENT';
       statusBg = '#f0fdf4';
       statusColor = '#15803d';
@@ -247,6 +312,14 @@ export function FormattedAiMessage({
       statusLabel = 'EVIDENCE SUBMITTED';
       statusBg = '#ecfdf5';
       statusColor = '#047857';
+    } else if (rawParenStatus.includes('pending') || rawParenStatus.includes('review') || lowerNarrative.includes('approval stage: gmd')) {
+      statusLabel = 'PENDING GMD SIGN-OFF';
+      statusBg = '#fff7ed';
+      statusColor = '#ea580c';
+    } else if (rawParenStatus === 'approved' || rawParenStatus === 'paid' || rawParenStatus === 'settled') {
+      statusLabel = rawParenStatus.toUpperCase();
+      statusBg = '#ecfdf5';
+      statusColor = '#059669';
     }
 
     return {
