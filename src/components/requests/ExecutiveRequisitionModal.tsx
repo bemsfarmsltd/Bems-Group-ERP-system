@@ -141,7 +141,42 @@ export function ExecutiveRequisitionModal({
   const [externalPassword, setExternalPassword] = useState('');
   const [externalError, setExternalError] = useState<string | null>(null);
   const [externalBusy, setExternalBusy] = useState(false);
+  const [isRecurringLocal, setIsRecurringLocal] = useState<boolean>(Boolean(request.isRecurring));
+  const [recurringIntervalLocal, setRecurringIntervalLocal] = useState<string>(request.recurringInterval || 'MONTHLY');
+  const [recurringBusy, setRecurringBusy] = useState<boolean>(false);
+  const [recurringNotice, setRecurringNotice] = useState<string | null>(null);
   const systemId = request.systemId || toSystemRequestId(request.id);
+
+  const handleUpdateRecurring = async (nextRecurring: boolean, nextInterval: string) => {
+    setRecurringBusy(true);
+    setRecurringNotice(null);
+    try {
+      const res = await fetch(`/api/requests/${encodeURIComponent(request.requestNumber)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          isRecurring: nextRecurring,
+          recurringInterval: nextRecurring ? nextInterval : undefined,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || 'Failed to update recurring status.');
+      setIsRecurringLocal(Boolean(data.isRecurring));
+      setRecurringIntervalLocal(data.recurringInterval || nextInterval);
+      setRecurringNotice(
+        data.message ||
+          (nextRecurring
+            ? `Added as ${nextInterval} recurring commitment.`
+            : 'Removed from recurring commitments.')
+      );
+      setTimeout(() => setRecurringNotice(null), 4000);
+    } catch (err: any) {
+      setRecurringNotice(err?.message || 'Could not update recurring status.');
+    } finally {
+      setRecurringBusy(false);
+    }
+  };
 
   const preApprovalEvidence = (request.attachments || []).filter(
     (att) => !att.ownerType || att.ownerType === 'REQUEST'
@@ -308,6 +343,48 @@ export function ExecutiveRequisitionModal({
                 <span>System ID: {systemId.slice(0, 16)}...</span>
                 {copiedSystemId ? <Check size={12} color="#059669" /> : <Copy size={12} />}
               </button>
+
+              {/* Recurring Status Pill / 1-Click Add to Recurring */}
+              {isRecurringLocal ? (
+                <span
+                  style={{
+                    fontSize: '11px',
+                    fontWeight: 800,
+                    padding: '3px 9px',
+                    borderRadius: '6px',
+                    background: '#ecfdf5',
+                    color: '#047857',
+                    border: '1px solid #a7f3d0',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                  }}
+                >
+                  <span>🔁 Recurring · {recurringIntervalLocal}</span>
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  disabled={recurringBusy}
+                  onClick={() => void handleUpdateRecurring(true, recurringIntervalLocal || 'MONTHLY')}
+                  style={{
+                    fontSize: '11px',
+                    fontWeight: 800,
+                    padding: '3px 9px',
+                    borderRadius: '6px',
+                    background: '#fff7ed',
+                    color: '#ea580c',
+                    border: '1px solid #fed7aa',
+                    cursor: recurringBusy ? 'wait' : 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                  }}
+                  title="Add this requisition to Recurring Commitments even if the staff member forgot to check recurring"
+                >
+                  <span>{recurringBusy ? 'Adding...' : '🔁 + Add as Recurring'}</span>
+                </button>
+              )}
             </div>
 
             {/* Header Right Actions */}
@@ -1234,6 +1311,109 @@ export function ExecutiveRequisitionModal({
                 )}
               </div>
             )}
+
+            {/* Executive Recurring Commitment Control (Add or Edit Recurring Cadence) */}
+            <div
+              style={{
+                padding: '12px 14px',
+                borderRadius: '10px',
+                background: isRecurringLocal ? '#ecfdf5' : '#f8fafc',
+                border: isRecurringLocal ? '1px solid #a7f3d0' : '1px solid #e2e8f0',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
+                <div>
+                  <div style={{ fontSize: '11.5px', fontWeight: 800, color: isRecurringLocal ? '#065f46' : '#0f172a' }}>
+                    {isRecurringLocal
+                      ? `🔁 Active Recurring Commitment (${recurringIntervalLocal})`
+                      : '🔁 Recurring Commitment'}
+                  </div>
+                  <div style={{ fontSize: '10.5px', color: isRecurringLocal ? '#047857' : '#64748b' }}>
+                    {isRecurringLocal
+                      ? 'Tracked in Recurring Commitments & Report Studio.'
+                      : 'Staff forgot to mark as recurring? Add it here in one click.'}
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <select
+                    value={recurringIntervalLocal}
+                    disabled={recurringBusy}
+                    onChange={(e) => {
+                      const nextInt = e.target.value;
+                      setRecurringIntervalLocal(nextInt);
+                      if (isRecurringLocal) {
+                        void handleUpdateRecurring(true, nextInt);
+                      }
+                    }}
+                    style={{
+                      padding: '5px 8px',
+                      borderRadius: '7px',
+                      border: '1px solid #cbd5e1',
+                      background: '#ffffff',
+                      color: '#0f172a',
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <option value="MONTHLY">Monthly</option>
+                    <option value="QUARTERLY">Quarterly</option>
+                    <option value="ANNUAL">Annually</option>
+                    <option value="BI_WEEKLY">Bi-Weekly</option>
+                    <option value="WEEKLY">Weekly</option>
+                  </select>
+
+                  {isRecurringLocal ? (
+                    <button
+                      type="button"
+                      disabled={recurringBusy}
+                      onClick={() => void handleUpdateRecurring(false, recurringIntervalLocal)}
+                      style={{
+                        padding: '5px 10px',
+                        borderRadius: '7px',
+                        border: '1px solid #fecaca',
+                        background: '#ffffff',
+                        color: '#dc2626',
+                        fontSize: '11px',
+                        fontWeight: 750,
+                        cursor: recurringBusy ? 'wait' : 'pointer',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {recurringBusy ? 'Updating...' : 'Remove Recurring'}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={recurringBusy}
+                      onClick={() => void handleUpdateRecurring(true, recurringIntervalLocal)}
+                      style={{
+                        padding: '5px 11px',
+                        borderRadius: '7px',
+                        border: '1px solid #ea580c',
+                        background: '#ea580c',
+                        color: '#ffffff',
+                        fontSize: '11px',
+                        fontWeight: 800,
+                        cursor: recurringBusy ? 'wait' : 'pointer',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {recurringBusy ? 'Saving...' : '+ Add as Recurring'}
+                    </button>
+                  )}
+                </div>
+              </div>
+              {recurringNotice && (
+                <div style={{ fontSize: '11px', fontWeight: 700, color: '#059669' }}>
+                  ✓ {recurringNotice}
+                </div>
+              )}
+            </div>
 
             {(request.paymentStatus === 'UNPAID' || !request.paymentStatus) && (
               <button

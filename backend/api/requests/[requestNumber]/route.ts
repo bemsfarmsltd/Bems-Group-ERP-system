@@ -53,10 +53,23 @@ export async function GET(
         vendor: true,
         approvalSteps: {
           orderBy: { stageIndex: "asc" },
+          include: { approver: true },
         },
-        disbursements: true,
+        disbursements: {
+          orderBy: { createdAt: "desc" },
+          include: {
+            receipt: { select: { id: true, fileName: true, fileUrl: true, sha256: true, mimeType: true, uploadedAt: true } },
+            recordedBy: { select: { id: true, legalName: true } },
+            recipientConfirmation: { include: { employee: { select: { id: true, legalName: true } } } },
+          },
+        },
         attachments: true,
         accountabilityCase: true,
+        channel: {
+          include: {
+            messages: { where: { visibility: "GROUP" }, orderBy: { createdAt: "asc" } },
+          },
+        },
       },
     });
 
@@ -132,8 +145,13 @@ export async function GET(
         approvalStatus: expenditure.approvalStatus,
         paymentStatus: expenditure.paymentStatus,
         accountabilityStatus: expenditure.accountabilityStatus,
+        isRecurring: expenditure.isRecurring,
+        recurringInterval: expenditure.recurringInterval,
+        recurringAutoPay: expenditure.recurringAutoPay,
+        recurringNextDueAt: expenditure.recurringNextDueAt,
         createdAt: expenditure.createdAt,
         updatedAt: expenditure.updatedAt,
+        channel: expenditure.channel,
         subsidiary: expenditure.subsidiary ? {
           id: expenditure.subsidiary.id,
           name: expenditure.subsidiary.legalName,
@@ -410,17 +428,17 @@ export async function PATCH(
 
     const body = await request.json().catch(() => ({}));
     const rawInterval = typeof body.recurringInterval === "string" ? body.recurringInterval.trim().toUpperCase() : undefined;
-    const normalizedInterval = rawInterval === "YEARLY" ? "ANNUAL" : rawInterval;
-    const isIntervalOnlyUpdate =
-      expenditure.isRecurring &&
-      normalizedInterval !== undefined &&
-      ["WEEKLY", "BI_WEEKLY", "MONTHLY", "QUARTERLY", "ANNUAL"].includes(normalizedInterval) &&
+    const normalizedInterval = rawInterval === "YEARLY" || rawInterval === "ANNUALLY" ? "ANNUAL" : rawInterval;
+    const isRecurringToggleOrIntervalOnly =
+      (typeof body.isRecurring === "boolean" ||
+        (normalizedInterval !== undefined &&
+          ["WEEKLY", "BI_WEEKLY", "MONTHLY", "QUARTERLY", "ANNUAL"].includes(normalizedInterval))) &&
       body.title === undefined &&
       body.amountMinor === undefined &&
       body.amountNaira === undefined &&
       body.justification === undefined;
 
-    if (expenditure.paymentStatus !== "UNPAID" && !(isExecutiveAdmin && isIntervalOnlyUpdate)) {
+    if (expenditure.paymentStatus !== "UNPAID" && !(isExecutiveAdmin && isRecurringToggleOrIntervalOnly)) {
       return NextResponse.json(
         { error: "Cannot edit request: Funds have already been scheduled or disbursed." },
         { status: 400 }
@@ -467,6 +485,33 @@ export async function PATCH(
     }
 
     const nextApprovalStatus = expenditure.approvalStatus === "CLARIFICATION_REQUESTED" ? "IN_REVIEW" : expenditure.approvalStatus;
+    const nextIsRecurring =
+      typeof body.isRecurring === "boolean"
+        ? body.isRecurring
+        : normalizedInterval && ["WEEKLY", "BI_WEEKLY", "MONTHLY", "QUARTERLY", "ANNUAL"].includes(normalizedInterval)
+        ? true
+        : expenditure.isRecurring;
+    const nextRecurringInterval = !nextIsRecurring
+      ? null
+      : normalizedInterval && ["WEEKLY", "BI_WEEKLY", "MONTHLY", "QUARTERLY", "ANNUAL"].includes(normalizedInterval)
+      ? normalizedInterval
+      : expenditure.recurringInterval || "MONTHLY";
+
+    let nextRecurringDueAt = expenditure.recurringNextDueAt;
+    if (!nextIsRecurring) {
+      nextRecurringDueAt = null;
+    } else if (!nextRecurringDueAt || nextRecurringInterval !== expenditure.recurringInterval || !expenditure.isRecurring) {
+      const baseDate = expenditure.neededBy && new Date(expenditure.neededBy).getTime() > Date.now()
+        ? new Date(expenditure.neededBy)
+        : new Date();
+      const due = new Date(baseDate);
+      if (nextRecurringInterval === "WEEKLY") due.setDate(due.getDate() + 7);
+      else if (nextRecurringInterval === "BI_WEEKLY") due.setDate(due.getDate() + 14);
+      else if (nextRecurringInterval === "QUARTERLY") due.setMonth(due.getMonth() + 3);
+      else if (nextRecurringInterval === "ANNUAL") due.setFullYear(due.getFullYear() + 1);
+      else due.setMonth(due.getMonth() + 1);
+      nextRecurringDueAt = due;
+    }
 
     const updated = await prisma.$transaction(async (tx) => {
       const reqRecord = await tx.expenditureRequest.update({
@@ -477,10 +522,10 @@ export async function PATCH(
           deliverable,
           category,
           amountMinor,
-          isRecurring: typeof body.isRecurring === "boolean" ? body.isRecurring : expenditure.isRecurring,
-          recurringInterval: normalizedInterval && ["WEEKLY", "BI_WEEKLY", "MONTHLY", "QUARTERLY", "ANNUAL"].includes(normalizedInterval)
-            ? normalizedInterval
-            : expenditure.recurringInterval,
+          isRecurring: nextIsRecurring,
+          recurringInterval: nextRecurringInterval,
+          recurringNextDueAt: nextRecurringDueAt,
+          ...(!nextIsRecurring ? { recurringAutoPay: false } : {}),
           approvalStatus: nextApprovalStatus,
           requestVersion: { increment: 1 },
         },
@@ -495,7 +540,7 @@ export async function PATCH(
           subsidiaryId: expenditure.subsidiaryId,
           targetType: "REQUEST",
           targetId: expenditure.id,
-          action: "UPDATED",
+          action: isRecurringToggleOrIntervalOnly ? "RECURRING_COMMITMENT_UPDATED" : "UPDATED",
           correlationId: expenditure.requestNumber,
           metadata: JSON.stringify({
             requestNumber: expenditure.requestNumber,
@@ -503,6 +548,8 @@ export async function PATCH(
             newTitle: title,
             previousAmountMinor: Number(expenditure.amountMinor),
             newAmountMinor: Number(amountMinor),
+            isRecurring: nextIsRecurring,
+            recurringInterval: nextRecurringInterval,
             updatedBy: actor.legalName,
             updatedAt: new Date().toISOString(),
           }),
@@ -518,7 +565,13 @@ export async function PATCH(
       title: updated.title,
       amountMinor: Number(updated.amountMinor),
       approvalStatus: updated.approvalStatus,
-      message: `Fund requisition ${updated.requestNumber} was updated successfully.`,
+      isRecurring: updated.isRecurring,
+      recurringInterval: updated.recurringInterval,
+      message: isRecurringToggleOrIntervalOnly
+        ? updated.isRecurring
+          ? `${updated.requestNumber} added to Recurring Commitments (${updated.recurringInterval}).`
+          : `${updated.requestNumber} removed from Recurring Commitments.`
+        : `Fund requisition ${updated.requestNumber} was updated successfully.`,
     });
   } catch (error: any) {
     console.error("Error updating fund request:", error);

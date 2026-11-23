@@ -1400,6 +1400,72 @@ export function ApprovalsDeskView({
                         <span>
                           · Due: <strong>{req.neededBy.split('T')[0]}</strong>
                         </span>
+
+                        {req.isRecurring ? (
+                          <button
+                            type="button"
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              try {
+                                const res = await fetch(`/api/requests/${encodeURIComponent(req.requestNumber)}`, {
+                                  method: 'PATCH',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  credentials: 'include',
+                                  body: JSON.stringify({ isRecurring: false }),
+                                });
+                                if (res.ok) void fetchApprovals();
+                              } catch {}
+                            }}
+                            title="Click to remove from Recurring Commitments"
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '3px',
+                              padding: '1px 6px',
+                              borderRadius: '4px',
+                              background: '#ecfdf5',
+                              color: '#047857',
+                              fontSize: '8.5px',
+                              fontWeight: 800,
+                              border: '1px solid #a7f3d0',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            🔁 Recurring ({req.recurringInterval || 'MONTHLY'})
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              try {
+                                const res = await fetch(`/api/requests/${encodeURIComponent(req.requestNumber)}`, {
+                                  method: 'PATCH',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  credentials: 'include',
+                                  body: JSON.stringify({ isRecurring: true, recurringInterval: 'MONTHLY' }),
+                                });
+                                if (res.ok) void fetchApprovals();
+                              } catch {}
+                            }}
+                            title="Add this request to Monthly Recurring Commitments"
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '3px',
+                              padding: '1px 6px',
+                              borderRadius: '4px',
+                              background: '#fff7ed',
+                              color: '#ea580c',
+                              fontSize: '8.5px',
+                              fontWeight: 800,
+                              border: '1px solid #fed7aa',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            🔁 + Make Recurring
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>

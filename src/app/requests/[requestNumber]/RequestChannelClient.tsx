@@ -28,12 +28,16 @@ import { ReleaseToStaffWalletModal, StaffWalletReleaseData } from "@/components/
 
 interface RequestChannelClientProps {
   request: any;
+  requestNumber?: string;
 }
 
-export function RequestChannelClient({ request }: RequestChannelClientProps) {
+export function RequestChannelClient({ request: initialRequest, requestNumber }: RequestChannelClientProps) {
   const router = useRouter();
   const { currentUser } = useApp();
-  const [messages, setMessages] = useState<any[]>(request.channel?.messages || []);
+  const [request, setRequest] = useState<any>(initialRequest);
+  const [clientLoading, setClientLoading] = useState<boolean>(!initialRequest && Boolean(requestNumber));
+  const [clientError, setClientError] = useState<string | null>(null);
+  const [messages, setMessages] = useState<any[]>(initialRequest?.channel?.messages || []);
   const [inputText, setInputText] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [showClarificationModal, setShowClarificationModal] = useState(false);
@@ -51,6 +55,59 @@ export function RequestChannelClient({ request }: RequestChannelClientProps) {
   const [confirmingReceipt, setConfirmingReceipt] = useState(false);
   const [receiptIssue, setReceiptIssue] = useState("");
   const [showReceiptIssue, setShowReceiptIssue] = useState(false);
+
+  React.useEffect(() => {
+    if (initialRequest) {
+      setRequest(initialRequest);
+      setMessages(initialRequest.channel?.messages || []);
+      setClientLoading(false);
+      return;
+    }
+    if (!requestNumber) return;
+    let active = true;
+    setClientLoading(true);
+    setClientError(null);
+    fetch(`/api/requests/${encodeURIComponent(requestNumber)}`, {
+      credentials: "include",
+      cache: "no-store",
+    })
+      .then(async (res) => {
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok || !json?.request) {
+          throw new Error(json?.error || `Fund request '${requestNumber}' could not be loaded.`);
+        }
+        if (active) {
+          setRequest(json.request);
+          setMessages(json.request.channel?.messages || []);
+          setClientLoading(false);
+        }
+      })
+      .catch((err) => {
+        if (active) {
+          setClientError(err?.message || "Unable to load request dossier.");
+          setClientLoading(false);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [initialRequest, requestNumber]);
+
+  if (clientLoading) {
+    return (
+      <div style={{ padding: "48px 24px", textAlign: "center", color: "#64748b", fontSize: "14px", fontWeight: 700 }}>
+        Loading requisition dossier {requestNumber}…
+      </div>
+    );
+  }
+
+  if (!request) {
+    return (
+      <div style={{ padding: "48px 24px", textAlign: "center", color: "#b91c1c", fontSize: "14px", fontWeight: 700 }}>
+        {clientError || "Requisition not found."}
+      </div>
+    );
+  }
 
   const appBadge = getStatusBadge(request.approvalStatus);
   const payBadge = getStatusBadge(request.paymentStatus);

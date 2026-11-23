@@ -13,11 +13,11 @@ export default async function RequestDetailPage({
 }) {
   const { requestNumber } = await params;
   const { status, data } = await getSsrPageData('request-detail', { requestNumber });
-  if (status !== 200 || !data?.request) notFound();
+  if (status === 404) notFound();
 
   return (
-    <ConnectAppShell initialSubId={data.request.subsidiary.id}>
-      <RequestChannelClient request={data.request} />
+    <ConnectAppShell initialSubId={data?.request?.subsidiary?.id}>
+      <RequestChannelClient request={data?.request || null} requestNumber={requestNumber} />
     </ConnectAppShell>
   );
 }
