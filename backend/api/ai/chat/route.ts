@@ -116,6 +116,15 @@ export async function POST(req: NextRequest) {
     // 0. Forward to external n8n AI Agent if configured (BEMS AI Backend Contract Section 02)
     const n8nFinancialWebhookUrl = process.env.N8N_AI_WEBHOOK_URL || 'https://n8n.srv2065537.hstgr.cloud/webhook/bems-financial-manager';
     const n8nHrWebhookUrl = process.env.N8N_HR_WEBHOOK_URL || 'https://n8n.srv2065537.hstgr.cloud/webhook/bems-hr-operations';
+    const moduleWebhookMap: Record<string, string> = {
+      financial: n8nFinancialWebhookUrl,
+      hr: n8nHrWebhookUrl,
+      projects: (process.env.N8N_PROJECTS_WEBHOOK_URL || '').trim(),
+      operations: (process.env.N8N_OPERATIONS_WEBHOOK_URL || '').trim(),
+      media: (process.env.N8N_MEDIA_WEBHOOK_URL || '').trim(),
+      innovation: (process.env.N8N_INNOVATION_WEBHOOK_URL || '').trim(),
+      master: (process.env.N8N_MASTER_WEBHOOK_URL || n8nFinancialWebhookUrl).trim(),
+    };
 
     // Intelligent Dual-Agent Intent Resolution (NLP Lexicon, DOM Domain Tagging, Sticky Affinity & Cross-Domain)
     const explicitAgentMode = body.context?.agent_mode || body.agent_mode;
@@ -147,16 +156,7 @@ export async function POST(req: NextRequest) {
 
     const activeAgentMode: AiAgentDomain = routeDecision.domain;
     const cleanUserMessage = routeDecision.cleanMessage || message;
-    const supportsN8nWebhook =
-      activeAgentMode === 'financial' ||
-      activeAgentMode === 'hr' ||
-      activeAgentMode === 'both' ||
-      activeAgentMode === 'master';
-    let n8nWebhookUrl = supportsN8nWebhook
-      ? activeAgentMode === 'hr'
-        ? n8nHrWebhookUrl
-        : n8nFinancialWebhookUrl
-      : '';
+    let n8nWebhookUrl = moduleWebhookMap[activeAgentMode] || (isLockedModule ? '' : n8nFinancialWebhookUrl);
 
     if (n8nWebhookUrl && actor) {
       try {
@@ -2290,9 +2290,9 @@ title: "<Chart Title>"
       }
     }
 
-    // Layer Gemini API across all modules & Control Center when n8n did not produce a specific response
+    // Layer Gemini API exclusively for Control Center (master) intelligent cross-module routing
     const geminiKey = (process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY || '').trim();
-    if (geminiKey && (!reply || reply.includes('I noted your instruction:') || reply.includes('How would you like to direct financial oversight'))) {
+    if (!isLockedModule && geminiKey && (!reply || reply.includes('I noted your instruction:') || reply.includes('How would you like to direct financial oversight'))) {
       try {
         const domainGuide: Record<string, string> = {
           master: 'You are the BEMS Group Root AI in the Enterprise Control Center. You coordinate across Finance, HR, Projects, Operations, Media, Innovation, and governance.',
