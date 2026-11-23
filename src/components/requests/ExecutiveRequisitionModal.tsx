@@ -827,18 +827,18 @@ export function ExecutiveRequisitionModal({
                     VENDOR &amp; 3-WAY MATCHING AUDIT
                   </span>
                   <h4 style={{ margin: '2px 0 0', fontSize: '13px', fontWeight: 750, color: '#0f172a' }}>
-                    {request.vendor ? request.vendor.name : 'Direct Internal Reimbursement'}
+                    {request.vendor ? request.vendor.name : 'Internal Requisition'}
                   </h4>
                 </div>
                 <span
                   style={{
                     padding: '3px 8px',
                     borderRadius: '6px',
-                    background: '#ecfdf5',
-                    color: '#047857',
+                    background: request.threeWayMatch.status.includes('MATCHED') ? '#ecfdf5' : '#f8fafc',
+                    color: request.threeWayMatch.status.includes('MATCHED') ? '#047857' : '#475569',
                     fontSize: '9.5px',
                     fontWeight: 750,
-                    border: '1px solid #a7f3d0',
+                    border: request.threeWayMatch.status.includes('MATCHED') ? '1px solid #a7f3d0' : '1px solid #e2e8f0',
                   }}
                 >
                   {request.threeWayMatch.status}
@@ -880,17 +880,29 @@ export function ExecutiveRequisitionModal({
 
               {/* 3-Way Matching Checklist Items */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '11.5px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#047857' }}>
-                  <CheckCircle2 size={14} />
-                  <span>1. Automated Purchase Order generated and line items matched.</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: request.threeWayMatch.poMatched ? '#047857' : '#64748b' }}>
+                  {request.threeWayMatch.poMatched ? <CheckCircle2 size={14} /> : <Clock size={14} />}
+                  <span>
+                    {request.threeWayMatch.poMatched
+                      ? '1. Verified supplier / vendor profile matched.'
+                      : '1. Internal staff request (no external vendor PO).'}
+                  </span>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#047857' }}>
-                  <CheckCircle2 size={14} />
-                  <span>2. Pro-forma quotation and official tax invoice verified on file.</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: request.threeWayMatch.quoteAttached ? '#047857' : '#64748b' }}>
+                  {request.threeWayMatch.quoteAttached ? <CheckCircle2 size={14} /> : <Clock size={14} />}
+                  <span>
+                    {request.threeWayMatch.quoteAttached
+                      ? `2. Supporting quote / receipt file(s) attached (${request.attachments?.length || 1}).`
+                      : '2. No supporting quote or invoice file attached yet.'}
+                  </span>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#047857' }}>
-                  <CheckCircle2 size={14} />
-                  <span>3. Scope of works / delivery certification schedule attached.</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: request.threeWayMatch.scopeVerified ? '#047857' : '#64748b' }}>
+                  {request.threeWayMatch.scopeVerified ? <CheckCircle2 size={14} /> : <Clock size={14} />}
+                  <span>
+                    {request.threeWayMatch.scopeVerified
+                      ? '3. Deliverable / 72h accountability scope specified.'
+                      : '3. No deliverable scope specified.'}
+                  </span>
                 </div>
               </div>
             </div>
@@ -947,19 +959,36 @@ export function ExecutiveRequisitionModal({
             {/* Budget Exposure Card */}
             <div style={{ border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', background: '#ffffff', boxShadow: '0 2px 8px rgba(0,0,0,0.03)' }}>
               <span style={{ fontSize: '9px', fontWeight: 800, letterSpacing: '0.8px', color: '#64748b', textTransform: 'uppercase' }}>
-                DEPARTMENT BUDGET POSITION
+                SUBSIDIARY FUNDED BUDGET POSITION
               </span>
               <div style={{ marginTop: '8px', display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
                 <strong style={{ fontSize: '20px', fontWeight: 850, color: '#0f172a' }}>
                   {request.amountFormatted}
                 </strong>
                 <span style={{ fontSize: '11px', fontWeight: 750, color: isOverBudget ? '#dc2626' : 'var(--brand-primary, #0d8a70)' }}>
-                  {request.budgetImpact.percentOfBudget}% of annual cap
+                  {request.budgetImpact.totalBudget > 0 ? `${request.budgetImpact.percentOfBudget}% of funded budget` : 'No funded envelope'}
                 </span>
               </div>
 
+              {request.budgetImpact.totalBudget <= 0 && (
+                <div
+                  style={{
+                    background: '#fffbeb',
+                    border: '1px solid #fde68a',
+                    borderRadius: '10px',
+                    padding: '10px 12px',
+                    marginTop: '10px',
+                    fontSize: '11px',
+                    color: '#92400e',
+                    lineHeight: 1.45,
+                  }}
+                >
+                  No active Monnify-backed budget envelope is allocated for <strong>{request.subsidiary?.name}</strong> yet. Allocate funds in <strong>Wallets &amp; Funded Budgets</strong> before releasing.
+                </div>
+              )}
+
               {/* Overrun Alert Banner */}
-              {isOverBudget && (
+              {request.budgetImpact.totalBudget > 0 && isOverBudget && (
                 <div
                   style={{
                     background: '#fef2f2',
@@ -974,8 +1003,8 @@ export function ExecutiveRequisitionModal({
                 >
                   <AlertTriangle size={15} color="#dc2626" style={{ flexShrink: 0, marginTop: '2px' }} />
                   <div style={{ fontSize: '11px', color: '#991b1b', lineHeight: 1.45 }}>
-                    <strong style={{ display: 'block', fontWeight: 800 }}>Budget Overrun Threshold Exceeded</strong>
-                    This request exceeds the annual budget cap by ₦{overrunAmount.toLocaleString()}. Requires GMD exceptional capital authorization.
+                    <strong style={{ display: 'block', fontWeight: 800 }}>Funded Budget Cap Exceeded</strong>
+                    This request exceeds the remaining funded budget by ₦{overrunAmount.toLocaleString()}.
                   </div>
                 </div>
               )}
@@ -985,7 +1014,7 @@ export function ExecutiveRequisitionModal({
                 <div
                   style={{
                     height: '100%',
-                    width: `${Math.min(100, Math.round(((request.budgetImpact.spentSoFar + request.amount) / Math.max(request.budgetImpact.totalBudget, 1)) * 100))}%`,
+                    width: `${request.budgetImpact.totalBudget > 0 ? Math.min(100, Math.round(((request.budgetImpact.spentSoFar + request.amount) / Math.max(request.budgetImpact.totalBudget, 1)) * 100)) : 0}%`,
                     background: isOverBudget ? 'linear-gradient(90deg, #ea580c, #dc2626)' : 'var(--brand-primary, #0d8a70)',
                     borderRadius: '4px',
                   }}
@@ -994,11 +1023,11 @@ export function ExecutiveRequisitionModal({
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '11px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', color: '#64748b' }}>
-                  <span>Annual Budget Cap:</span>
+                  <span>Funded Budget Cap:</span>
                   <strong style={{ color: '#1e293b' }}>₦{request.budgetImpact.totalBudget.toLocaleString()}</strong>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', color: '#64748b' }}>
-                  <span>Spent Prior to this Request:</span>
+                  <span>Spent / Committed Prior:</span>
                   <strong style={{ color: '#1e293b' }}>₦{request.budgetImpact.spentSoFar.toLocaleString()}</strong>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', color: isOverBudget ? '#dc2626' : '#047857', fontWeight: 750, paddingTop: '4px', borderTop: '1px dashed #e2e8f0' }}>

@@ -73,10 +73,11 @@ export async function GET(request: Request) {
         select: { id: true, code: true, legalName: true },
         orderBy: { code: 'asc' },
       }),
-      canViewApprovals ? prisma.budget.findMany({
-        where: { organizationId: { in: scopedOrgIds.organizationIds } },
-        include: { lines: true },
-      }) : Promise.resolve([]),
+      canViewApprovals ? prisma.$queryRaw<Array<{ organizationId: string; parentId: string | null; allocatedMinor: bigint; remainingMinor: bigint }>>`
+        SELECT "organizationId", "parentId", "allocatedMinor", "remainingMinor"
+        FROM "WalletBudgetEnvelope"
+        WHERE "status" = 'ACTIVE'
+      ` : Promise.resolve([]),
     ]);
 
     const now = new Date().getTime();
@@ -94,16 +95,19 @@ export async function GET(request: Request) {
       const assignment = req.requester?.assignments?.[0];
       const departmentName = assignment?.department?.name || 'General Operations';
 
-      // 3-way matching simulation based on vendor & amount
-      const hasVendor = !!req.vendor;
-      const poGenerated = true;
-      const quoteAttached = hasVendor && !!req.vendor?.taxId;
-      const deliveryVerified = req.approvalStatus === 'APPROVED' || req.paymentStatus !== 'UNPAID';
+      // Honest 3-way matching & attachment verification
+      const hasVendor = Boolean(req.vendor);
+      const poGenerated = hasVendor;
+      const quoteAttached = (req.attachments || []).length > 0;
+      const scopeVerified = Boolean(req.deliverable && req.deliverable.trim().length > 0);
 
-      // Budget exposure
-      const subBudget = budgets.find((b) => b.organizationId === req.subsidiaryId);
-      const budgetCap = subBudget?.totalAmount ? subBudget.totalAmount : 25000000;
-      const spentSoFar = subBudget?.spentAmount || subBudget?.lines?.reduce((acc, l) => acc + (l.spentAmount || l.allocatedAmount * 0.45), 0) || 8500000;
+      // Live Monnify-backed subsidiary budget exposure
+      const orgEnvelopes = budgets.filter((b) => b.organizationId === req.subsidiaryId);
+      const topLevelEnvelopes = orgEnvelopes.filter((b) => !b.parentId);
+      const budgetCap = (topLevelEnvelopes.length > 0 ? topLevelEnvelopes : orgEnvelopes)
+        .reduce((acc, b) => acc + Number(b.allocatedMinor) / 100, 0);
+      const remainingNow = orgEnvelopes.reduce((acc, b) => acc + Number(b.remainingMinor) / 100, 0);
+      const spentSoFar = Math.max(0, budgetCap - remainingNow);
 
       return {
         id: req.id,
@@ -160,15 +164,17 @@ export async function GET(request: Request) {
         threeWayMatch: {
           poMatched: poGenerated,
           quoteAttached,
-          scopeVerified: true,
-          status: quoteAttached && poGenerated ? '3-WAY MATCHED' : '2-WAY MATCHED',
+          scopeVerified,
+          status: hasVendor
+            ? (quoteAttached ? '3-WAY MATCHED' : '2-WAY MATCHED')
+            : (quoteAttached ? 'EVIDENCE ATTACHED' : 'INTERNAL REQUEST'),
         },
         budgetImpact: {
           totalBudget: budgetCap,
           spentSoFar,
-          remainingBefore: Math.max(0, budgetCap - spentSoFar),
-          remainingAfter: Math.max(0, budgetCap - spentSoFar - amountNgn),
-          percentOfBudget: Math.min(100, Math.round((amountNgn / budgetCap) * 100)),
+          remainingBefore: Math.max(0, remainingNow),
+          remainingAfter: Math.max(0, remainingNow - amountNgn),
+          percentOfBudget: budgetCap > 0 ? Math.min(100, Math.round((amountNgn / budgetCap) * 100)) : 0,
         },
         approvalSteps: (req.approvalSteps || []).map((s) => ({
           id: s.id,
