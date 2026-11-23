@@ -447,12 +447,16 @@ export async function stageAction(input: StageActionInput) {
   });
 
   const confirmEndpoint = `/api/ai/staged-actions/${staged.id}/confirm`;
+  const cancelEndpoint = `/api/ai/staged-actions/${staged.id}/cancel`;
 
   return {
     id: staged.id,
+    actionId: staged.id,
     staged_action_id: staged.id,
+    actionType: staged.actionType,
     confirmationHash: staged.confirmationHash,
     confirmation_hash: staged.confirmationHash,
+    payloadHash: staged.confirmationHash,
     type: staged.actionType,
     command_version: staged.commandVersion,
     conversation_id: staged.conversationId,
@@ -463,7 +467,10 @@ export async function stageAction(input: StageActionInput) {
     eligible_approver_roles: staged.eligibleApproverRoles,
     attachment_ids: verifiedAttachments.map((a) => a.id),
     staged_status: 'PENDING' as const,
+    expiresAt: staged.expiresAt.toISOString(),
     expires_at: staged.expiresAt.toISOString(),
+    confirmUrl: confirmEndpoint,
+    cancelUrl: cancelEndpoint,
     summary: staged.summary,
     preview: resolvedPreview,
     warnings: input.warnings || [],
@@ -480,7 +487,10 @@ export async function stageAction(input: StageActionInput) {
     staged_action: {
       type: staged.actionType,
       cardType: 'STAGED_ACTION',
+      actionId: staged.id,
       staged_action_id: staged.id,
+      actionType: staged.actionType,
+      payloadHash: staged.confirmationHash,
       confirmation_hash: staged.confirmationHash,
       command_version: staged.commandVersion,
       conversation_id: staged.conversationId,
@@ -493,7 +503,11 @@ export async function stageAction(input: StageActionInput) {
       summary: staged.summary,
       action_type: staged.actionType,
       status: 'PENDING' as const,
+      expiresAt: staged.expiresAt.toISOString(),
       expires_at: staged.expiresAt.toISOString(),
+      confirmUrl: confirmEndpoint,
+      cancelUrl: cancelEndpoint,
+      preview: resolvedPreview,
       payload_preview: resolvedPreview,
     },
   };

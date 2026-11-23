@@ -47,6 +47,17 @@ export async function GET(request: NextRequest) {
         where: { subsidiaryId: { in: authorizedScope.organizationIds }, status: 'ACTIVE' },
         include: { subsidiary: { select: { id: true, code: true, legalName: true } }, department: { select: { id: true, name: true } } },
       },
+      employmentAgreements: {
+        where: { status: 'ACTIVE' },
+        orderBy: { startDate: 'desc' },
+        take: 1,
+        include: {
+          compensations: {
+            orderBy: [{ version: 'desc' }, { effectiveFrom: 'desc' }],
+            take: 1,
+          },
+        },
+      },
     },
     orderBy: { legalName: 'asc' },
     take: 100,
@@ -55,24 +66,32 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     ok: true,
     count: staff.length,
-    staff: staff.map((s) => ({
-      id: s.id,
-      employeeNumber: s.employeeNumber,
-      legalName: s.legalName,
-      workEmail: s.workEmail,
-      phone: s.phone,
-      role: s.role,
-      status: s.status,
-      approvalStatus: s.approvalStatus,
-      jobTitle: s.jobTitle || s.assignments[0]?.positionName || 'Staff',
-      staffGrade: s.staffGrade,
-      isAttendanceExempt: s.isAttendanceExempt,
-      isOfflineStaff: s.isOfflineStaff,
-      subsidiary: s.assignments[0]?.subsidiary || null,
-      department: s.assignments[0]?.department || null,
-      bankName: s.salaryBankName || s.bankName,
-      accountNumber: s.salaryAccountNumber || s.accountNumber,
-    })),
+    staff: staff.map((s) => {
+      const latestComp = s.employmentAgreements?.[0]?.compensations?.[0];
+      const baseSalaryNaira = latestComp
+        ? Math.round(Number(latestComp.grossMinor) / 100)
+        : 0;
+      return {
+        id: s.id,
+        employeeNumber: s.employeeNumber,
+        legalName: s.legalName,
+        workEmail: s.workEmail,
+        phone: s.phone,
+        role: s.role,
+        status: s.status,
+        approvalStatus: s.approvalStatus,
+        jobTitle: s.jobTitle || s.assignments[0]?.positionName || 'Staff',
+        staffGrade: s.staffGrade,
+        baseSalary: baseSalaryNaira,
+        baseSalaryFormatted: `₦${baseSalaryNaira.toLocaleString('en-NG')}`,
+        isAttendanceExempt: s.isAttendanceExempt,
+        isOfflineStaff: s.isOfflineStaff,
+        subsidiary: s.assignments[0]?.subsidiary || null,
+        department: s.assignments[0]?.department || null,
+        bankName: s.salaryBankName || s.bankName,
+        accountNumber: s.salaryAccountNumber || s.accountNumber,
+      };
+    }),
   });
 }
 
@@ -96,12 +115,49 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const subAction = String(body.action || body.sub_action || body.action_type || 'EDIT_PROFILE').toUpperCase();
+    const rawSubAction = String(body.action || body.sub_action || body.action_type || 'EDIT_PROFILE').toUpperCase();
+    const rawSalaryInput =
+      body.baseSalary ??
+      body.base_salary ??
+      body.proposedSalary ??
+      body.proposed_salary ??
+      body.newBaseSalary ??
+      body.new_base_salary ??
+      body.amount;
+    const hasSalaryFieldOnly =
+      rawSubAction === 'EDIT_PROFILE' &&
+      rawSalaryInput !== undefined &&
+      rawSalaryInput !== '' &&
+      !body.legalName &&
+      !body.legal_name &&
+      !body.workEmail &&
+      !body.work_email &&
+      !body.phone &&
+      !body.jobTitle &&
+      !body.job_title &&
+      !body.department &&
+      !body.departmentId &&
+      !body.department_id &&
+      !body.subsidiaryId &&
+      !body.subsidiary_id &&
+      !body.role;
+    const isSalaryAction =
+      [
+        'UPDATE_SALARY',
+        'ADJUST_SALARY',
+        'SALARY_CHANGE',
+        'CHANGE_SALARY',
+        'REDUCE_SALARY',
+        'INCREASE_SALARY',
+      ].includes(rawSubAction) || hasSalaryFieldOnly;
+    const subAction = isSalaryAction ? 'UPDATE_SALARY' : rawSubAction;
 
     const targetScope =
-      subAction === 'TOGGLE_ATTENDANCE_EXEMPT' ||
-      subAction === 'CHANGE_STATUS' ||
-      subAction === 'DELETE_OR_DEACTIVATE'
+      subAction === 'UPDATE_SALARY'
+        ? 'salary'
+        : subAction === 'TOGGLE_ATTENDANCE_EXEMPT' ||
+          subAction === 'CHANGE_STATUS' ||
+          subAction === 'DELETE_OR_DEACTIVATE'
         ? 'staff_status'
         : 'staff_profiles';
     const scopeBlocked = await checkAiScopeOrResponse(targetScope, 'write');
@@ -207,6 +263,93 @@ export async function POST(request: NextRequest) {
 
     if (!emp) {
       return NextResponse.json({ error: `Staff member "${employeeLookup}" not found or outside authorized workspace.` }, { status: 404 });
+    }
+
+    if (subAction === 'UPDATE_SALARY') {
+      const { inspectEmployeeCompensationContext } = await import('@/lib/services/compensation');
+      let ctx;
+      try {
+        ctx = await inspectEmployeeCompensationContext(emp.id);
+      } catch (err: any) {
+        return NextResponse.json(
+          { error: err?.message || 'Employee compensation lookup failed.' },
+          { status: 409 }
+        );
+      }
+
+      const targetAmount = Number(
+        typeof rawSalaryInput === 'string'
+          ? rawSalaryInput.replace(/[^0-9.]/g, '')
+          : rawSalaryInput ?? 0
+      );
+      if (!Number.isFinite(targetAmount) || targetAmount <= 0) {
+        return NextResponse.json(
+          { error: 'baseSalary (a positive monthly salary amount in Naira) is required for UPDATE_SALARY.' },
+          { status: 400 }
+        );
+      }
+
+      const rawReason = String(
+        body.reason || body.justification || `Salary adjustment for ${ctx.employee.legalName} authorized via BEMi`
+      ).trim();
+      const reason = rawReason.length >= 5 ? rawReason : `${rawReason} — Authorized salary adjustment`;
+      const deltaVal = Math.round(targetAmount) - ctx.currentGrossNaira;
+      const deltaFormatted =
+        deltaVal > 0
+          ? `+₦${deltaVal.toLocaleString('en-NG')}`
+          : deltaVal < 0
+          ? `-₦${Math.abs(deltaVal).toLocaleString('en-NG')}`
+          : '₦0';
+      const nowIso = new Date().toISOString();
+
+      const staged = await stageAction({
+        actorContext: actor,
+        userId: actor.id,
+        actionType: 'salary_change',
+        targetEmployeeId: ctx.employee.id,
+        targetSubsidiaryId: ctx.subsidiaryId,
+        summary: `Adjust monthly salary for ${ctx.employee.legalName} (${ctx.employee.employeeNumber}) from ₦${ctx.currentGrossNaira.toLocaleString('en-NG')} to ₦${Math.round(targetAmount).toLocaleString('en-NG')}`,
+        materialPayload: {
+          employee_id: ctx.employee.id,
+          subsidiary_id: ctx.subsidiaryId,
+          change_type:
+            ctx.currentGrossNaira === 0
+              ? 'INITIAL_SALARY'
+              : deltaVal < 0
+              ? 'DEDUCTION'
+              : 'ADDITION',
+          amount: Math.round(targetAmount),
+          new_base_salary: Math.round(targetAmount),
+          prior_base_salary: ctx.currentGrossNaira,
+          effective_date: nowIso,
+          reason,
+          expected_comp_version: ctx.currentCompVersion,
+        },
+        preview: {
+          employee_name: ctx.employee.legalName,
+          employee_number: ctx.employee.employeeNumber,
+          subsidiary: ctx.subsidiaryName,
+          current_base_gross: `₦${ctx.currentGrossNaira.toLocaleString('en-NG')}`,
+          new_base_gross: `₦${Math.round(targetAmount).toLocaleString('en-NG')}`,
+          delta: deltaFormatted,
+          effective_date: nowIso.split('T')[0],
+          affected_open_periods:
+            ctx.affectedOpenPeriods.length > 0
+              ? ctx.affectedOpenPeriods.join(', ')
+              : 'Current open payroll batch',
+          reason,
+        },
+      });
+
+      return NextResponse.json({
+        ok: true,
+        staged: true,
+        status: 'AWAITING_CONFIRMATION',
+        requires_gmd_action: true,
+        action: 'UPDATE_SALARY',
+        message: `Staged salary update for ${ctx.employee.legalName} (${ctx.employee.employeeNumber}) from ₦${ctx.currentGrossNaira.toLocaleString('en-NG')} to ₦${Math.round(targetAmount).toLocaleString('en-NG')}. Click Authorize Salary Update in BEMS to commit.`,
+        ...staged,
+      });
     }
 
     let targetSubsidiaryId = body.subsidiaryId || body.subsidiary_id;
