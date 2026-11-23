@@ -228,8 +228,12 @@ export async function readFundingDashboard(actor: WalletActor) {
       const organizationIds = organizations.map(({ id }) => id);
       const envelopes = organizationIds.length ? await tx.$queryRaw<unknown[]>`
         SELECT e."id", e."organizationId", e."label", e."allocatedMinor", e."remainingMinor",
-               e."parentId", e."status", e."createdAt", o."legalName" AS "organizationName"
-        FROM "WalletBudgetEnvelope" e JOIN "Organization" o ON o."id" = e."organizationId"
+               e."parentId", e."status", e."createdAt", e."createdById",
+               o."legalName" AS "organizationName",
+               creator."legalName" AS "createdByName", creator."role" AS "createdByRole"
+        FROM "WalletBudgetEnvelope" e
+        JOIN "Organization" o ON o."id" = e."organizationId"
+        LEFT JOIN "Employee" creator ON creator."id" = e."createdById"
         WHERE e."organizationId" IN (${Prisma.join(organizationIds)})
         ORDER BY e."createdAt" DESC LIMIT 100
       ` : [];
@@ -252,7 +256,14 @@ export async function readFundingDashboard(actor: WalletActor) {
     if (role !== 'GMD' && role !== 'SYSTEM_ADMIN') {
       throw new WalletError('NOT_PERMITTED', 'Wallet viewing permission is required.', 403);
     }
-    const envelopes = await tx.$queryRaw<any[]>`SELECT e.*, o."legalName" AS "organizationName" FROM "WalletBudgetEnvelope" e JOIN "Organization" o ON o."id" = e."organizationId" ORDER BY e."createdAt" DESC LIMIT 100`;
+    const envelopes = await tx.$queryRaw<any[]>`
+      SELECT e.*, o."legalName" AS "organizationName",
+             creator."legalName" AS "createdByName", creator."role" AS "createdByRole"
+      FROM "WalletBudgetEnvelope" e
+      JOIN "Organization" o ON o."id" = e."organizationId"
+      LEFT JOIN "Employee" creator ON creator."id" = e."createdById"
+      ORDER BY e."createdAt" DESC LIMIT 100
+    `;
     let funding;
     try { funding = await fundingState(tx); } catch (error) { if (error instanceof WalletError && error.code === 'FUNDING_NOT_CONFIGURED') funding = null; else throw error; }
     const proposals = await tx.$queryRaw<any[]>`SELECT p."id",p."sourceType",p."sourceId",p."amountMinor",p."category",p."confirmationHash",p."expiresAt",p."conversationId" FROM "WalletReleaseProposal" p WHERE p."status"='PENDING' AND p."expiresAt">now() ORDER BY p."createdAt" DESC LIMIT 100`;
@@ -265,7 +276,7 @@ export async function readFundingDashboard(actor: WalletActor) {
     const vendors=await tx.$queryRaw<any[]>`SELECT "id","name","accountName",right(COALESCE("accountNumber",''),4) AS "lastFour","bankCode","verifiedBankAt" FROM "Vendor" ORDER BY "name" LIMIT 200`;
     const organizations = await tx.organization.findMany({ where: { status: 'ACTIVE', defaultCurrency: 'NGN' }, select: { id: true, code: true, legalName: true, type: true, departments: { select: { id: true, name: true, code: true }, orderBy: { name: 'asc' } } } });
     const staffWallets = await tx.$queryRaw<any[]>`SELECT e."id", e."legalName", e."employeeNumber", e."role", COALESCE(a."subsidiaryId", '') AS "subsidiaryId", COALESCE(o."legalName", 'Unassigned') AS "organizationName", COALESCE(sum(c."availableMinor"),0)::bigint AS "availableMinor", COALESCE(sum(c."heldMinor"),0)::bigint AS "heldMinor", COALESCE(sum(c."settledMinor"),0)::bigint AS "settledMinor" FROM "Employee" e LEFT JOIN "EmployeeAssignment" a ON a."employeeId"=e."id" AND a."status"='ACTIVE' AND a."isPrimary"=true LEFT JOIN "Organization" o ON o."id"=a."subsidiaryId" LEFT JOIN "WalletCreditLot" c ON c."employeeId"=e."id" WHERE e."role" IN ('STAFF','CUSTOM_ADMIN') AND e."approvalStatus"='APPROVED' AND e."status" IN ('ACTIVE','ON_LEAVE') GROUP BY e."id", e."legalName", e."employeeNumber", e."role", a."subsidiaryId", o."legalName" ORDER BY "availableMinor" DESC, e."legalName" ASC LIMIT 100`;
-    const journals = await tx.$queryRaw<any[]>`SELECT j."id", j."kind", j."reference", j."createdAt", j."actorId", COALESCE(json_agg(json_build_object('id', je."id", 'accountKey', je."accountKey", 'amountMinor', je."amountMinor"::text)) FILTER (WHERE je."id" IS NOT NULL), '[]'::json) AS "entries" FROM "WalletJournal" j LEFT JOIN "WalletJournalEntry" je ON je."journalId"=j."id" GROUP BY j."id", j."kind", j."reference", j."createdAt", j."actorId" ORDER BY j."createdAt" DESC LIMIT 50`;
+    const journals = await tx.$queryRaw<any[]>`SELECT j."id", j."kind", j."reference", j."createdAt", j."actorId", actor."legalName" AS "actorName", actor."role" AS "actorRole", COALESCE(json_agg(json_build_object('id', je."id", 'accountKey', je."accountKey", 'amountMinor', je."amountMinor"::text)) FILTER (WHERE je."id" IS NOT NULL), '[]'::json) AS "entries" FROM "WalletJournal" j LEFT JOIN "Employee" actor ON actor."id"=j."actorId" LEFT JOIN "WalletJournalEntry" je ON je."journalId"=j."id" GROUP BY j."id", j."kind", j."reference", j."createdAt", j."actorId", actor."legalName", actor."role" ORDER BY j."createdAt" DESC LIMIT 50`;
     return walletJson({ walletMode:walletEnabled(), processing:walletWorkerStatus(), funding, envelopes, proposals, requests, organizations, vendors, transfers, payrollBatches, issues, staffWallets, journals, approvalLabel: financialApproverLabel(), canApprove: walletEnabled() && (await canActorApproveFunds(actor)) });
   }, { maxWait: 10000, timeout: 30000, isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
 }

@@ -5,7 +5,7 @@ import { prisma } from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
 import {checkRateLimit} from '@/lib/rate-limiter';
 import {stageAction} from '@/lib/staged-actions';
-import {WalletError,minorUnits,requireWallet,walletJson} from '@/lib/wallet/core';
+import {WalletError,fundingState,minorUnits,requireWallet,walletJson} from '@/lib/wallet/core';
 import {stageWalletRelease} from '@/lib/wallet/releases';
 export const dynamic='force-dynamic';
 async function handle(request:NextRequest,write:boolean){try{
@@ -29,9 +29,28 @@ async function handle(request:NextRequest,write:boolean){try{
  const preview=await stageWalletRelease(actor,{sourceType:b.sourceType,sourceId:b.sourceId,envelopeId:b.envelopeId,envelopesByOrganization:b.envelopesByOrganization},{allowedOrganizationIds:scope.organizationIds,conversationId:actor.conversationId||null,workspaceId:actor.scopedOrganizationId||null});return NextResponse.json({ok:true,actionCard:{type:'wallet_release',id:preview.id,confirmationHash:preview.confirmationHash,preview},message:'Preview prepared. Only an authorized financial approver can approve through the secure human confirmation card.'});}
  const ids=scope.organizationIds;
  if(!ids.length)return NextResponse.json({ok:true,credits:[],envelopes:[]});
- const envelopes=actor.isExecutive?await prisma.$queryRaw`SELECT "id","organizationId","label","remainingMinor","status","version" FROM "WalletBudgetEnvelope" WHERE "organizationId" IN (${Prisma.join(ids)}) ORDER BY "createdAt" DESC LIMIT 100`:[];
+ const envelopes=actor.isExecutive?await prisma.$queryRaw`
+   SELECT e."id",e."organizationId",o."legalName" AS "organizationName",e."label",e."parentId",
+          e."allocatedMinor",e."remainingMinor",(e."allocatedMinor"-e."remainingMinor") AS "spentMinor",
+          e."status",e."version",e."createdById",creator."legalName" AS "createdByName",creator."role" AS "createdByRole",e."createdAt"
+   FROM "WalletBudgetEnvelope" e
+   JOIN "Organization" o ON o."id"=e."organizationId"
+   LEFT JOIN "Employee" creator ON creator."id"=e."createdById"
+   WHERE e."organizationId" IN (${Prisma.join(ids)})
+   ORDER BY e."createdAt" DESC LIMIT 100
+ `:[];
  const credits=await prisma.$queryRaw`SELECT "id","sourceType","sourceId","employeeId","organizationId","category","availableMinor","heldMinor","settledMinor" FROM "WalletCreditLot" WHERE "organizationId" IN (${Prisma.join(ids)}) ${actor.isExecutive?Prisma.empty:Prisma.sql`AND "employeeId"=${actor.id}`} ORDER BY "createdAt" DESC LIMIT 100`;
- return NextResponse.json(walletJson({ok:true,currency:'NGN',scope:ids,envelopes,credits,notice:'AI cannot approve a release, withdraw funds or collect passwords/OTP codes.'}));
+ const fundingSummary=actor.isExecutive?await prisma.$transaction(tx=>fundingState(tx)).catch(()=>null):null;
+ const recentJournals=actor.isExecutive?await prisma.$queryRaw`
+   SELECT j."id",j."kind",j."reference",j."createdAt",j."actorId",actor."legalName" AS "actorName",actor."role" AS "actorRole",
+          COALESCE(json_agg(json_build_object('accountKey',je."accountKey",'amountMinor',je."amountMinor"::text)) FILTER (WHERE je."id" IS NOT NULL),'[]'::json) AS "entries"
+   FROM "WalletJournal" j
+   LEFT JOIN "Employee" actor ON actor."id"=j."actorId"
+   LEFT JOIN "WalletJournalEntry" je ON je."journalId"=j."id"
+   GROUP BY j."id",j."kind",j."reference",j."createdAt",j."actorId",actor."legalName",actor."role"
+   ORDER BY j."createdAt" DESC LIMIT 50
+ `:[];
+ return NextResponse.json(walletJson({ok:true,currency:'NGN',scope:ids,fundingSummary,envelopes,credits,recentJournals,notice:'AI cannot approve a release, withdraw funds or collect passwords/OTP codes.'}));
  }catch(e){return NextResponse.json({error:e instanceof WalletError?e.message:'Wallet tool failed.',code:e instanceof WalletError?e.code:'WALLET_TOOL_FAILED'},{status:e instanceof WalletError?e.status:500});}}
 export async function GET(r:NextRequest){return handle(r,false);}
 export async function POST(r:NextRequest){return handle(r,true);}

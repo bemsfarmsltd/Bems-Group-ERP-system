@@ -799,9 +799,9 @@ export default function FundingView({
                         <h4 style={{ fontSize: '14px', fontWeight: 800, margin: '2px 0 0', color: '#17253d' }}>
                           {e.organizationName}
                         </h4>
-                        {e.label && e.label !== `${e.organizationName} Budget` && (
-                          <span style={{ fontSize: '10.5px', color: '#64748b' }}>{e.label}</span>
-                        )}
+                        <span style={{ fontSize: '10px', color: '#64748b', display: 'block', marginTop: 2 }}>
+                          Created by {e.createdByName || 'Executive'} · {e.createdAt ? new Date(e.createdAt).toLocaleDateString('en-GB') : ''}
+                        </span>
                       </div>
                       <span
                         style={{
@@ -860,6 +860,7 @@ export default function FundingView({
                               </div>
                               <div style={{ fontSize: '9.5px', color: '#64748b' }}>
                                 Left: <strong style={{ color: '#059669' }}>{walletMoney(child.remainingMinor)}</strong> / {walletMoney(child.allocatedMinor)}
+                                {child.createdByName ? ` · by ${child.createdByName}` : ''}
                               </div>
                             </div>
                             {child.status === 'ACTIVE' && (
