@@ -1711,6 +1711,30 @@ class _StaffMainScreenState extends State<StaffMainScreen> {
                   OutlinedButton.icon(
                     onPressed: () {
                       Navigator.pop(ctx);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => NewFundRequestScreen(
+                            user: _currentUser,
+                            existingRequest: req,
+                            onSubmitted: _loadData,
+                          ),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.edit_outlined, size: 18, color: Color(0xFFEA580C)),
+                    label: const Text('Edit Requisition', style: TextStyle(fontWeight: FontWeight.w800, color: Color(0xFFEA580C))),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Color(0xFFFED7AA)),
+                      backgroundColor: const Color(0xFFFFF7ED),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  OutlinedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(ctx);
                       _confirmDeleteRequest(req);
                     },
                     icon: const Icon(Icons.delete_outline_rounded, size: 18, color: Color(0xFFDC2626)),
@@ -5355,6 +5379,41 @@ class _StaffMainScreenState extends State<StaffMainScreen> {
                       ),
                     ),
                     if (req.approvalStatus != 'APPROVED') ...[
+                      const SizedBox(width: 6),
+                      InkWell(
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => NewFundRequestScreen(
+                                user: _currentUser,
+                                existingRequest: req,
+                                onSubmitted: _loadData,
+                              ),
+                            ),
+                          );
+                        },
+                        borderRadius: BorderRadius.circular(8),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFF7ED),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: const Color(0xFFFED7AA)),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.edit_outlined, size: 12, color: Color(0xFFEA580C)),
+                              SizedBox(width: 3),
+                              Text(
+                                'Edit',
+                                style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: Color(0xFFEA580C)),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                       const SizedBox(width: 6),
                       InkWell(
                         onTap: () => _confirmDeleteRequest(req),

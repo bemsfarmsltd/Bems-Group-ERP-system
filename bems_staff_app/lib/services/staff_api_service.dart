@@ -1107,6 +1107,44 @@ class StaffApiService {
     throw Exception(data['error']?.toString() ?? 'Failed to delete fund request.');
   }
 
+  /// Edit/update a fund request before admin approval
+  static Future<Map<String, dynamic>> updateFundRequest({
+    required String requestNumber,
+    required String employeeId,
+    required String title,
+    required double amountNaira,
+    required String category,
+    required String urgency,
+    required String justification,
+    required String deliverable,
+    bool isRecurring = false,
+    String? recurringInterval,
+    String? token,
+  }) async {
+    final res = await _executeWithFailover(
+      (host) => http.patch(
+        Uri.parse('$host/api/requests/${Uri.encodeComponent(requestNumber)}'),
+        headers: _headers(token: token, employeeId: employeeId),
+        body: jsonEncode({
+          'title': title,
+          'amountNaira': amountNaira,
+          'category': category,
+          'urgency': urgency,
+          'justification': justification,
+          'expectedDeliverable': deliverable,
+          'isRecurring': isRecurring,
+          if (recurringInterval != null) 'recurringInterval': recurringInterval,
+        }),
+      ),
+    );
+
+    final data = jsonDecode(res.body);
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      return Map<String, dynamic>.from(data as Map);
+    }
+    throw Exception(data['error']?.toString() ?? 'Failed to update fund request.');
+  }
+
   /// Verify device geofence perimeter before unlocking QR scanner
   static Future<Map<String, dynamic>> verifyGeofence({
     required String employeeId,

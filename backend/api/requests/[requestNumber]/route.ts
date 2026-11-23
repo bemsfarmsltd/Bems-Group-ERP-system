@@ -368,3 +368,147 @@ export async function DELETE(
     return NextResponse.json({ error: error.message || "Failed to delete fund request" }, { status: 500 });
   }
 }
+
+export async function PATCH(
+  request: Request,
+  { params }: { params: Promise<{ requestNumber?: string; id?: string }> }
+) {
+  try {
+    const actor = await getAuthenticatedEmployee(request);
+    if (!actor) {
+      return NextResponse.json({ error: "Authentication required to edit a fund request." }, { status: 401 });
+    }
+
+    const resolvedParams = await params;
+    const id = resolvedParams.requestNumber || resolvedParams.id;
+    if (!id) {
+      return NextResponse.json({ error: "Request identifier is required." }, { status: 400 });
+    }
+
+    const expenditure = await prisma.expenditureRequest.findFirst({
+      where: {
+        OR: [
+          { id: id },
+          { requestNumber: id },
+          { requestNumber: id.toUpperCase() },
+        ],
+      },
+      include: {
+        approvalSteps: true,
+      },
+    });
+
+    if (!expenditure) {
+      return NextResponse.json({ error: `Fund request '${id}' not found.` }, { status: 404 });
+    }
+
+    const isOwner = expenditure.requestedById === actor.id;
+    const isExecutiveAdmin = ["SUPER_ADMIN", "SYSTEM_ADMIN", "GMD"].includes(actor.role);
+    if (!isOwner && !isExecutiveAdmin) {
+      return NextResponse.json({ error: "Permission denied. You can only edit your own fund requests." }, { status: 403 });
+    }
+
+    if (expenditure.paymentStatus !== "UNPAID") {
+      return NextResponse.json(
+        { error: "Cannot edit request: Funds have already been scheduled or disbursed." },
+        { status: 400 }
+      );
+    }
+
+    if (!isExecutiveAdmin) {
+      if (expenditure.approvalStatus === "APPROVED") {
+        return NextResponse.json(
+          { error: "Cannot edit request: This requisition has already been approved." },
+          { status: 400 }
+        );
+      }
+      if (expenditure.approvalSteps.some((s) => s.status === "APPROVED")) {
+        return NextResponse.json(
+          { error: "Cannot edit request: Approval workflow has already been signed off." },
+          { status: 400 }
+        );
+      }
+    }
+
+    const body = await request.json().catch(() => ({}));
+    const title = typeof body.title === "string" ? body.title.trim() : expenditure.title;
+    const justification = typeof body.justification === "string" ? body.justification.trim() : expenditure.justification;
+    const deliverable = typeof body.deliverable === "string"
+      ? body.deliverable.trim()
+      : (typeof body.expectedDeliverable === "string" ? body.expectedDeliverable.trim() : expenditure.deliverable);
+    const category = typeof body.category === "string" && body.category.trim() ? body.category.trim() : expenditure.category;
+
+    let amountMinor = expenditure.amountMinor;
+    if (body.amountMinor !== undefined && body.amountMinor !== null) {
+      amountMinor = BigInt(Math.round(Number(body.amountMinor)));
+    } else if (body.amountNaira !== undefined && body.amountNaira !== null) {
+      amountMinor = BigInt(Math.round(Number(body.amountNaira) * 100));
+    }
+
+    if (!title || title.length > 200) {
+      return NextResponse.json({ error: "Please provide a valid request title (1-200 characters)." }, { status: 400 });
+    }
+    if (!justification) {
+      return NextResponse.json({ error: "Please provide a business justification." }, { status: 400 });
+    }
+    if (amountMinor <= BigInt(0)) {
+      return NextResponse.json({ error: "Amount must be greater than zero." }, { status: 400 });
+    }
+
+    const nextApprovalStatus = expenditure.approvalStatus === "CLARIFICATION_REQUESTED" ? "IN_REVIEW" : expenditure.approvalStatus;
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const reqRecord = await tx.expenditureRequest.update({
+        where: { id: expenditure.id },
+        data: {
+          title,
+          justification,
+          deliverable,
+          category,
+          amountMinor,
+          isRecurring: typeof body.isRecurring === "boolean" ? body.isRecurring : expenditure.isRecurring,
+          recurringInterval: typeof body.recurringInterval === "string" ? body.recurringInterval : expenditure.recurringInterval,
+          approvalStatus: nextApprovalStatus,
+          requestVersion: { increment: 1 },
+        },
+      });
+
+      await tx.auditEvent.create({
+        data: {
+          actorId: actor.id,
+          actorName: actor.legalName,
+          actorRole: actor.role,
+          groupId: expenditure.groupId,
+          subsidiaryId: expenditure.subsidiaryId,
+          targetType: "REQUEST",
+          targetId: expenditure.id,
+          action: "UPDATED",
+          correlationId: expenditure.requestNumber,
+          metadata: JSON.stringify({
+            requestNumber: expenditure.requestNumber,
+            previousTitle: expenditure.title,
+            newTitle: title,
+            previousAmountMinor: Number(expenditure.amountMinor),
+            newAmountMinor: Number(amountMinor),
+            updatedBy: actor.legalName,
+            updatedAt: new Date().toISOString(),
+          }),
+        },
+      });
+
+      return reqRecord;
+    });
+
+    return NextResponse.json({
+      success: true,
+      requestNumber: updated.requestNumber,
+      title: updated.title,
+      amountMinor: Number(updated.amountMinor),
+      approvalStatus: updated.approvalStatus,
+      message: `Fund requisition ${updated.requestNumber} was updated successfully.`,
+    });
+  } catch (error: any) {
+    console.error("Error updating fund request:", error);
+    return NextResponse.json({ error: error.message || "Failed to update fund request" }, { status: 500 });
+  }
+}

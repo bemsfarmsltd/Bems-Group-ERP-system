@@ -8,11 +8,13 @@ import '../theme/subsidiary_theme.dart';
 class NewFundRequestScreen extends StatefulWidget {
   final StaffUser user;
   final VoidCallback onSubmitted;
+  final FundRequestItem? existingRequest;
 
   const NewFundRequestScreen({
     super.key,
     required this.user,
     required this.onSubmitted,
+    this.existingRequest,
   });
 
   @override
@@ -179,7 +181,31 @@ class _NewFundRequestScreenState extends State<NewFundRequestScreen> {
   @override
   void initState() {
     super.initState();
-    _selectedSubsidiary = widget.user.subsidiary.isNotEmpty ? widget.user.subsidiary : 'Bems Logistics & Distribution Ltd';
+    final existing = widget.existingRequest;
+    if (existing != null) {
+      _titleController.text = existing.title;
+      _amountController.text = existing.amountNaira > 0 ? existing.amountNaira.toStringAsFixed(0) : '';
+      _justificationController.text = existing.justification;
+      _deliverableController.text = existing.deliverable;
+      if (_categories.contains(existing.category)) {
+        _selectedCategory = existing.category;
+      } else if (existing.category.isNotEmpty) {
+        _categories.insert(0, existing.category);
+        _selectedCategory = existing.category;
+      }
+      if (['LOW', 'NORMAL', 'HIGH', 'CRITICAL'].contains(existing.urgency.toUpperCase())) {
+        _selectedUrgency = existing.urgency.toUpperCase();
+      }
+      _isRecurring = existing.isRecurring;
+      if (existing.recurringInterval != null && _recurringOptions.contains(existing.recurringInterval)) {
+        _recurringInterval = existing.recurringInterval!;
+      }
+      _selectedSubsidiary = existing.subsidiary.isNotEmpty
+          ? existing.subsidiary
+          : (widget.user.subsidiary.isNotEmpty ? widget.user.subsidiary : 'Bems Logistics & Distribution Ltd');
+    } else {
+      _selectedSubsidiary = widget.user.subsidiary.isNotEmpty ? widget.user.subsidiary : 'Bems Logistics & Distribution Ltd';
+    }
     _loadInitialData();
   }
 
@@ -304,6 +330,36 @@ class _NewFundRequestScreenState extends State<NewFundRequestScreen> {
     setState(() => _isSubmitting = true);
 
     try {
+      final existing = widget.existingRequest;
+      if (existing != null) {
+        await StaffApiService.updateFundRequest(
+          requestNumber: existing.requestNumber,
+          employeeId: widget.user.id,
+          title: title,
+          amountNaira: amount,
+          category: _selectedCategory,
+          urgency: _selectedUrgency,
+          justification: justification,
+          deliverable: deliverable,
+          isRecurring: _isRecurring,
+          recurringInterval: _isRecurring ? _recurringInterval : null,
+          token: widget.user.token,
+        );
+
+        if (!mounted) return;
+        widget.onSubmitted();
+        Navigator.pop(context);
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✓ Requisition ${existing.requestNumber} updated successfully.'),
+            backgroundColor: const Color(0xFF059669),
+            duration: const Duration(seconds: 4),
+          ),
+        );
+        return;
+      }
+
       final formattedDue = _formatDueDate();
 
       await StaffApiService.createFundRequest(
@@ -397,9 +453,11 @@ class _NewFundRequestScreenState extends State<NewFundRequestScreen> {
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
-        title: const Text(
-          'New Fund Requisition',
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Color(0xFF0F172A)),
+        title: Text(
+          widget.existingRequest != null
+              ? 'Edit ${widget.existingRequest!.requestNumber}'
+              : 'New Fund Requisition',
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Color(0xFF0F172A)),
         ),
         leading: IconButton(
           icon: const Icon(Icons.close_rounded, color: Color(0xFF0F172A)),
@@ -975,7 +1033,9 @@ class _NewFundRequestScreenState extends State<NewFundRequestScreen> {
                       child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5),
                     )
                   : Text(
-                      _isRecurring ? 'Schedule Recurring Requisition' : 'Submit Requisition for Approval',
+                      widget.existingRequest != null
+                          ? 'Save Requisition Changes'
+                          : (_isRecurring ? 'Schedule Recurring Requisition' : 'Submit Requisition for Approval'),
                       style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 14),
                     ),
             ),
