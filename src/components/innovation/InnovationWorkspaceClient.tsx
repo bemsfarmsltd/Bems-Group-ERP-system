@@ -29,8 +29,20 @@ import {
 } from 'lucide-react';
 import { resolveApiUrl } from '@/lib/api-client';
 import { BrainstormingCanvasPanel } from './BrainstormingCanvasPanel';
-import { FEATURE_STAGE_ORDER } from '@/lib/innovationRouteHelper';
 import { useGmdAccess } from '@/components/ai/useGmdAccess';
+
+const FEATURE_STAGE_ORDER = [
+  'IDEA',
+  'DISCOVERY',
+  'VALIDATED',
+  'PRIORITIZED',
+  'APPROVED',
+  'DEVELOPMENT_READY',
+  'IN_DEVELOPMENT',
+  'VERIFIED',
+  'RELEASED',
+  'IMPACT_REVIEW',
+] as const;
 import { useAiFinancialManager } from '@/components/ai/useAiFinancialManager';
 import { AmbientBottomAiBar } from '@/components/ai/AmbientBottomAiBar';
 
