@@ -24,12 +24,15 @@ import {
 } from 'lucide-react';
 
 interface StationData {
+  stationId?: string;
   stationCode: string;
   stationName: string;
+  stateLocation?: string | null;
   organizationName: string;
   latitude: number;
   longitude: number;
   radiusMeters: number;
+  starlinkOverrideMode?: string;
   qrToken: string;
   qrDataUrl?: string;
   qrSvg?: string;
@@ -42,10 +45,21 @@ interface StationData {
   closingTime?: string;
   gracePeriodMinutes?: number;
   latenessDeductionPercent?: number;
+  stations?: Array<{
+    id: string;
+    code: string;
+    name: string;
+    stateLocation?: string | null;
+    latitude: number;
+    longitude: number;
+    radiusMeters: number;
+    starlinkOverrideMode?: string;
+  }>;
 }
 
 export default function AttendanceKioskPage() {
   const [stationData, setStationData] = useState<StationData | null>(null);
+  const [selectedStationCode, setSelectedStationCode] = useState<string>('');
   const [secondsRemaining, setSecondsRemaining] = useState<number>(45);
   const [currentTime, setCurrentTime] = useState<string>('');
   const [currentDate, setCurrentDate] = useState<string>('');
@@ -103,6 +117,7 @@ export default function AttendanceKioskPage() {
           staffIdentifier,
           kioskPin,
           action: pinAction,
+          stationCode: selectedStationCode || stationData?.stationCode || undefined,
         }),
       });
       const data = await res.json();
@@ -187,18 +202,30 @@ export default function AttendanceKioskPage() {
     };
   }, []);
 
-  // Fetch token and pre-rendered QR
-  const fetchToken = async () => {
+  // Fetch token and pre-rendered QR for the active/selected Kiosk Location
+  const fetchToken = useCallback(async (overrideCode?: string | React.MouseEvent) => {
     try {
       setLoadError(null);
-      const res = await fetch('/api/attendance/station/qr', { cache: 'no-store' });
+      let codeToFetch = typeof overrideCode === 'string' ? overrideCode : selectedStationCode;
+      if (!codeToFetch && typeof window !== 'undefined') {
+        const urlStation = new URLSearchParams(window.location.search).get('station') || '';
+        const storedStation = localStorage.getItem('bems_kiosk_station_code') || '';
+        codeToFetch = urlStation || storedStation;
+      }
+      const qrUrl = codeToFetch
+        ? `/api/attendance/station/qr?stationCode=${encodeURIComponent(codeToFetch)}`
+        : '/api/attendance/station/qr';
+      const res = await fetch(qrUrl, { cache: 'no-store' });
       if (!res.ok) {
         const errorData = await res.json().catch(() => null);
         throw new Error(errorData?.error || 'Unable to connect to station server');
       }
       const data: StationData & { stationSecret?: string } = await res.json();
       setStationData(data);
-      if (data.stationCode) localStorage.setItem('bems_kiosk_station_code', data.stationCode);
+      if (data.stationCode) {
+        setSelectedStationCode(data.stationCode);
+        localStorage.setItem('bems_kiosk_station_code', data.stationCode);
+      }
       if (data.stationSecret) localStorage.setItem('bems_kiosk_station_secret', data.stationSecret);
       setSecondsRemaining(data.expiresInSeconds || 45);
       setIsLoading(false);
@@ -207,25 +234,25 @@ export default function AttendanceKioskPage() {
       setLoadError(err?.message || 'Unable to refresh QR code');
       setIsLoading(false);
     }
-  };
+  }, [selectedStationCode]);
 
   useEffect(() => {
-    fetchToken();
-  }, []);
+    void fetchToken();
+  }, [fetchToken]);
 
   // 45-second countdown timer
   useEffect(() => {
     const timer = setInterval(() => {
       setSecondsRemaining(prev => {
         if (prev <= 1) {
-          fetchToken();
+          void fetchToken();
           return 45;
         }
         return prev - 1;
       });
     }, 1000);
     return () => clearInterval(timer);
-  }, []);
+  }, [fetchToken]);
 
   // Poll recent arrivals & all staff who marked attendance today
   useEffect(() => {
@@ -401,8 +428,44 @@ export default function AttendanceKioskPage() {
                   LIVE
                 </span>
               </div>
-              <div style={{ fontSize: '12px', color: '#64748b', marginTop: '1px' }}>
-                {stationData?.stationName || 'BEMS Office Station'} · {stationData?.organizationName || 'BEMS Group'}
+              <div style={{ fontSize: '12px', color: '#64748b', marginTop: '1px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <span>
+                  {stationData?.stationName || 'BEMS Office Station'}
+                  {stationData?.stateLocation ? ` (${stationData.stateLocation})` : ''} · {stationData?.organizationName || 'BEMS Group'}
+                </span>
+                {stationData?.stations && stationData.stations.length > 1 && (
+                  <select
+                    value={stationData.stationCode}
+                    onChange={(e) => {
+                      const nextCode = e.target.value;
+                      setSelectedStationCode(nextCode);
+                      if (typeof window !== 'undefined') {
+                        localStorage.setItem('bems_kiosk_station_code', nextCode);
+                        const url = new URL(window.location.href);
+                        url.searchParams.set('station', nextCode);
+                        window.history.replaceState({}, '', url.toString());
+                      }
+                      void fetchToken(nextCode);
+                    }}
+                    style={{
+                      padding: '3px 8px',
+                      borderRadius: '6px',
+                      border: '1px solid #cbd5e1',
+                      background: '#f8fafc',
+                      color: '#0f172a',
+                      fontSize: '11.5px',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                    }}
+                    title="Switch physical Kiosk Location"
+                  >
+                    {stationData.stations.map((st) => (
+                      <option key={st.code} value={st.code}>
+                        📍 {st.name}{st.stateLocation ? ` — ${st.stateLocation}` : ''} ({st.code})
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
             </div>
           </div>

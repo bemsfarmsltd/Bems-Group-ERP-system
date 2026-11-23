@@ -2928,23 +2928,81 @@ export async function executeBusinessCommand(tx: Prisma.TransactionClient, input
         if (!organizationId) throw new Error('Choose the exact station organization before calibration.');
         const org = await tx.organization.findFirst({ where: { id: String(organizationId), status: 'ACTIVE' } });
         if (!org) throw new Error('An active station organization is required.');
-        const stations = await tx.attendanceStation.findMany({ where: { organizationId: org.id, ...(materialPayload.stationId ? { id: String(materialPayload.stationId) } : { status: 'ACTIVE' }) }, take: 2 });
-        if (stations.length > 1) throw new Error('Choose one exact station ID before calibration.');
-        let station = stations[0];
+
+        const isCreateMode = String(materialPayload.mode || '').toUpperCase() === 'CREATE';
+        let station = null;
+        if (!isCreateMode) {
+          if (materialPayload.stationId) {
+            station = await tx.attendanceStation.findFirst({
+              where: { id: String(materialPayload.stationId) },
+            });
+          } else {
+            const stations = await tx.attendanceStation.findMany({
+              where: { organizationId: org.id, status: 'ACTIVE' },
+              orderBy: { createdAt: 'asc' },
+              take: 2,
+            });
+            if (stations.length > 1) throw new Error('Choose one exact station ID before calibration.');
+            station = stations[0] || null;
+          }
+        }
         resolvedSubsidiaryId = org.id;
-        if (!Number.isFinite(latNum) || latNum < -90 || latNum > 90 || !Number.isFinite(lngNum) || lngNum < -180 || lngNum > 180 || !Number.isInteger(radiusNum) || radiusNum < 10 || radiusNum > 10000) throw new Error('Supply valid coordinates and a radius between 10 and 10000 metres.');
+        if (!Number.isFinite(latNum) || latNum < -90 || latNum > 90 || !Number.isFinite(lngNum) || lngNum < -180 || lngNum > 180 || !Number.isInteger(radiusNum) || radiusNum < 10 || radiusNum > 10000) {
+          throw new Error('Supply valid coordinates and a radius between 10 and 10000 metres.');
+        }
+
+        const rawOverrideMode = String(materialPayload.starlinkOverrideMode || 'INHERIT').toUpperCase();
+        const starlinkOverrideMode = ['INHERIT', 'ENFORCE', 'BYPASS'].includes(rawOverrideMode)
+          ? rawOverrideMode
+          : 'INHERIT';
+        const starlinkIpAddresses =
+          materialPayload.starlinkIpAddresses !== undefined
+            ? String(materialPayload.starlinkIpAddresses || '').trim() || null
+            : undefined;
+        const stateLocation =
+          materialPayload.stateLocation !== undefined
+            ? String(materialPayload.stateLocation || '').trim() || null
+            : undefined;
+        const requireGeofenceOverride =
+          materialPayload.requireGeofenceOverride === true
+            ? true
+            : materialPayload.requireGeofenceOverride === false
+            ? false
+            : materialPayload.requireGeofenceOverride === null
+            ? null
+            : undefined;
+        const customCode =
+          typeof materialPayload.code === 'string' && materialPayload.code.trim()
+            ? materialPayload.code
+                .trim()
+                .toUpperCase()
+                .replace(/[^A-Z0-9-_]/g, '-')
+                .slice(0, 32)
+            : null;
+        const nextStatus =
+          typeof materialPayload.status === 'string' &&
+          ['ACTIVE', 'INACTIVE'].includes(materialPayload.status.toUpperCase())
+            ? materialPayload.status.toUpperCase()
+            : undefined;
 
         if (!station) {
+          const generatedCode =
+            customCode ||
+            `STN-${org.code}-${crypto.randomUUID().slice(0, 6).toUpperCase()}`;
           station = await tx.attendanceStation.create({
             data: {
               organizationId: org.id,
-              name: materialPayload.name?.trim() || 'BEMS Group',
-              code: `STN-${org.code}-${crypto.randomUUID().slice(0, 8)}`,
+              name: materialPayload.name?.trim() || `${org.legalName} Kiosk`,
+              code: generatedCode,
+              stateLocation: stateLocation ?? null,
               latitude: latNum,
               longitude: lngNum,
               radiusMeters: radiusNum > 0 ? radiusNum : 100,
+              starlinkOverrideMode,
+              starlinkIpAddresses: starlinkIpAddresses ?? null,
+              requireGeofenceOverride: requireGeofenceOverride ?? null,
               activeSecret: crypto.randomBytes(32).toString('hex'),
-              status: 'ACTIVE',
+              status: nextStatus || 'ACTIVE',
             },
           });
         } else {
@@ -2952,9 +3010,15 @@ export async function executeBusinessCommand(tx: Prisma.TransactionClient, input
             where: { id: station.id },
             data: {
               name: materialPayload.name?.trim() || station.name,
+              ...(customCode && customCode !== station.code ? { code: customCode } : {}),
+              ...(stateLocation !== undefined ? { stateLocation } : {}),
               latitude: latNum,
               longitude: lngNum,
               radiusMeters: radiusNum > 0 ? radiusNum : station.radiusMeters,
+              ...(materialPayload.starlinkOverrideMode !== undefined ? { starlinkOverrideMode } : {}),
+              ...(starlinkIpAddresses !== undefined ? { starlinkIpAddresses } : {}),
+              ...(requireGeofenceOverride !== undefined ? { requireGeofenceOverride } : {}),
+              ...(nextStatus ? { status: nextStatus } : {}),
             },
           });
         }

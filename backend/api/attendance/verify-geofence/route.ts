@@ -84,10 +84,20 @@ export async function POST(request: Request) {
       where: { organizationId: station.organizationId },
     }) || await prisma.attendancePolicy.findFirst();
 
-    const requireGeofence = policy?.requireGeofence ?? true;
-    const requireStarlink = policy?.requireStarlinkIp ?? true;
+    const requireGeofence =
+      station.requireGeofenceOverride !== null && station.requireGeofenceOverride !== undefined
+        ? station.requireGeofenceOverride
+        : policy?.requireGeofence ?? true;
+    const requireStarlink =
+      station.starlinkOverrideMode === 'ENFORCE'
+        ? true
+        : station.starlinkOverrideMode === 'BYPASS'
+        ? false
+        : policy?.requireStarlinkIp ?? true;
     const powerOutageMode = policy?.starlinkPowerOutageMode ?? false;
-    const starlinkIps = policy?.starlinkIpAddresses ?? '';
+    const starlinkIps = [station.starlinkIpAddresses, policy?.starlinkIpAddresses]
+      .filter((s) => Boolean(s && s.trim()))
+      .join(', ');
     const earliestCheckInTime = policy?.earliestCheckInTime ?? '07:00';
 
     const effectiveRadius = (powerOutageMode || !requireStarlink)

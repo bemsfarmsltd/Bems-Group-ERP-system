@@ -23,13 +23,22 @@ export async function POST(request: Request) {
       );
     }
 
-    const station = await getAuthenticatedStation(request);
-    if (!station) return NextResponse.json({ error: 'No active office attendance station configured.' }, { status: 404 });
-
     const body = await request.json().catch(() => ({}));
     const staffIdentifier = typeof body.staffIdentifier === 'string' ? body.staffIdentifier.trim() : '';
     const kioskPin = typeof body.kioskPin === 'string' ? body.kioskPin.trim() : '';
     const action = body.action === 'CHECK_OUT' ? 'CHECK_OUT' : 'CHECK_IN';
+    const requestedStationCode = typeof body.stationCode === 'string' ? body.stationCode.trim() : '';
+
+    let station = requestedStationCode
+      ? await prisma.attendanceStation.findFirst({
+          where: { status: 'ACTIVE', code: requestedStationCode },
+          include: { organization: { select: { legalName: true } } },
+        })
+      : null;
+    if (!station) {
+      station = await getAuthenticatedStation(request);
+    }
+    if (!station) return NextResponse.json({ error: 'No active office attendance station configured.' }, { status: 404 });
 
     if (!staffIdentifier || !kioskPin || kioskPin.length < 4) {
       return NextResponse.json(
@@ -43,7 +52,6 @@ export async function POST(request: Request) {
         status: 'ACTIVE',
         approvalStatus: 'APPROVED',
         role: { in: ['STAFF','CUSTOM_ADMIN'] },
-        assignments: { some: { subsidiaryId: station.organizationId, status: 'ACTIVE' } },
         kioskPin,
       },
       select: {

@@ -171,20 +171,30 @@ export default function AttendanceDeskPage() {
   // Roster data
   const [roster, setRoster] = useState<RosterMember[]>([]);
 
-  // Company Location Station State
+  // Company Location Station State (Multi-Kiosk Support across Abia, Edo, Imo, Lagos, etc.)
+  const [stationsList, setStationsList] = useState<Array<any>>([]);
+  const [isCreatingNewStation, setIsCreatingNewStation] = useState<boolean>(false);
   const [station, setStation] = useState<{
     id?: string;
     name: string;
     code: string;
+    stateLocation?: string;
     latitude: number;
     longitude: number;
     radiusMeters: number;
+    starlinkOverrideMode?: 'INHERIT' | 'ENFORCE' | 'BYPASS';
+    starlinkIpAddresses?: string;
+    requireGeofenceOverride?: boolean | null;
   }>({
     name: 'BEMS Group',
     code: 'BEMS-HQ-MAIN',
+    stateLocation: 'Lagos State',
     latitude: 6.4281,
     longitude: 3.4219,
     radiusMeters: 100,
+    starlinkOverrideMode: 'INHERIT',
+    starlinkIpAddresses: '',
+    requireGeofenceOverride: null,
   });
   const [isCapturingGps, setIsCapturingGps] = useState<boolean>(false);
   const [isSavingStation, setIsSavingStation] = useState<boolean>(false);
@@ -471,17 +481,77 @@ export default function AttendanceDeskPage() {
     }
   };
 
-  // Load primary company station
+  // Load all configured company kiosk stations
   const loadStation = async () => {
     try {
       const res = await fetch('/api/attendance/admin/station');
       if (res.ok) {
         const data = await res.json();
-        if (data.station) setStation(data.station);
+        const list = Array.isArray(data.stations) ? data.stations : data.station ? [data.station] : [];
+        setStationsList(list);
+        if (list.length > 0) {
+          const current = (station.id && list.find((s: any) => s.id === station.id)) || list[0];
+          setStation({
+            id: current.id,
+            name: current.name || 'BEMS Kiosk',
+            code: current.code || 'BEMS-HQ-MAIN',
+            stateLocation: current.stateLocation || '',
+            latitude: Number(current.latitude ?? 6.4281),
+            longitude: Number(current.longitude ?? 3.4219),
+            radiusMeters: Number(current.radiusMeters ?? 100),
+            starlinkOverrideMode: (current.starlinkOverrideMode as any) || 'INHERIT',
+            starlinkIpAddresses: current.starlinkIpAddresses || '',
+            requireGeofenceOverride:
+              current.requireGeofenceOverride === true
+                ? true
+                : current.requireGeofenceOverride === false
+                ? false
+                : null,
+          });
+          setIsCreatingNewStation(false);
+        }
       }
     } catch (e) {
       console.error(e);
     }
+  };
+
+  const handleSelectExistingStation = (s: any) => {
+    setIsCreatingNewStation(false);
+    setStation({
+      id: s.id,
+      name: s.name || 'BEMS Kiosk',
+      code: s.code || '',
+      stateLocation: s.stateLocation || '',
+      latitude: Number(s.latitude ?? 6.4281),
+      longitude: Number(s.longitude ?? 3.4219),
+      radiusMeters: Number(s.radiusMeters ?? 100),
+      starlinkOverrideMode: (s.starlinkOverrideMode as any) || 'INHERIT',
+      starlinkIpAddresses: s.starlinkIpAddresses || '',
+      requireGeofenceOverride:
+        s.requireGeofenceOverride === true
+          ? true
+          : s.requireGeofenceOverride === false
+          ? false
+          : null,
+    });
+  };
+
+  const handleStartNewStation = () => {
+    const nextIdx = stationsList.length + 1;
+    setIsCreatingNewStation(true);
+    setStation({
+      id: undefined,
+      name: `BEMS Kiosk Location #${nextIdx}`,
+      code: `BEMS-KIOSK-${nextIdx}`,
+      stateLocation: 'Abia State',
+      latitude: station.latitude || 5.5249,
+      longitude: station.longitude || 7.4946,
+      radiusMeters: 100,
+      starlinkOverrideMode: 'INHERIT',
+      starlinkIpAddresses: '',
+      requireGeofenceOverride: null,
+    });
   };
 
   // Auto-capture live high-precision GPS coordinates from browser
@@ -500,7 +570,7 @@ export default function AttendanceDeskPage() {
           latitude: lat,
           longitude: lng,
         }));
-        setNotice(`📍 High-precision GPS detected: [${lat}, ${lng}]. Click "Save Company Location" to apply!`);
+        setNotice(`📍 High-precision GPS detected: [${lat}, ${lng}]. Click "Save Kiosk Location" to apply!`);
         setTimeout(() => setNotice(null), 6000);
         setIsCapturingGps(false);
       },
@@ -512,23 +582,55 @@ export default function AttendanceDeskPage() {
     );
   };
 
-  // Save company location station coordinates
+  // Save or create company location station coordinates & per-location overrides
   const handleSaveStation = async () => {
     try {
       setIsSavingStation(true);
       const res = await fetch('/api/attendance/admin/station', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(station),
+        body: JSON.stringify({
+          ...station,
+          stationId: isCreatingNewStation ? undefined : station.id,
+          mode: isCreatingNewStation || !station.id ? 'CREATE' : 'UPDATE',
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to save station coordinates');
-      if (data.station) setStation(data.station);
-      setNotice(data.message || 'Office location successfully calibrated!');
+      if (Array.isArray(data.stations)) {
+        setStationsList(data.stations);
+      }
+      if (data.station) {
+        handleSelectExistingStation(data.station);
+      }
+      setNotice(data.message || 'Kiosk location successfully calibrated!');
       setTimeout(() => setNotice(null), 5000);
       setIsSavingStation(false);
     } catch (err: any) {
       alert(err.message);
+      setIsSavingStation(false);
+    }
+  };
+
+  const handleDeactivateStation = async (stationId?: string) => {
+    if (!stationId || stationsList.length <= 1) return;
+    if (!confirm(`Deactivate kiosk location "${station.name}"?`)) return;
+    try {
+      setIsSavingStation(true);
+      const res = await fetch(`/api/attendance/admin/station?stationId=${encodeURIComponent(stationId)}`, {
+        method: 'DELETE',
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to deactivate station');
+      if (Array.isArray(data.stations)) {
+        setStationsList(data.stations);
+        if (data.stations[0]) handleSelectExistingStation(data.stations[0]);
+      }
+      setNotice(data.message || 'Kiosk location deactivated.');
+      setTimeout(() => setNotice(null), 5000);
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
       setIsSavingStation(false);
     }
   };
@@ -877,8 +979,34 @@ export default function AttendanceDeskPage() {
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            {stationsList.length > 1 && (
+              <select
+                value={station.id || ''}
+                onChange={(e) => {
+                  const found = stationsList.find((s) => s.id === e.target.value);
+                  if (found) handleSelectExistingStation(found);
+                }}
+                style={{
+                  padding: '8px 10px',
+                  borderRadius: '8px',
+                  background: '#ffffff',
+                  border: '1px solid #cbd5e1',
+                  color: '#0f172a',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+                title="Switch active kiosk location"
+              >
+                {stationsList.map((st) => (
+                  <option key={st.id} value={st.id}>
+                    📍 {st.name}{st.stateLocation ? ` (${st.stateLocation})` : ''}
+                  </option>
+                ))}
+              </select>
+            )}
             <Link
-              href="/attendance/kiosk"
+              href={station.code ? `/attendance/kiosk?station=${encodeURIComponent(station.code)}` : '/attendance/kiosk'}
               target="_blank"
               style={{
                 padding: '9px 14px',
@@ -897,9 +1025,34 @@ export default function AttendanceDeskPage() {
               }}
             >
               <QrCode size={14} color="#059669" />
-              <span>Reception Kiosk</span>
+              <span>Reception Kiosk{stationsList.length > 1 ? ` (${station.stateLocation || station.code})` : ''}</span>
               <ExternalLink size={12} color="#64748b" />
             </Link>
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab('policy');
+                handleStartNewStation();
+              }}
+              style={{
+                padding: '9px 13px',
+                borderRadius: '8px',
+                background: '#fff7ed',
+                border: '1px solid #fed7aa',
+                color: '#ea580c',
+                fontSize: '12px',
+                fontWeight: 800,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '5px',
+                whiteSpace: 'nowrap',
+              }}
+              title="Add or map a Kiosk Location (Abia, Edo, Imo, Lagos, etc.)"
+            >
+              <MapPin size={13} color="#ea580c" />
+              <span>+ Map Kiosk Location</span>
+            </button>
 
             {/* Instant Starlink Toggle Button */}
             <button
@@ -2658,52 +2811,139 @@ export default function AttendanceDeskPage() {
                       </div>
                       <div>
                         <h4 style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: '#0f172a' }}>
-                          Official Company Geofence Station
+                          Multi-Location Kiosk &amp; Geofence Stations ({stationsList.length})
                         </h4>
                         <span style={{ fontSize: '11px', color: '#64748b' }}>
-                          Primary coordinates & perimeter radius for device validation
+                          Map physical GPS coordinates &amp; per-location Starlink overrides (Abia, Edo, Imo, Lagos, etc.)
                         </span>
                       </div>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={handleCaptureGps}
-                      disabled={isCapturingGps}
-                      style={{
-                        padding: '7px 12px',
-                        borderRadius: '8px',
-                        background: '#0f172a',
-                        color: '#ffffff',
-                        fontSize: '11px',
-                        fontWeight: 700,
-                        border: 'none',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                      }}
-                    >
-                      {isCapturingGps ? <RefreshCw size={13} className="animate-spin" /> : <MapPin size={13} color="#ea580c" />}
-                      <span>{isCapturingGps ? 'Calibrating...' : '📍 Recalibrate GPS'}</span>
-                    </button>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                      <button
+                        type="button"
+                        onClick={handleStartNewStation}
+                        style={{
+                          padding: '7px 11px',
+                          borderRadius: '8px',
+                          background: isCreatingNewStation ? '#ea580c' : '#fff7ed',
+                          color: isCreatingNewStation ? '#ffffff' : '#ea580c',
+                          fontSize: '11px',
+                          fontWeight: 800,
+                          border: '1px solid #fed7aa',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        + Add Kiosk Location
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleCaptureGps}
+                        disabled={isCapturingGps}
+                        style={{
+                          padding: '7px 12px',
+                          borderRadius: '8px',
+                          background: '#0f172a',
+                          color: '#ffffff',
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          border: 'none',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                        }}
+                      >
+                        {isCapturingGps ? <RefreshCw size={13} className="animate-spin" /> : <MapPin size={13} color="#ea580c" />}
+                        <span>{isCapturingGps ? 'Calibrating...' : '📍 Capture Current GPS'}</span>
+                      </button>
+                    </div>
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '12px', marginBottom: '14px' }}>
+                  {/* Kiosk Station Selector Pills */}
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      flexWrap: 'wrap',
+                      marginBottom: '14px',
+                      padding: '8px 10px',
+                      borderRadius: '10px',
+                      background: '#f8fafc',
+                      border: '1px solid #e2e8f0',
+                    }}
+                  >
+                    {stationsList.map((st) => {
+                      const isSelected = !isCreatingNewStation && station.id === st.id;
+                      const overrideBadge =
+                        st.starlinkOverrideMode === 'BYPASS'
+                          ? '⚡ Starlink Bypassed'
+                          : st.starlinkOverrideMode === 'ENFORCE'
+                          ? '🟢 Starlink Enforced'
+                          : 'Policy Default';
+                      return (
+                        <button
+                          key={st.id}
+                          type="button"
+                          onClick={() => handleSelectExistingStation(st)}
+                          style={{
+                            padding: '6px 10px',
+                            borderRadius: '8px',
+                            border: isSelected ? '1.5px solid #ea580c' : '1px solid #cbd5e1',
+                            background: isSelected ? '#fff7ed' : '#ffffff',
+                            color: isSelected ? '#c2410c' : '#334155',
+                            fontSize: '11px',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '5px',
+                          }}
+                        >
+                          <span>📍 {st.name}</span>
+                          {st.stateLocation && (
+                            <span style={{ fontSize: '10px', color: '#64748b' }}>({st.stateLocation})</span>
+                          )}
+                          <span style={{ fontSize: '9.5px', padding: '1px 5px', borderRadius: '4px', background: '#f1f5f9', color: '#475569' }}>
+                            {overrideBadge}
+                          </span>
+                        </button>
+                      );
+                    })}
+                    {isCreatingNewStation && (
+                      <span
+                        style={{
+                          padding: '6px 10px',
+                          borderRadius: '8px',
+                          border: '1.5px dashed #ea580c',
+                          background: '#fff7ed',
+                          color: '#ea580c',
+                          fontSize: '11px',
+                          fontWeight: 800,
+                        }}
+                      >
+                        ✨ Mapping New Kiosk Location
+                      </span>
+                    )}
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr 1fr 0.8fr', gap: '10px', marginBottom: '12px' }}>
                     <div>
-                      <label style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
-                        OFFICE STATION NAME
+                      <label style={{ display: 'block', fontSize: '10.5px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
+                        KIOSK LOCATION NAME
                       </label>
                       <input
                         type="text"
+                        placeholder="e.g. Umuahia Operations Kiosk"
                         value={station.name}
                         onChange={e => setStation(prev => ({ ...prev, name: e.target.value }))}
                         style={{
                           width: '100%',
-                          padding: '10px 12px',
+                          padding: '9px 11px',
                           borderRadius: '8px',
                           border: '1px solid #cbd5e1',
-                          fontSize: '13px',
+                          fontSize: '12.5px',
                           fontWeight: 700,
                           color: '#0f172a',
                           background: '#ffffff',
@@ -2711,22 +2951,77 @@ export default function AttendanceDeskPage() {
                       />
                     </div>
                     <div>
-                      <label style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
-                        RADIUS (METERS)
+                      <label style={{ display: 'block', fontSize: '10.5px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
+                        STATE / REGION
+                      </label>
+                      <input
+                        type="text"
+                        list="bems-kiosk-states"
+                        placeholder="e.g. Abia State, Edo State"
+                        value={station.stateLocation || ''}
+                        onChange={e => setStation(prev => ({ ...prev, stateLocation: e.target.value }))}
+                        style={{
+                          width: '100%',
+                          padding: '9px 11px',
+                          borderRadius: '8px',
+                          border: '1px solid #cbd5e1',
+                          fontSize: '12.5px',
+                          fontWeight: 700,
+                          color: '#0f172a',
+                          background: '#ffffff',
+                        }}
+                      />
+                      <datalist id="bems-kiosk-states">
+                        <option value="Abia State" />
+                        <option value="Edo State" />
+                        <option value="Imo State" />
+                        <option value="Lagos State" />
+                        <option value="Rivers State" />
+                        <option value="Enugu State" />
+                        <option value="Anambra State" />
+                        <option value="Delta State" />
+                        <option value="FCT Abuja" />
+                      </datalist>
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '10.5px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
+                        KIOSK CODE
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. BEMS-ABIA-K1"
+                        value={station.code}
+                        onChange={e => setStation(prev => ({ ...prev, code: e.target.value.toUpperCase() }))}
+                        style={{
+                          width: '100%',
+                          padding: '9px 11px',
+                          borderRadius: '8px',
+                          border: '1px solid #cbd5e1',
+                          fontSize: '12px',
+                          fontFamily: 'monospace',
+                          fontWeight: 700,
+                          color: '#0f172a',
+                          background: '#ffffff',
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '10.5px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
+                        RADIUS (M)
                       </label>
                       <input
                         type="number"
                         min="20"
-                        max="1000"
+                        max="5000"
                         step="10"
                         value={station.radiusMeters}
                         onChange={e => setStation(prev => ({ ...prev, radiusMeters: Number(e.target.value) }))}
                         style={{
                           width: '100%',
-                          padding: '10px 12px',
+                          padding: '9px 11px',
                           borderRadius: '8px',
                           border: '1px solid #cbd5e1',
-                          fontSize: '13px',
+                          fontSize: '12.5px',
                           fontWeight: 700,
                           color: '#0f172a',
                           background: '#ffffff',
@@ -2735,9 +3030,9 @@ export default function AttendanceDeskPage() {
                     </div>
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
                     <div>
-                      <label style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
+                      <label style={{ display: 'block', fontSize: '10.5px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
                         LATITUDE (GPS)
                       </label>
                       <input
@@ -2747,10 +3042,10 @@ export default function AttendanceDeskPage() {
                         onChange={e => setStation(prev => ({ ...prev, latitude: parseFloat(e.target.value) || 0 }))}
                         style={{
                           width: '100%',
-                          padding: '10px 12px',
+                          padding: '9px 11px',
                           borderRadius: '8px',
                           border: '1px solid #cbd5e1',
-                          fontSize: '13px',
+                          fontSize: '12.5px',
                           fontFamily: 'monospace',
                           fontWeight: 700,
                           color: '#0f172a',
@@ -2759,7 +3054,7 @@ export default function AttendanceDeskPage() {
                       />
                     </div>
                     <div>
-                      <label style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
+                      <label style={{ display: 'block', fontSize: '10.5px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
                         LONGITUDE (GPS)
                       </label>
                       <input
@@ -2769,10 +3064,10 @@ export default function AttendanceDeskPage() {
                         onChange={e => setStation(prev => ({ ...prev, longitude: parseFloat(e.target.value) || 0 }))}
                         style={{
                           width: '100%',
-                          padding: '10px 12px',
+                          padding: '9px 11px',
                           borderRadius: '8px',
                           border: '1px solid #cbd5e1',
-                          fontSize: '13px',
+                          fontSize: '12.5px',
                           fontFamily: 'monospace',
                           fontWeight: 700,
                           color: '#0f172a',
@@ -2781,6 +3076,140 @@ export default function AttendanceDeskPage() {
                       />
                     </div>
                   </div>
+
+                  {/* Per-Location Starlink & Geofence Overrides */}
+                  <div
+                    style={{
+                      padding: '12px',
+                      borderRadius: '10px',
+                      background: '#f8fafc',
+                      border: '1px solid #e2e8f0',
+                      marginBottom: '10px',
+                    }}
+                  >
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '10.5px', fontWeight: 800, color: '#0f172a', marginBottom: '4px' }}>
+                          THIS LOCATION&apos;S STARLINK WI-FI RULE
+                        </label>
+                        <select
+                          value={station.starlinkOverrideMode || 'INHERIT'}
+                          onChange={(e) =>
+                            setStation((prev) => ({
+                              ...prev,
+                              starlinkOverrideMode: e.target.value as 'INHERIT' | 'ENFORCE' | 'BYPASS',
+                            }))
+                          }
+                          style={{
+                            width: '100%',
+                            padding: '8px 10px',
+                            borderRadius: '8px',
+                            border: '1px solid #cbd5e1',
+                            fontSize: '12px',
+                            fontWeight: 700,
+                            color: '#0f172a',
+                            background: '#ffffff',
+                          }}
+                        >
+                          <option value="INHERIT">Inherit Global Company Policy ({policy.requireStarlinkIp ? 'Enforced' : 'Bypassed'})</option>
+                          <option value="ENFORCE">🟢 Enforce Starlink Lock at This Kiosk</option>
+                          <option value="BYPASS">⚡ Bypass Starlink at This Kiosk (All Networks Allowed)</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label style={{ display: 'block', fontSize: '10.5px', fontWeight: 800, color: '#0f172a', marginBottom: '4px' }}>
+                          THIS LOCATION&apos;S GPS GEOFENCE RULE
+                        </label>
+                        <select
+                          value={
+                            station.requireGeofenceOverride === true
+                              ? 'ENFORCE'
+                              : station.requireGeofenceOverride === false
+                              ? 'BYPASS'
+                              : 'INHERIT'
+                          }
+                          onChange={(e) =>
+                            setStation((prev) => ({
+                              ...prev,
+                              requireGeofenceOverride:
+                                e.target.value === 'ENFORCE'
+                                  ? true
+                                  : e.target.value === 'BYPASS'
+                                  ? false
+                                  : null,
+                            }))
+                          }
+                          style={{
+                            width: '100%',
+                            padding: '8px 10px',
+                            borderRadius: '8px',
+                            border: '1px solid #cbd5e1',
+                            fontSize: '12px',
+                            fontWeight: 700,
+                            color: '#0f172a',
+                            background: '#ffffff',
+                          }}
+                        >
+                          <option value="INHERIT">Inherit Global Company Policy ({policy.requireGeofence ? 'Active' : 'Bypassed'})</option>
+                          <option value="ENFORCE">📍 Enforce GPS Perimeter ({station.radiusMeters}m) Here</option>
+                          <option value="BYPASS">🌐 Bypass GPS Geofence at This Kiosk</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {station.starlinkOverrideMode === 'ENFORCE' && (
+                      <div style={{ marginTop: '10px' }}>
+                        <label style={{ display: 'block', fontSize: '10.5px', fontWeight: 800, color: '#0284c7', marginBottom: '4px' }}>
+                          THIS LOCATION&apos;S STARLINK PUBLIC IP / SUBNET (ABIA / EDO / IMO ROUTER)
+                        </label>
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                          <input
+                            type="text"
+                            placeholder="e.g. 102.89.44.*, 98.97.* (leave blank to use global Starlink list)"
+                            value={station.starlinkIpAddresses || ''}
+                            onChange={(e) => setStation((prev) => ({ ...prev, starlinkIpAddresses: e.target.value }))}
+                            style={{
+                              flex: 1,
+                              padding: '8px 10px',
+                              borderRadius: '8px',
+                              border: '1px solid #cbd5e1',
+                              fontSize: '12px',
+                              fontFamily: 'monospace',
+                              color: '#0f172a',
+                              background: '#ffffff',
+                            }}
+                          />
+                          {callerIp && callerIp !== 'direct' && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setStation((prev) => ({
+                                  ...prev,
+                                  starlinkIpAddresses: callerIp.includes('.')
+                                    ? `${callerIp.split('.').slice(0, 3).join('.')}.*, ${callerIp}`
+                                    : callerIp,
+                                }))
+                              }
+                              style={{
+                                padding: '8px 10px',
+                                borderRadius: '8px',
+                                background: '#0284c7',
+                                color: '#ffffff',
+                                fontSize: '11px',
+                                fontWeight: 700,
+                                border: 'none',
+                                cursor: 'pointer',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              Use Current IP ({callerIp})
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 <div
@@ -2788,35 +3217,84 @@ export default function AttendanceDeskPage() {
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
+                    flexWrap: 'wrap',
+                    gap: '8px',
                     paddingTop: '12px',
                     borderTop: '1px solid #f1f5f9',
                     marginTop: '8px',
                   }}
                 >
-                  <span style={{ fontSize: '11px', color: '#64748b' }}>
-                    Active Perimeter: <strong style={{ color: '#0f172a' }}>{station.radiusMeters}m</strong> around {station.name}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={handleSaveStation}
-                    disabled={isSavingStation}
-                    style={{
-                      padding: '8px 14px',
-                      borderRadius: '8px',
-                      background: '#ea580c',
-                      color: '#ffffff',
-                      fontSize: '11px',
-                      fontWeight: 800,
-                      border: 'none',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                    }}
-                  >
-                    <Save size={13} />
-                    <span>{isSavingStation ? 'Saving Location...' : 'Save Station Pin'}</span>
-                  </button>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '11px', color: '#64748b' }}>
+                      Perimeter: <strong style={{ color: '#0f172a' }}>{station.radiusMeters}m</strong> around {station.name}
+                    </span>
+                    {!isCreatingNewStation && station.code && (
+                      <Link
+                        href={`/attendance/kiosk?station=${encodeURIComponent(station.code)}`}
+                        target="_blank"
+                        style={{
+                          fontSize: '11px',
+                          fontWeight: 800,
+                          color: '#059669',
+                          textDecoration: 'none',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                        }}
+                      >
+                        <span>Open Kiosk Screen ({station.code})</span>
+                        <ExternalLink size={11} />
+                      </Link>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {!isCreatingNewStation && station.id && stationsList.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => handleDeactivateStation(station.id)}
+                        disabled={isSavingStation}
+                        style={{
+                          padding: '8px 12px',
+                          borderRadius: '8px',
+                          background: '#fef2f2',
+                          color: '#dc2626',
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          border: '1px solid #fecaca',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Deactivate
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleSaveStation}
+                      disabled={isSavingStation}
+                      style={{
+                        padding: '8px 14px',
+                        borderRadius: '8px',
+                        background: '#ea580c',
+                        color: '#ffffff',
+                        fontSize: '11px',
+                        fontWeight: 800,
+                        border: 'none',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                      }}
+                    >
+                      <Save size={13} />
+                      <span>
+                        {isSavingStation
+                          ? 'Saving...'
+                          : isCreatingNewStation
+                          ? 'Create & Map Kiosk Location'
+                          : 'Save Kiosk Location'}
+                      </span>
+                    </button>
+                  </div>
                 </div>
               </div>
 

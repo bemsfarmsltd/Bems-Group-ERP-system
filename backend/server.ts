@@ -237,6 +237,14 @@ export async function buildBackendServer() {
       await prisma.$executeRaw`ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "staffAppModulesJson" TEXT`;
     }
     try {
+      await prisma.$executeRaw`ALTER TABLE "AttendanceStation" ADD COLUMN IF NOT EXISTS "stateLocation" TEXT`;
+      await prisma.$executeRaw`ALTER TABLE "AttendanceStation" ADD COLUMN IF NOT EXISTS "starlinkOverrideMode" TEXT NOT NULL DEFAULT 'INHERIT'`;
+      await prisma.$executeRaw`ALTER TABLE "AttendanceStation" ADD COLUMN IF NOT EXISTS "starlinkIpAddresses" TEXT`;
+      await prisma.$executeRaw`ALTER TABLE "AttendanceStation" ADD COLUMN IF NOT EXISTS "requireGeofenceOverride" BOOLEAN`;
+    } catch (err) {
+      logger.warn({ err }, 'Could not ensure AttendanceStation multi-kiosk columns at startup');
+    }
+    try {
       const { ensureOperationsSchema } = await import('@/lib/ops-ensure-schema');
       await ensureOperationsSchema();
     } catch (err) {

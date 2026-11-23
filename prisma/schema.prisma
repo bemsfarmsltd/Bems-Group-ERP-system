@@ -1033,18 +1033,22 @@ model MobileAppRelease {
 }
 
 model AttendanceStation {
-  id             String       @id @default(uuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  name           String       // E.g. "Lagos Corporate HQ - Reception Kiosk"
-  code           String       @unique // E.g. "LAGOS-HQ-K1"
-  latitude       Float
-  longitude      Float
-  radiusMeters   Int          @default(100)
-  activeSecret   String       // Salt for rotating QR generation
-  status         String       @default("ACTIVE") // ACTIVE | INACTIVE
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  id                      String       @id @default(uuid())
+  organizationId          String
+  organization            Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name                    String       // E.g. "Lagos Corporate HQ - Reception Kiosk"
+  code                    String       @unique // E.g. "LAGOS-HQ-K1"
+  stateLocation           String?      // E.g. "Abia State", "Edo State", "Imo State", "Lagos State"
+  latitude                Float
+  longitude               Float
+  radiusMeters            Int          @default(100)
+  starlinkOverrideMode    String       @default("INHERIT") // INHERIT | ENFORCE | BYPASS
+  starlinkIpAddresses     String?      // Per-location Starlink public IP subnets/prefixes
+  requireGeofenceOverride Boolean?     // null = inherit policy, true = enforce, false = bypass
+  activeSecret            String       // Salt for rotating QR generation
+  status                  String       @default("ACTIVE") // ACTIVE | INACTIVE
+  createdAt               DateTime     @default(now())
+  updatedAt               DateTime     @updatedAt
 
   records        AttendanceRecord[]
 

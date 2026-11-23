@@ -11,27 +11,28 @@ export async function getAuthenticatedStation(request: Request) {
 
   if (!prisma.attendanceStation) return null;
 
-  // 1. If code or secret is missing (or executive session), allow open-ended reception kiosk access to the active station
-  if (!code || !secret) {
+  // 1. If explicit stationCode is requested (with or without secret), resolve that exact station first
+  if (code) {
     const station = await prisma.attendanceStation.findFirst({
-      where: { status: 'ACTIVE' },
+      where: { status: 'ACTIVE', code },
       include: { organization: { select: { legalName: true } } },
     });
-    if (!station || !station.activeSecret || !station.activeSecret.trim()) return null;
-    return station;
+    if (station && station.activeSecret && station.activeSecret.trim()) {
+      if (secret && !executive) {
+        const expected = Buffer.from(station.activeSecret);
+        const supplied = Buffer.from(secret);
+        if (expected.length !== supplied.length || !timingSafeEqual(expected, supplied)) return null;
+      }
+      return station;
+    }
   }
 
-  // 2. If explicit station credentials are supplied, strictly verify them with timingSafeEqual
+  // 2. Fallback to the primary active station
   const station = await prisma.attendanceStation.findFirst({
-    where: { status: 'ACTIVE', code },
+    where: { status: 'ACTIVE' },
+    orderBy: { createdAt: 'asc' },
     include: { organization: { select: { legalName: true } } },
   });
   if (!station || !station.activeSecret || !station.activeSecret.trim()) return null;
-
-  if (!executive) {
-    const expected = Buffer.from(station.activeSecret);
-    const supplied = Buffer.from(secret);
-    if (expected.length !== supplied.length || !timingSafeEqual(expected, supplied)) return null;
-  }
   return station;
 }

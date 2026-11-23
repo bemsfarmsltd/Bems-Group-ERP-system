@@ -26,9 +26,36 @@ export async function GET(request: Request) {
 
     const { token, expiresInSeconds } = generateStationQrToken(station.code, station.activeSecret);
 
-    const policy = await prisma.attendancePolicy.findFirst({
-      where: { organizationId: station.organizationId },
-    });
+    const [policy, allStations] = await Promise.all([
+      prisma.attendancePolicy.findFirst({
+        where: { organizationId: station.organizationId },
+      }),
+      prisma.attendanceStation.findMany({
+        where: { status: 'ACTIVE' },
+        select: {
+          id: true,
+          code: true,
+          name: true,
+          stateLocation: true,
+          latitude: true,
+          longitude: true,
+          radiusMeters: true,
+          starlinkOverrideMode: true,
+        },
+        orderBy: { createdAt: 'asc' },
+      }),
+    ]);
+
+    const effectiveRequireStarlink =
+      station.starlinkOverrideMode === 'ENFORCE'
+        ? true
+        : station.starlinkOverrideMode === 'BYPASS'
+        ? false
+        : policy?.requireStarlinkIp ?? true;
+    const effectiveRequireGeofence =
+      station.requireGeofenceOverride !== null && station.requireGeofenceOverride !== undefined
+        ? station.requireGeofenceOverride
+        : policy?.requireGeofence ?? true;
 
     // Pre-generate both DataURL and vector SVG on the server
     const [qrDataUrl, qrSvg] = await Promise.all([
@@ -46,25 +73,29 @@ export async function GET(request: Request) {
     ]);
 
     return NextResponse.json({
+      stationId: station.id,
       stationCode: station.code,
       stationSecret: station.activeSecret,
       stationName: station.name,
+      stateLocation: station.stateLocation,
       organizationName: station.organization.legalName,
       latitude: station.latitude,
       longitude: station.longitude,
       radiusMeters: station.radiusMeters,
+      starlinkOverrideMode: station.starlinkOverrideMode,
       qrToken: token,
       qrDataUrl,
       qrSvg,
       expiresInSeconds,
       powerOutageMode: policy?.starlinkPowerOutageMode ?? false,
-      requireStarlinkIp: policy?.requireStarlinkIp ?? true,
-      requireGeofence: policy?.requireGeofence ?? true,
+      requireStarlinkIp: effectiveRequireStarlink,
+      requireGeofence: effectiveRequireGeofence,
       earliestCheckInTime: policy?.earliestCheckInTime || '07:00',
       resumptionTime: policy?.resumptionTime || '08:00',
       closingTime: policy?.closingTime || '17:00',
       gracePeriodMinutes: policy?.gracePeriodMinutes ?? 15,
       latenessDeductionPercent: policy?.latenessDeductionPercent ?? 2,
+      stations: allStations,
       timestamp: new Date().toISOString(),
     }, {
       headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0' },
