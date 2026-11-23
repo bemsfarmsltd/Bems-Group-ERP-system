@@ -28,8 +28,8 @@ export async function GET(request: Request) {
           settings: true,
         },
       }),
-      prisma.$queryRaw<Array<{ organizationId: string; allocatedMinor: bigint; remainingMinor: bigint }>>`
-        SELECT "organizationId", "allocatedMinor", "remainingMinor"
+      prisma.$queryRaw<Array<{ organizationId: string; parentId: string | null; allocatedMinor: bigint; remainingMinor: bigint }>>`
+        SELECT "organizationId", "parentId", "allocatedMinor", "remainingMinor"
         FROM "WalletBudgetEnvelope"
         WHERE "status" = 'ACTIVE'
       `,
@@ -138,7 +138,9 @@ export async function GET(request: Request) {
 
     const portfolio = organizations.map((org) => {
       const orgEnvelopes = walletEnvelopes.filter((e) => e.organizationId === org.id);
-      const totalBudget = orgEnvelopes.reduce((acc, e) => acc + Number(e.allocatedMinor) / 100, 0);
+      const topLevelEnvelopes = orgEnvelopes.filter((e) => !e.parentId);
+      const totalBudget = (topLevelEnvelopes.length > 0 ? topLevelEnvelopes : orgEnvelopes)
+        .reduce((acc, e) => acc + Number(e.allocatedMinor) / 100, 0);
       const moneyLeft = orgEnvelopes.reduce((acc, e) => acc + Number(e.remainingMinor) / 100, 0);
 
       const orgDisbursements = disbursements.filter((d) => d.payerOrgId === org.id);

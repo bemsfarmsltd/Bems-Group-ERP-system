@@ -79,7 +79,9 @@ export default function FundingView({
 
   // Allocation Modal State
   const [showAllocateModal, setShowAllocateModal] = useState(false);
+  const [allocateMode, setAllocateMode] = useState<'SUBSIDIARY' | 'DEPARTMENT'>('SUBSIDIARY');
   const [organizationId, setOrganizationId] = useState('');
+  const [selectedDepartment, setSelectedDepartment] = useState('');
   const [label, setLabel] = useState('');
   const [amount, setAmount] = useState('');
   const [parentId, setParentId] = useState('');
@@ -518,7 +520,9 @@ export default function FundingView({
             disabled={busy || !data.walletMode || !data.funding || data.funding.paused || !data.funding.configured}
             title={!data.walletMode ? 'Enable wallet execution in hosting settings first.' : data.funding?.paused ? 'Activate the company funding pool first.' : ''}
             onClick={() => {
+              setAllocateMode('SUBSIDIARY');
               setOrganizationId(activeSubsidiary?.id || data.organizations.find((o: any) => selectedSubId === 'ALL' ? isBemsGroup(o) : o.id === selectedSubId || o.code === selectedSubId)?.id || '');
+              setSelectedDepartment('');
               setLabel('');
               setAmount('');
               setParentId('');
@@ -747,18 +751,31 @@ export default function FundingView({
       </div>
 
       {/* TAB 1: SUBSIDIARY BUDGET ENVELOPES */}
-      {activeTab === 'envelopes' && (
+      {activeTab === 'envelopes' && (() => {
+        const envelopeIds = new Set(filteredEnvelopes.map((x: any) => x.id));
+        const topLevelEnvelopes = filteredEnvelopes.filter((x: any) => !x.parentId || !envelopeIds.has(x.parentId));
+        const childrenByParent = new Map<string, any[]>();
+        for (const x of filteredEnvelopes) {
+          if (x.parentId && envelopeIds.has(x.parentId)) {
+            const arr = childrenByParent.get(x.parentId) || [];
+            arr.push(x);
+            childrenByParent.set(x.parentId, arr);
+          }
+        }
+
+        return (
         <section style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          {filteredEnvelopes.length === 0 ? (
+          {topLevelEnvelopes.length === 0 ? (
             <div style={{ padding: '36px', textAlign: 'center', background: '#fff', borderRadius: 12, border: '1px dashed #cbd5e1', color: '#64748b', fontSize: 12 }}>
-              No funded budget envelopes found for this workspace. Click &ldquo;Allocate Funded Budget&rdquo; above to create one.
+              No funded subsidiary budgets found for this workspace. Click &ldquo;Allocate Funded Budget&rdquo; above to fund a subsidiary.
             </div>
           ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(310px, 1fr))', gap: '12px' }}>
-              {filteredEnvelopes.map((e: any) => {
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '14px' }}>
+              {topLevelEnvelopes.map((e: any) => {
                 const allocated = BigInt(e.allocatedMinor || '0');
                 const remaining = BigInt(e.remainingMinor || '0');
                 const pct = allocated > BigInt(0) ? Number((remaining * BigInt(100)) / allocated) : 0;
+                const deptAllocations = childrenByParent.get(e.id) || [];
 
                 return (
                   <div
@@ -776,12 +793,15 @@ export default function FundingView({
                   >
                     <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
                       <div>
-                        <span style={{ fontSize: '8px', fontWeight: 800, color: effectiveBrandColor, letterSpacing: '0.6px', textTransform: 'uppercase' }}>
-                          {e.organizationName}
+                        <span style={{ fontSize: '9px', fontWeight: 800, color: effectiveBrandColor, letterSpacing: '0.6px', textTransform: 'uppercase' }}>
+                          Subsidiary Budget
                         </span>
-                        <h4 style={{ fontSize: '13px', fontWeight: 700, margin: '2px 0 0', color: '#17253d' }}>
-                          {e.label}
+                        <h4 style={{ fontSize: '14px', fontWeight: 800, margin: '2px 0 0', color: '#17253d' }}>
+                          {e.organizationName}
                         </h4>
+                        {e.label && e.label !== `${e.organizationName} Budget` && (
+                          <span style={{ fontSize: '10.5px', color: '#64748b' }}>{e.label}</span>
+                        )}
                       </div>
                       <span
                         style={{
@@ -800,18 +820,18 @@ export default function FundingView({
 
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, padding: '8px 0', borderTop: '1px solid #f1f5f9', borderBottom: '1px solid #f1f5f9' }}>
                       <div>
-                        <span style={{ fontSize: '9px', color: '#64748b', display: 'block' }}>Remaining Buffer</span>
+                        <span style={{ fontSize: '9px', color: '#64748b', display: 'block' }}>Unallocated Subsidiary Buffer</span>
                         <strong style={{ fontSize: '14px', fontWeight: 800, color: '#059669' }}>{walletMoney(e.remainingMinor)}</strong>
                       </div>
                       <div>
-                        <span style={{ fontSize: '9px', color: '#64748b', display: 'block' }}>Total Allocated</span>
+                        <span style={{ fontSize: '9px', color: '#64748b', display: 'block' }}>Total Funded</span>
                         <strong style={{ fontSize: '13px', fontWeight: 700, color: '#475569' }}>{walletMoney(e.allocatedMinor)}</strong>
                       </div>
                     </div>
 
                     <div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: '#64748b', marginBottom: 4 }}>
-                        <span>Capacity Remaining</span>
+                        <span>Subsidiary Buffer Remaining</span>
                         <span style={{ fontWeight: 700 }}>{pct}%</span>
                       </div>
                       <div style={{ width: '100%', height: 6, borderRadius: 3, background: '#f1f5f9', overflow: 'hidden' }}>
@@ -827,8 +847,81 @@ export default function FundingView({
                       </div>
                     </div>
 
+                    {deptAllocations.length > 0 && (
+                      <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        <span style={{ fontSize: '9.5px', fontWeight: 800, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                          Department Allocations ({deptAllocations.length})
+                        </span>
+                        {deptAllocations.map((child: any) => (
+                          <div key={child.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, paddingTop: 4, borderTop: '1px solid #e2e8f0' }}>
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ fontSize: '11px', fontWeight: 700, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {child.label}
+                              </div>
+                              <div style={{ fontSize: '9.5px', color: '#64748b' }}>
+                                Left: <strong style={{ color: '#059669' }}>{walletMoney(child.remainingMinor)}</strong> / {walletMoney(child.allocatedMinor)}
+                              </div>
+                            </div>
+                            {child.status === 'ACTIVE' && (
+                              <div style={{ display: 'flex', gap: 4, shrink: 0 } as any}>
+                                <button
+                                  disabled={busy}
+                                  onClick={() => {
+                                    setAdjustment(child);
+                                    setAdjustAmount('');
+                                    setTargetEnvelopeId('');
+                                  }}
+                                  style={{ padding: '3px 7px', borderRadius: 5, background: '#fff', color: '#334155', border: '1px solid #cbd5e1', fontSize: '9.5px', fontWeight: 600, cursor: 'pointer' }}
+                                >
+                                  Adjust
+                                </button>
+                                <button
+                                  disabled={busy}
+                                  onClick={() =>
+                                    run(async () => {
+                                      await api('envelopes/' + child.id, { operation: 'CLOSE', expectedVersion: child.version }, 'PATCH');
+                                      setNotice('Department allocation closed.');
+                                    })
+                                  }
+                                  style={{ padding: '3px 7px', borderRadius: 5, background: '#fff', color: '#94a3b8', border: '1px solid #e2e8f0', fontSize: '9.5px', fontWeight: 600, cursor: 'pointer' }}
+                                >
+                                  Close
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
                     {e.status === 'ACTIVE' && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2, flexWrap: 'wrap' }}>
+                        <button
+                          disabled={busy || remaining <= BigInt(0)}
+                          onClick={() => {
+                            setAllocateMode('DEPARTMENT');
+                            setOrganizationId(e.organizationId);
+                            setParentId(e.id);
+                            setSelectedDepartment('');
+                            setLabel('');
+                            setAmount('');
+                            setShowAllocateModal(true);
+                          }}
+                          style={{
+                            flex: 1,
+                            padding: '6px 10px',
+                            borderRadius: 6,
+                            background: '#fff7ed',
+                            color: '#ea580c',
+                            border: '1px solid #fed7aa',
+                            fontSize: '10px',
+                            fontWeight: 700,
+                            cursor: remaining <= BigInt(0) ? 'not-allowed' : 'pointer',
+                            opacity: remaining <= BigInt(0) ? 0.5 : 1,
+                          }}
+                        >
+                          + Allocate to Dept
+                        </button>
                         <button
                           disabled={busy}
                           onClick={() => {
@@ -837,8 +930,7 @@ export default function FundingView({
                             setTargetEnvelopeId('');
                           }}
                           style={{
-                            flex: 1,
-                            padding: '5px 10px',
+                            padding: '6px 10px',
                             borderRadius: 6,
                             background: '#f8fafc',
                             color: '#334155',
@@ -848,7 +940,7 @@ export default function FundingView({
                             cursor: 'pointer',
                           }}
                         >
-                          Adjust / Reallocate
+                          Adjust / Top Up
                         </button>
                         <button
                           disabled={busy}
@@ -859,7 +951,7 @@ export default function FundingView({
                             })
                           }
                           style={{
-                            padding: '5px 10px',
+                            padding: '6px 10px',
                             borderRadius: 6,
                             background: '#fff',
                             color: '#94a3b8',
@@ -879,7 +971,8 @@ export default function FundingView({
             </div>
           )}
         </section>
-      )}
+        );
+      })()}
 
       {/* TAB 2: FUND RELEASE PREVIEWS */}
       {activeTab === 'releases' && (
@@ -1407,19 +1500,78 @@ export default function FundingView({
       {showAllocateModal && (() => {
         const freeMinorNum = Number(data?.funding?.freeMinor ?? 0);
         const allocationBlocked = Boolean(data?.funding?.paused) || freeMinorNum <= 0;
+        const activeTopLevelEnvelopes = (data?.envelopes || []).filter((e: any) => e.status === 'ACTIVE' && !e.parentId);
+        const selectedParentEnv = activeTopLevelEnvelopes.find((e: any) => e.id === parentId) || activeTopLevelEnvelopes.find((e: any) => e.organizationId === organizationId) || null;
+        const effectiveOrgId = allocateMode === 'DEPARTMENT' && selectedParentEnv ? selectedParentEnv.organizationId : organizationId;
+        const selectedOrg = data?.organizations?.find((o: any) => o.id === effectiveOrgId);
+        const orgDepartments: Array<{ id: string; name: string; code: string }> = selectedOrg?.departments || [];
+        const resolvedDeptLabel = selectedDepartment === '__CUSTOM__' ? label.trim() : (selectedDepartment || label.trim());
+        const canSubmit = allocateMode === 'SUBSIDIARY'
+          ? (!busy && !allocationBlocked && Boolean(effectiveOrgId) && Boolean(amount))
+          : (!busy && Boolean(selectedParentEnv) && Boolean(resolvedDeptLabel) && Boolean(amount));
+
         return (
         <div style={{ position: 'fixed', inset: 0, zIndex: 999, background: 'rgba(15, 23, 42, 0.45)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ width: '100%', maxWidth: 480, background: '#ffffff', borderRadius: 12, padding: 20, boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #f1f5f9', paddingBottom: 10 }}>
               <h3 style={{ fontSize: 14, fontWeight: 700, margin: 0, color: '#17253d', display: 'flex', alignItems: 'center', gap: 6 }}>
-                <Plus size={14} color={effectiveBrandColor} /> Allocate Funded Budget Envelope
+                <Plus size={14} color={effectiveBrandColor} /> {allocateMode === 'SUBSIDIARY' ? 'Fund Subsidiary Budget' : 'Allocate to Department'}
               </h3>
               <button onClick={() => setShowAllocateModal(false)} style={{ background: 'none', border: 0, color: '#94a3b8', cursor: 'pointer' }}>
                 <X size={16} />
               </button>
             </div>
 
-            {allocationBlocked && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, background: '#f1f5f9', padding: 4, borderRadius: 8 }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setAllocateMode('SUBSIDIARY');
+                  setParentId('');
+                  setSelectedDepartment('');
+                  setLabel('');
+                }}
+                style={{
+                  padding: '6px 10px',
+                  borderRadius: 6,
+                  border: 0,
+                  fontSize: 11,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  background: allocateMode === 'SUBSIDIARY' ? '#ffffff' : 'transparent',
+                  color: allocateMode === 'SUBSIDIARY' ? '#0f172a' : '#64748b',
+                  boxShadow: allocateMode === 'SUBSIDIARY' ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
+                }}
+              >
+                Subsidiary Budget
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAllocateMode('DEPARTMENT');
+                  if (!parentId && activeTopLevelEnvelopes.length > 0) {
+                    const match = activeTopLevelEnvelopes.find((e: any) => e.organizationId === organizationId) || activeTopLevelEnvelopes[0];
+                    setParentId(match.id);
+                    setOrganizationId(match.organizationId);
+                  }
+                }}
+                style={{
+                  padding: '6px 10px',
+                  borderRadius: 6,
+                  border: 0,
+                  fontSize: 11,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  background: allocateMode === 'DEPARTMENT' ? '#ffffff' : 'transparent',
+                  color: allocateMode === 'DEPARTMENT' ? '#0f172a' : '#64748b',
+                  boxShadow: allocateMode === 'DEPARTMENT' ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
+                }}
+              >
+                Department Allocation
+              </button>
+            </div>
+
+            {allocateMode === 'SUBSIDIARY' && allocationBlocked && (
               <div style={{ padding: '10px 12px', borderRadius: 8, background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', fontSize: 11.5, fontWeight: 600, lineHeight: 1.45 }}>
                 {data?.funding?.paused
                   ? 'New commitments are blocked because the central company funding pool is currently paused.'
@@ -1428,65 +1580,99 @@ export default function FundingView({
             )}
 
             <p style={{ fontSize: 11, color: '#64748b', margin: 0 }}>
-              Locks central Monnify backing to a chosen subsidiary budget. Individual requests will draw from this allocation upon GMD sign-off. Allocations cannot exceed available Monnify balance.
+              {allocateMode === 'SUBSIDIARY'
+                ? 'Locks central Monnify backing to the selected subsidiary. No manual budget name needed.'
+                : 'Carves out a department allocation from an existing funded subsidiary budget.'}
             </p>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10, fontSize: 11 }}>
-              <div>
-                <label style={{ fontWeight: 600, color: '#475569', display: 'block', marginBottom: 4 }}>Target Subsidiary *</label>
-                <select
-                  value={organizationId}
-                  onChange={(e) => setOrganizationId(e.target.value)}
-                  style={{ width: '100%', padding: '6px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 11, background: '#fff' }}
-                >
-                  <option value="">Select subsidiary…</option>
-                  {data?.organizations?.map((org: any) => (
-                    <option key={org.id} value={org.id}>
-                      {org.legalName} ({org.code})
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {allocateMode === 'SUBSIDIARY' ? (
+                <div>
+                  <label style={{ fontWeight: 600, color: '#475569', display: 'block', marginBottom: 4 }}>Target Subsidiary *</label>
+                  <select
+                    value={organizationId}
+                    onChange={(e) => setOrganizationId(e.target.value)}
+                    style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 11.5, background: '#fff' }}
+                  >
+                    <option value="">Select subsidiary…</option>
+                    {data?.organizations?.map((org: any) => (
+                      <option key={org.id} value={org.id}>
+                        {org.legalName} ({org.code})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : (
+                <>
+                  <div>
+                    <label style={{ fontWeight: 600, color: '#475569', display: 'block', marginBottom: 4 }}>Subsidiary Budget *</label>
+                    <select
+                      value={selectedParentEnv?.id || ''}
+                      onChange={(e) => {
+                        const env = activeTopLevelEnvelopes.find((x: any) => x.id === e.target.value);
+                        setParentId(e.target.value);
+                        if (env) setOrganizationId(env.organizationId);
+                        setSelectedDepartment('');
+                      }}
+                      style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 11.5, background: '#fff' }}
+                    >
+                      <option value="">Select funded subsidiary budget…</option>
+                      {activeTopLevelEnvelopes.map((env: any) => (
+                        <option key={env.id} value={env.id}>
+                          {env.organizationName} ({walletMoney(env.remainingMinor)} available)
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-              <div>
-                <label style={{ fontWeight: 600, color: '#475569', display: 'block', marginBottom: 4 }}>Budget Envelope Label *</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Q4 Logistics & Operations Budget"
-                  value={label}
-                  onChange={(e) => setLabel(e.target.value)}
-                  style={{ width: '100%', padding: '6px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 11, background: '#fff', boxSizing: 'border-box' }}
-                />
-              </div>
+                  <div>
+                    <label style={{ fontWeight: 600, color: '#475569', display: 'block', marginBottom: 4 }}>Department *</label>
+                    {orgDepartments.length > 0 ? (
+                      <select
+                        value={selectedDepartment}
+                        onChange={(e) => setSelectedDepartment(e.target.value)}
+                        style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 11.5, background: '#fff' }}
+                      >
+                        <option value="">Select department…</option>
+                        {orgDepartments.map((d) => (
+                          <option key={d.id} value={d.name}>
+                            {d.name} ({d.code})
+                          </option>
+                        ))}
+                        <option value="__CUSTOM__">Other / Custom Department…</option>
+                      </select>
+                    ) : (
+                      <input
+                        type="text"
+                        placeholder="e.g. Operations, Engineering, Finance"
+                        value={label}
+                        onChange={(e) => setLabel(e.target.value)}
+                        style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 11.5, background: '#fff', boxSizing: 'border-box' }}
+                      />
+                    )}
+                    {orgDepartments.length > 0 && selectedDepartment === '__CUSTOM__' && (
+                      <input
+                        type="text"
+                        placeholder="Enter department name…"
+                        value={label}
+                        onChange={(e) => setLabel(e.target.value)}
+                        style={{ width: '100%', marginTop: 6, padding: '7px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 11.5, background: '#fff', boxSizing: 'border-box' }}
+                      />
+                    )}
+                  </div>
+                </>
+              )}
 
               <div>
                 <label style={{ fontWeight: 600, color: '#475569', display: 'block', marginBottom: 4 }}>Allocation Amount (₦) *</label>
                 <input
                   type="text"
                   inputMode="decimal"
-                  placeholder="e.g. 5000000.00"
+                  placeholder="e.g. 50000.00"
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
-                  style={{ width: '100%', padding: '6px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 11, background: '#fff', boxSizing: 'border-box', fontFamily: 'monospace' }}
+                  style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 11.5, background: '#fff', boxSizing: 'border-box', fontFamily: 'monospace' }}
                 />
-              </div>
-
-              <div>
-                <label style={{ fontWeight: 600, color: '#475569', display: 'block', marginBottom: 4 }}>Parent Budget (Optional)</label>
-                <select
-                  value={parentId}
-                  onChange={(e) => setParentId(e.target.value)}
-                  style={{ width: '100%', padding: '6px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 11, background: '#fff' }}
-                >
-                  <option value="">Top-Level Subsidiary Envelope (No Parent)</option>
-                  {data?.envelopes
-                    ?.filter((e: any) => e.status === 'ACTIVE')
-                    ?.map((e: any) => (
-                      <option key={e.id} value={e.id}>
-                        {e.organizationName} · {e.label} ({walletMoney(e.remainingMinor)} remaining)
-                      </option>
-                    ))}
-                </select>
               </div>
             </div>
 
@@ -1500,15 +1686,15 @@ export default function FundingView({
               </button>
               <button
                 type="button"
-                disabled={busy || allocationBlocked || !organizationId || !label || !amount}
+                disabled={!canSubmit}
                 onClick={() =>
                   run(async () => {
                     await api(
                       'envelopes',
                       {
-                        organizationId,
-                        label,
-                        parentId: parentId || undefined,
+                        organizationId: effectiveOrgId,
+                        label: allocateMode === 'SUBSIDIARY' ? `${selectedOrg?.legalName || 'Subsidiary'} Budget` : resolvedDeptLabel,
+                        parentId: allocateMode === 'DEPARTMENT' ? selectedParentEnv?.id : undefined,
                         amountMinor: nairaToMinor(amount),
                       },
                       undefined,
@@ -1516,12 +1702,12 @@ export default function FundingView({
                     );
                     allocationKey.current = crypto.randomUUID();
                     setShowAllocateModal(false);
-                    setNotice('Funded budget envelope allocated successfully.');
+                    setNotice(allocateMode === 'SUBSIDIARY' ? 'Subsidiary budget funded successfully.' : `Allocated to ${resolvedDeptLabel} successfully.`);
                   })
                 }
-                style={{ padding: '6px 14px', borderRadius: 6, border: 0, background: effectiveBrandColor, color: '#fff', fontSize: 11, fontWeight: 700, cursor: allocationBlocked ? 'not-allowed' : 'pointer', opacity: allocationBlocked ? 0.5 : 1 }}
+                style={{ padding: '6px 14px', borderRadius: 6, border: 0, background: effectiveBrandColor, color: '#fff', fontSize: 11, fontWeight: 700, cursor: !canSubmit ? 'not-allowed' : 'pointer', opacity: !canSubmit ? 0.5 : 1 }}
               >
-                Confirm Allocation
+                {allocateMode === 'SUBSIDIARY' ? 'Fund Subsidiary Budget' : 'Confirm Dept Allocation'}
               </button>
             </div>
           </div>

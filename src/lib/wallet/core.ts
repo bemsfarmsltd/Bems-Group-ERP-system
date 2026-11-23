@@ -115,17 +115,21 @@ export async function createFundedEnvelopeTx(tx:Tx,actor:WalletActor,input:Envel
   requireCommitments();
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended('bems-wallet-pool-v1',0))`;
   const amount = minorUnits(input.amountMinor);
-  const label = String(input.label || '').trim();
-  if (!label || label.length > 160 || !input.idempotencyKey || input.idempotencyKey.length > 128) throw new WalletError('INVALID_ENVELOPE', 'A label and valid idempotency key are required.');
+  const rawLabel = String(input.label || '').trim();
+  if (!input.idempotencyKey || input.idempotencyKey.length > 128) throw new WalletError('INVALID_ENVELOPE', 'A valid idempotency key is required.');
+  if (rawLabel.length > 160) throw new WalletError('INVALID_ENVELOPE', 'Label must be 160 characters or fewer.');
 
     await liveWalletActor(tx, actor);
     if (!['GMD', 'SUPER_ADMIN', 'SYSTEM_ADMIN'].includes(actor.role)) throw new WalletError('NOT_PERMITTED', 'Budget administration requires executive authority.', 403);
+    const org = await tx.organization.findFirst({ where: { id: input.organizationId, status: 'ACTIVE', defaultCurrency: 'NGN' }, select: { id: true, legalName: true } });
+    if (!org) throw new WalletError('INVALID_ORGANIZATION', 'Choose an active NGN organization.');
+    const label = rawLabel || (!input.parentId ? `${org.legalName} Budget` : '');
+    if (!label) throw new WalletError('INVALID_ENVELOPE', 'Select a department or enter an allocation label.');
     const [old] = await tx.$queryRaw<any[]>`SELECT * FROM "WalletBudgetEnvelope" WHERE "idempotencyKey" = ${input.idempotencyKey}`;
     if (old) {
       if (old.createdById !== actor.id || old.organizationId !== input.organizationId || old.label !== label || old.allocatedMinor !== amount || (old.parentId||null)!==(input.parentId||null)) throw new WalletError('IDEMPOTENCY_CONFLICT', 'This key was used for another budget allocation.', 409);
       return walletJson(old);
     }
-    if (!await tx.organization.findFirst({ where: { id: input.organizationId, status: 'ACTIVE', defaultCurrency: 'NGN' } })) throw new WalletError('INVALID_ORGANIZATION', 'Choose an active NGN organization.');
     const state = await fundingState(tx, true);
     if (input.parentId) {
       const [parent]=await tx.$queryRaw<any[]>`SELECT e.*,o."type" AS "organizationType" FROM "WalletBudgetEnvelope" e JOIN "Organization" o ON o."id"=e."organizationId" WHERE e."id"=${input.parentId} AND e."status"='ACTIVE' FOR UPDATE OF e`;
@@ -219,12 +223,12 @@ export async function readFundingDashboard(actor: WalletActor) {
       const allowed = getAllowedSubsidiariesForModule(role, permissions, 'finance');
       const organizations = await tx.organization.findMany({
         where: { status: 'ACTIVE', defaultCurrency: 'NGN', ...(allowed === 'ALL' ? {} : { id: { in: allowed } }) },
-        select: { id: true, code: true, legalName: true, type: true },
+        select: { id: true, code: true, legalName: true, type: true, departments: { select: { id: true, name: true, code: true }, orderBy: { name: 'asc' } } },
       });
       const organizationIds = organizations.map(({ id }) => id);
       const envelopes = organizationIds.length ? await tx.$queryRaw<unknown[]>`
         SELECT e."id", e."organizationId", e."label", e."allocatedMinor", e."remainingMinor",
-               e."status", e."createdAt", o."legalName" AS "organizationName"
+               e."parentId", e."status", e."createdAt", o."legalName" AS "organizationName"
         FROM "WalletBudgetEnvelope" e JOIN "Organization" o ON o."id" = e."organizationId"
         WHERE e."organizationId" IN (${Prisma.join(organizationIds)})
         ORDER BY e."createdAt" DESC LIMIT 100
@@ -259,7 +263,7 @@ export async function readFundingDashboard(actor: WalletActor) {
     const requests = await tx.expenditureRequest.findMany({ where: { currency: 'NGN', paymentStatus: {in:['UNPAID','MONNIFY_FAILED','MONNIFY_REVERSED']}, approvalStatus: { in: ['SUBMITTED','IN_REVIEW','APPROVED'] }, disbursements: { none: {} }, OR:[{vendorId:{not:null}},{requester: { role: { in: ['STAFF','CUSTOM_ADMIN'] }, approvalStatus: 'APPROVED', status: { in: ['ACTIVE','ON_LEAVE'] } }}] }, select: { id: true, requestNumber: true, title: true, subsidiaryId: true, amountMinor: true, vendor:{select:{id:true,name:true}}, requester: { select: { legalName: true } } }, orderBy: { createdAt: 'desc' }, take: 100 });
     const transfers=await tx.$queryRaw<any[]>`SELECT w."id",w."reference",w."targetType",w."amountMinor",w."feeMinor",w."status",w."providerStatus",w."providerReference",w."createdAt",right(w."accountNumber",4) AS "lastFour",COALESCE(v."name",e."legalName") AS "beneficiaryName" FROM "WalletWithdrawal" w JOIN "Employee" e ON e."id"=w."employeeId" LEFT JOIN "Vendor" v ON v."id"=w."vendorId" ORDER BY w."createdAt" DESC LIMIT 100`;
     const vendors=await tx.$queryRaw<any[]>`SELECT "id","name","accountName",right(COALESCE("accountNumber",''),4) AS "lastFour","bankCode","verifiedBankAt" FROM "Vendor" ORDER BY "name" LIMIT 200`;
-    const organizations = await tx.organization.findMany({ where: { status: 'ACTIVE', defaultCurrency: 'NGN' }, select: { id: true, code: true, legalName: true, type: true } });
+    const organizations = await tx.organization.findMany({ where: { status: 'ACTIVE', defaultCurrency: 'NGN' }, select: { id: true, code: true, legalName: true, type: true, departments: { select: { id: true, name: true, code: true }, orderBy: { name: 'asc' } } } });
     const staffWallets = await tx.$queryRaw<any[]>`SELECT e."id", e."legalName", e."employeeNumber", e."role", COALESCE(a."subsidiaryId", '') AS "subsidiaryId", COALESCE(o."legalName", 'Unassigned') AS "organizationName", COALESCE(sum(c."availableMinor"),0)::bigint AS "availableMinor", COALESCE(sum(c."heldMinor"),0)::bigint AS "heldMinor", COALESCE(sum(c."settledMinor"),0)::bigint AS "settledMinor" FROM "Employee" e LEFT JOIN "EmployeeAssignment" a ON a."employeeId"=e."id" AND a."status"='ACTIVE' AND a."isPrimary"=true LEFT JOIN "Organization" o ON o."id"=a."subsidiaryId" LEFT JOIN "WalletCreditLot" c ON c."employeeId"=e."id" WHERE e."role" IN ('STAFF','CUSTOM_ADMIN') AND e."approvalStatus"='APPROVED' AND e."status" IN ('ACTIVE','ON_LEAVE') GROUP BY e."id", e."legalName", e."employeeNumber", e."role", a."subsidiaryId", o."legalName" ORDER BY "availableMinor" DESC, e."legalName" ASC LIMIT 100`;
     const journals = await tx.$queryRaw<any[]>`SELECT j."id", j."kind", j."reference", j."createdAt", j."actorId", COALESCE(json_agg(json_build_object('id', je."id", 'accountKey', je."accountKey", 'amountMinor', je."amountMinor"::text)) FILTER (WHERE je."id" IS NOT NULL), '[]'::json) AS "entries" FROM "WalletJournal" j LEFT JOIN "WalletJournalEntry" je ON je."journalId"=j."id" GROUP BY j."id", j."kind", j."reference", j."createdAt", j."actorId" ORDER BY j."createdAt" DESC LIMIT 50`;
     return walletJson({ walletMode:walletEnabled(), processing:walletWorkerStatus(), funding, envelopes, proposals, requests, organizations, vendors, transfers, payrollBatches, issues, staffWallets, journals, approvalLabel: financialApproverLabel(), canApprove: walletEnabled() && (await canActorApproveFunds(actor)) });
