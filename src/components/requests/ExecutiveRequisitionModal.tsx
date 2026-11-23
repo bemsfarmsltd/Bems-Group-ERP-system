@@ -1228,6 +1228,28 @@ export function ExecutiveRequisitionModal({
                 )}
               </div>
             )}
+
+            {(request.paymentStatus === 'UNPAID' || !request.paymentStatus) && (
+              <a
+                href={`/requests/${encodeURIComponent(request.requestNumber)}`}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '10px 14px',
+                  borderRadius: '10px',
+                  background: '#f8fafc',
+                  border: '1px solid #e2e8f0',
+                  color: '#334155',
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  textDecoration: 'none',
+                }}
+              >
+                <span>Paid externally? Open Full Dossier / Off-System Channel</span>
+                <ExternalLink size={13} color="#ea580c" />
+              </a>
+            )}
           </div>
         </div>
       </div>
