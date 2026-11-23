@@ -636,6 +636,7 @@ export function AiFinancialManagerDrawer({
                         confirmed={msg.actionCard.confirmed}
                         cancelled={msg.actionCard.cancelled}
                         resultMessage={msg.actionCard.resultMessage}
+                        errorMessage={msg.actionCard.errorMessage}
                         onAuthorizeAdjustment={(sData) => {
                           handleConfirmAction(msg.id, 'salary_adjustment', {
                             ...sData,
@@ -643,6 +644,11 @@ export function AiFinancialManagerDrawer({
                             confirmation_hash: msg.actionCard?.confirmation_hash,
                           });
                         }}
+                        onCancel={
+                          msg.actionCard?.staged_action_id
+                            ? () => handleCancelAction(msg.id, msg.actionCard!.staged_action_id!)
+                            : undefined
+                        }
                       />
                     )}
 
@@ -670,11 +676,9 @@ export function AiFinancialManagerDrawer({
                     )}
 
                     {/* Universal Fallback for any Staged Action or unhandled type */}
-                    {(msg.actionCard.staged_action_id ||
-                      msg.actionCard.type === 'staged_action' ||
-                      msg.actionCard.cardType === 'STAGED_ACTION' ||
-                      (!['wallet_release', 'briefing', 'approval_decision', 'budget_proposal', 'salary_adjustment', 'disbursement_record', 'scenario_simulator'].includes(msg.actionCard.type) &&
-                        (!msg.actionCard.data?.lines && msg.actionCard.data?.proposedSalary === undefined))) && (
+                    {!['wallet_release', 'briefing', 'approval_decision', 'disbursement_record', 'scenario_simulator'].includes(msg.actionCard.type) &&
+                      !((msg.actionCard.type === 'budget_proposal' || msg.actionCard.type === 'budget') && msg.actionCard.data?.lines) &&
+                      !((msg.actionCard.type === 'salary_adjustment' || msg.actionCard.type === 'salary_change') && msg.actionCard.data?.proposedSalary !== undefined) && (
                       <UniversalStagedActionCard
                         stagedActionId={msg.actionCard.staged_action_id || ''}
                         confirmationHash={msg.actionCard.confirmation_hash || ''}

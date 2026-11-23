@@ -9,11 +9,12 @@ interface Props {
   confirmed?: boolean;
   cancelled?: boolean;
   resultMessage?: string;
+  errorMessage?: string;
   onAuthorizeAdjustment: (data: SalaryAdjustmentCardData) => void;
   onCancel?: () => void;
 }
 
-export function SalaryAdjustmentCard({ data, confirmed, cancelled, resultMessage, onAuthorizeAdjustment, onCancel }: Props) {
+export function SalaryAdjustmentCard({ data, confirmed, cancelled, resultMessage, errorMessage, onAuthorizeAdjustment, onCancel }: Props) {
   const [submitting, setSubmitting] = useState(false);
 
   const formatNaira = (amount: number) => {
@@ -26,6 +27,27 @@ export function SalaryAdjustmentCard({ data, confirmed, cancelled, resultMessage
 
   const diff = data.proposedSalary - data.currentSalary;
   const pctChange = data.currentSalary > 0 ? Math.round((diff / data.currentSalary) * 100) : 0;
+
+  if (cancelled) {
+    return (
+      <div
+        style={{
+          background: '#f8fafc',
+          border: '1px solid #cbd5e1',
+          borderRadius: '12px',
+          padding: '14px',
+          marginTop: '8px',
+          fontSize: '12px',
+          color: '#475569',
+        }}
+      >
+        <strong style={{ fontSize: '13px', display: 'block', marginBottom: '2px' }}>Salary Proposal Discarded</strong>
+        <p style={{ margin: 0 }}>
+          Staged salary adjustment for {data.employeeName} was cancelled before execution.
+        </p>
+      </div>
+    );
+  }
 
   if (confirmed || resultMessage) {
     return (
@@ -122,6 +144,13 @@ export function SalaryAdjustmentCard({ data, confirmed, cancelled, resultMessage
           <span style={{ fontSize: '11px', color: '#1d4ed8' }}>
             Staff member will automatically be notified with this reason upon executive sign-off.
           </span>
+        </div>
+      )}
+
+      {errorMessage && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#fef2f2', padding: '8px 10px', borderRadius: '6px', marginBottom: '12px', border: '1px solid #fecaca', color: '#b91c1c', fontSize: '11px', fontWeight: 600 }}>
+          <AlertTriangle size={13} color="#dc2626" />
+          <span>{errorMessage}</span>
         </div>
       )}
 

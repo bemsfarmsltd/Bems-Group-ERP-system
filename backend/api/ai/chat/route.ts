@@ -597,30 +597,60 @@ title: "<Chart Title>"
               const mentionsSalaryFailure =
                 lowerReply.includes("couldn't draw up the salary") ||
                 lowerReply.includes('could not draw up the salary') ||
-                lowerReply.includes('attempts failed');
+                lowerReply.includes('attempts failed') ||
+                lowerReply.includes("can't change salaries") ||
+                lowerReply.includes('cannot change salaries') ||
+                lowerReply.includes('contact finance') ||
+                lowerReply.includes('type @finance');
               const isDirectSalaryCommand =
-                /\b(reduce|cut|deduct|increase|add|set|change|adjust|update)\b[\s\S]{0,40}\b(salary|pay|gross)\b/i.test(
+                /\b(reduce|cut|deduct|increase|add|set|change|adjust|update)\b[\s\S]{0,60}\b(salary|pay|gross|wage)\b/i.test(
+                  cleanUserMessage
+                ) ||
+                /\b(salary|pay|gross)\b[\s\S]{0,60}\b(to|at|as)\b[\s\S]{0,25}\d/i.test(
                   cleanUserMessage
                 ) ||
                 (isConfirmingPriorProposal &&
                   /\b(salary|reduction|cut|₦\d|monthly salary)\b/i.test(combinedContextText));
 
               if (mentionsSalaryFailure || isDirectSalaryCommand) {
-                const empNumMatch = combinedContextText.match(/BEMS-[A-Z0-9]+-\d{4}-\d{4}/i);
+                const searchSourceForEmployee = isConfirmingPriorProposal
+                  ? `${cleanUserMessage}\n${combinedContextText}`
+                  : cleanUserMessage;
+                const empNumMatch =
+                  cleanUserMessage.match(/BEMS-[A-Z0-9]+-\d{4}-\d{4}/i) ||
+                  (isConfirmingPriorProposal ? combinedContextText.match(/BEMS-[A-Z0-9]+-\d{4}-\d{4}/i) : null);
                 let targetEmpLookup: string | null = empNumMatch ? empNumMatch[0].toUpperCase() : null;
                 if (!targetEmpLookup) {
                   const allStaff = await prisma.employee.findMany({
                     where: { role: 'STAFF', status: 'ACTIVE' },
                     select: { id: true, legalName: true, employeeNumber: true },
                   });
-                  const matchedStaff = allStaff.find((s) => {
-                    const full = s.legalName.toLowerCase();
-                    const first = full.split(/\s+/)[0];
-                    return (
-                      combinedContextText.toLowerCase().includes(full) ||
-                      (first.length >= 4 && combinedContextText.toLowerCase().includes(first))
-                    );
-                  });
+                  const findStaffInText = (haystack: string) => {
+                    const lowerHay = haystack.toLowerCase();
+                    // Prefer full-name match first, then distinct token match in order of appearance in haystack
+                    const fullMatch = allStaff.find((s) => lowerHay.includes(s.legalName.toLowerCase()));
+                    if (fullMatch) return fullMatch;
+                    let bestStaff: (typeof allStaff)[number] | null = null;
+                    let bestIndex = Infinity;
+                    for (const s of allStaff) {
+                      const tokens = s.legalName
+                        .toLowerCase()
+                        .split(/\s+/)
+                        .filter((t) => t.length >= 3);
+                      for (const token of tokens) {
+                        const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                        const m = new RegExp(`\\b${escaped}\\b`, 'i').exec(lowerHay);
+                        if (m && m.index < bestIndex) {
+                          bestIndex = m.index;
+                          bestStaff = s;
+                        }
+                      }
+                    }
+                    return bestStaff;
+                  };
+                  const matchedStaff =
+                    findStaffInText(cleanUserMessage) ||
+                    (isConfirmingPriorProposal ? findStaffInText(combinedContextText) : null);
                   if (matchedStaff) targetEmpLookup = matchedStaff.id;
                 }
 
@@ -630,24 +660,50 @@ title: "<Chart Title>"
                   const ctx = await inspectEmployeeCompensationContext(targetEmpLookup);
                   let targetNaira = 0;
 
-                  // Check explicit proposed figure like ₦28,000 or percentage like 30%
-                  const pctMatch = combinedContextText.match(/(\d+(?:\.\d+)?)\s*%\s*(?:reduction|cut|decrease|deduction|off|increase|raise)?/i);
-                  const nairaMatches = Array.from(
-                    combinedContextText.matchAll(/(?:₦|NGN\s*)([\d,]+(?:\.\d+)?)/gi)
-                  ).map((m) => Number(m[1].replace(/,/g, '')));
-
-                  if (pctMatch && ctx.currentGrossNaira > 0) {
-                    const pctVal = Number(pctMatch[1]);
-                    const isCut = /reduc|cut|decreas|deduct|less/i.test(combinedContextText);
-                    targetNaira = isCut
-                      ? Math.round(ctx.currentGrossNaira * (1 - pctVal / 100))
-                      : Math.round(ctx.currentGrossNaira * (1 + pctVal / 100));
-                  } else {
-                    const candidateNaira = nairaMatches.find(
-                      (n) => n > 1000 && Math.round(n) !== Math.round(ctx.currentGrossNaira)
+                  const parseSalaryFromText = (textToScan: string): number => {
+                    const cleanedScan = textToScan.replace(/BEMS-[A-Z0-9]+-\d{4}-\d{4}/gi, '');
+                    const pctMatch = cleanedScan.match(
+                      /(\d+(?:\.\d+)?)\s*%\s*(?:reduction|cut|decrease|deduction|off|increase|raise)?/i
                     );
-                    if (candidateNaira) targetNaira = candidateNaira;
-                  }
+                    if (pctMatch && ctx.currentGrossNaira > 0) {
+                      const pctVal = Number(pctMatch[1]);
+                      const isCut = /reduc|cut|decreas|deduct|less/i.test(cleanedScan);
+                      return isCut
+                        ? Math.round(ctx.currentGrossNaira * (1 - pctVal / 100))
+                        : Math.round(ctx.currentGrossNaira * (1 + pctVal / 100));
+                    }
+                    const parseWithMultiplier = (numStr: string, mult?: string) => {
+                      const base = Number(numStr.replace(/,/g, ''));
+                      if (!Number.isFinite(base)) return 0;
+                      const m = (mult || '').toLowerCase();
+                      if (m === 'k') return Math.round(base * 1000);
+                      if (m === 'm') return Math.round(base * 1_000_000);
+                      return Math.round(base);
+                    };
+                    // 1. Explicit currency prefix (₦20,000 / NGN 20,000 / N20,000)
+                    const currencyMatches = Array.from(
+                      cleanedScan.matchAll(/(?:₦|NGN\s*)([\d,]+(?:\.\d+)?)\s*([km])?\b/gi)
+                    ).map((m) => parseWithMultiplier(m[1], m[2]));
+                    const currCandidate = currencyMatches.find(
+                      (n) => n >= 1000 && Math.round(n) !== Math.round(ctx.currentGrossNaira)
+                    );
+                    if (currCandidate) return currCandidate;
+
+                    // 2. Plain number in salary phrase (e.g. "to 20,000", "at 50000", "20k")
+                    const plainMatches = Array.from(
+                      cleanedScan.matchAll(/\b([\d,]+(?:\.\d+)?)\s*([km])?\b/gi)
+                    )
+                      .map((m) => parseWithMultiplier(m[1], m[2]))
+                      .filter((n) => n >= 1000 && n !== 2025 && n !== 2026 && n !== 2027);
+                    const plainCandidate = plainMatches.find(
+                      (n) => Math.round(n) !== Math.round(ctx.currentGrossNaira)
+                    );
+                    return plainCandidate || 0;
+                  };
+
+                  targetNaira =
+                    parseSalaryFromText(cleanUserMessage) ||
+                    (isConfirmingPriorProposal ? parseSalaryFromText(combinedContextText) : 0);
 
                   if (targetNaira > 0 && targetNaira !== ctx.currentGrossNaira) {
                     const deltaVal = targetNaira - ctx.currentGrossNaira;
@@ -705,8 +761,13 @@ title: "<Chart Title>"
                       const built = buildVerifiedCardFromDbStaged(dbStaged);
                       verifiedStagedAction = built.saObj;
                       verifiedActionCard = built.cardObj;
-                      if (mentionsSalaryFailure) {
-                        reply = `I have drawn up the salary adjustment for **${ctx.employee.legalName} (${ctx.employee.employeeNumber})**, updating her monthly gross salary from **₦${ctx.currentGrossNaira.toLocaleString()}** to **₦${targetNaira.toLocaleString()}** (${deltaFormatted}).\n\nOnce you confirm on the card below, the change will immediately persist across both her employment compensation record and the current open payroll register.`;
+                      if (
+                        mentionsSalaryFailure ||
+                        !lowerReply.includes(ctx.employee.legalName.toLowerCase().split(/\s+/)[0])
+                      ) {
+                        reply = `I have staged the salary adjustment for **${ctx.employee.legalName} (${ctx.employee.employeeNumber})**, updating her monthly gross salary from **₦${ctx.currentGrossNaira.toLocaleString()}** to **₦${targetNaira.toLocaleString()}** (${deltaFormatted}).\n\nPlease review the confirmation card below and click **Authorize Salary Update** to commit this change across her compensation record and the current open payroll register.`;
+                        n8nData.quick_replies = [];
+                        n8nData.quickReplies = [];
                       }
                     }
                   }
