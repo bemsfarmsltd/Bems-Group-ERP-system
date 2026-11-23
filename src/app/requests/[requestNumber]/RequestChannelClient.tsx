@@ -42,6 +42,12 @@ export function RequestChannelClient({ request }: RequestChannelClientProps) {
   const [approvalReason, setApprovalReason] = useState("Approved within standard operating budget.");
   const [transferAccountModal, setTransferAccountModal] = useState<RequesterDisbursementAccount | null>(null);
   const [showStaffWalletModal, setShowStaffWalletModal] = useState(false);
+  const [showExternalPaidModal, setShowExternalPaidModal] = useState(false);
+  const [externalNote, setExternalNote] = useState("This payment was made already (not paid via the system).");
+  const [externalRef, setExternalRef] = useState("");
+  const [externalPassword, setExternalPassword] = useState("");
+  const [externalError, setExternalError] = useState<string | null>(null);
+  const [externalBusy, setExternalBusy] = useState(false);
   const [confirmingReceipt, setConfirmingReceipt] = useState(false);
   const [receiptIssue, setReceiptIssue] = useState("");
   const [showReceiptIssue, setShowReceiptIssue] = useState(false);
@@ -369,6 +375,29 @@ export function RequestChannelClient({ request }: RequestChannelClientProps) {
               <span>Release to Staff Wallet</span>
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Dedicated External / Off-System Settlement Channel (GMD / Super Admin Only) */}
+      {["GMD", "SUPER_ADMIN", "SYSTEM_ADMIN"].includes(currentUser.role) && request.paymentStatus === "UNPAID" && (
+        <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <p className="text-xs font-bold text-slate-800">External / Off-System Settlement Channel</p>
+            <p className="text-[11px] text-slate-500">
+              For payments already settled outside the system. Keeps full accounting &amp; audit records without touching Monnify.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setExternalError(null);
+              setExternalPassword("");
+              setShowExternalPaidModal(true);
+            }}
+            className="px-3.5 py-2 rounded-xl bg-white hover:bg-slate-100 text-slate-800 text-xs font-bold border border-slate-300 transition shrink-0"
+          >
+            Record External Payment →
+          </button>
         </div>
       )}
 
@@ -804,6 +833,98 @@ export function RequestChannelClient({ request }: RequestChannelClientProps) {
           }}
           account={transferAccountModal}
         />
+      )}
+      {showExternalPaidModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/45 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
+            <h3 className="text-base font-bold text-slate-900">Record External / Off-System Payment</h3>
+            <p className="text-xs text-slate-600">
+              Mark <strong className="text-slate-900">{request.requestNumber}</strong> ({formatMoney(request.amountMinor, request.currency)}) as paid externally. No Monnify transfer will occur.
+            </p>
+            {externalError && (
+              <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-xs font-semibold text-red-700">
+                {externalError}
+              </div>
+            )}
+            <div className="space-y-3">
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                  Settlement Note *
+                </label>
+                <textarea
+                  rows={2}
+                  value={externalNote}
+                  onChange={(e) => setExternalNote(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs text-slate-900 focus:outline-none focus:border-orange-500"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                  External Reference (Optional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Direct Bank / Card Receipt Ref"
+                  value={externalRef}
+                  onChange={(e) => setExternalRef(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs text-slate-900 focus:outline-none focus:border-orange-500"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                  Your Account Password *
+                </label>
+                <input
+                  type="password"
+                  placeholder="Enter password to confirm"
+                  value={externalPassword}
+                  onChange={(e) => setExternalPassword(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs text-slate-900 focus:outline-none focus:border-orange-500"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowExternalPaidModal(false)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={externalBusy || !externalPassword || !externalNote.trim()}
+                onClick={async () => {
+                  setExternalBusy(true);
+                  setExternalError(null);
+                  try {
+                    const res = await fetch(`/api/requests/${encodeURIComponent(request.requestNumber)}/mark-paid-external`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      credentials: "include",
+                      body: JSON.stringify({
+                        note: externalNote.trim(),
+                        reference: externalRef.trim() || undefined,
+                        password: externalPassword,
+                      }),
+                    });
+                    const data = await res.json().catch(() => ({}));
+                    if (!res.ok) throw new Error(data?.error || "Failed to record external payment.");
+                    setShowExternalPaidModal(false);
+                    router.refresh();
+                  } catch (err: any) {
+                    setExternalError(err?.message || "Failed to record external payment.");
+                  } finally {
+                    setExternalBusy(false);
+                  }
+                }}
+                className="px-4 py-2 rounded-xl bg-[#ea580c] hover:bg-orange-600 disabled:opacity-50 text-white font-bold text-xs transition"
+              >
+                {externalBusy ? "Recording..." : "Confirm External Payment"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
       {showStaffWalletModal && (
         <ReleaseToStaffWalletModal
