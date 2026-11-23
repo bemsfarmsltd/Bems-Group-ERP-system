@@ -33,6 +33,7 @@ export interface ScopedAutomationDelegation {
   tokenVersion: 1;
   requesterId: string;
   requesterRole: CanonicalRole;
+  allowAuthorizedSuperAdmin?: boolean;
   conversationId: string;
   scopedOrganizationId: string | null;
   allowedScopes: AiAccessScopeKey[] | 'ALL';
@@ -91,6 +92,7 @@ export function createScopedAutomationToken(input: {
     tokenVersion: 1,
     requesterId: input.requesterId,
     requesterRole: input.requesterRole,
+    allowAuthorizedSuperAdmin: input.requesterRole === 'SUPER_ADMIN' ? Boolean(input.allowAuthorizedSuperAdmin) : false,
     conversationId: input.conversationId,
     scopedOrganizationId: input.scopedOrganizationId || null,
     allowedScopes: input.allowedScopes || 'ALL',
@@ -151,7 +153,8 @@ export function verifyScopedAutomationToken(token: string | null | undefined): {
     }
 
     const role = normalizeCanonicalRole(parsed.requesterRole);
-    if (!role || !hasGmdFeatureAccess(role)) {
+    const allowSuperAdmin = superAdminGmdAccessEnabled() || (role === 'SUPER_ADMIN' && Boolean(parsed.allowAuthorizedSuperAdmin));
+    if (!role || !hasGmdFeatureAccess(role, allowSuperAdmin)) {
       return { valid: false, reason: 'AI delegation requires an authorized executive.' };
     }
 
