@@ -273,11 +273,11 @@ export const NOTIFICATION_EVENT_CATALOG: NotificationEventDef[] = [
     key: 'ATTENDANCE_CLOCK_IN',
     category: 'HR_ATTENDANCE',
     label: 'Staff Clock-In & Late Arrival Alert',
-    description: 'Notifies staff on late arrival (>30m grace) and gives HR/GMD live attendance visibility.',
+    description: 'In-app notification on staff arrival/lateness (individual clock-in emails disabled in favor of 12:00 PM Daily Summary).',
     severity: 'STANDARD',
     supportsBridge: false,
     defaults: {
-      STAFF: { inApp: true, email: true, bridge: false },
+      STAFF: { inApp: true, email: false, bridge: false },
       GMD: { inApp: true, email: false, bridge: false },
       SUPER_ADMIN: { inApp: true, email: false, bridge: false },
       CUSTOM_ADMIN: { inApp: true, email: false, bridge: false },

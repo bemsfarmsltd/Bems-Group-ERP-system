@@ -65,48 +65,63 @@ export async function evaluateRecurringReminders(prismaClient: any) {
 
   let notified = 0;
   for (const req of dueSoon) {
-    void import('@/lib/notifications/policy-matrix').then(m => m.dispatchMatrixNotifications({
-      eventKey: 'RECURRING_COMMITMENT_DUE',
-      title: `Recurring Commitment Due: ${req.title}`,
-      body: `${req.requestNumber} (${req.subsidiary?.legalName || 'BEMS'}) for ₦${(Number(req.amountMinor || 0) / 100).toLocaleString('en-NG')} is due soon.`,
-      category: 'REQUESTS_APPROVALS',
-      priority: 'IMPORTANT',
-      actionLabel: 'Open Recurring Commitments',
-      actionUrl: '/finance?tab=Recurring+commitments',
-    })).catch(() => {});
-    const recipients = await resolveModuleEmailRecipients(prismaClient, 'finance', req.subsidiaryId);
+    // If this recurring commitment is already PAID or SETTLED for its initial cycle
+    // and recurringLastPaidAt was not stamped yet, advance recurringNextDueAt to the next cycle
+    // instead of sending a due-soon alert for an already-settled cycle.
+    const isAlreadySettled = ['PAID', 'SETTLED'].includes(String(req.paymentStatus || '').toUpperCase());
+    if (isAlreadySettled && !req.recurringLastPaidAt && req.recurringNextDueAt) {
+      const nextCycleDate = computeNextDueDate(new Date(req.recurringNextDueAt), req.recurringInterval);
+      await prismaClient.expenditureRequest.update({
+        where: { id: req.id },
+        data: {
+          recurringLastPaidAt: req.paidAt || now,
+          recurringNextDueAt: nextCycleDate,
+          recurringReminderSentAt: now,
+        },
+      }).catch(() => {});
+      continue;
+    }
+
+    // Atomically claim the reminder lock BEFORE dispatching any email or notification
+    // so concurrent requests can never trigger duplicate emails.
+    const claimResult = await prismaClient.expenditureRequest.updateMany({
+      where: {
+        id: req.id,
+        OR: [
+          { recurringReminderSentAt: null },
+          { recurringReminderSentAt: { lt: sevenDaysAgo } },
+        ],
+      },
+      data: {
+        recurringReminderSentAt: now,
+      },
+    }).catch(() => ({ count: 0 }));
+
+    if (!claimResult || claimResult.count === 0) {
+      continue;
+    }
+
     const dueStr = req.recurringNextDueAt
       ? new Date(req.recurringNextDueAt).toLocaleDateString('en-NG', { day: '2-digit', month: 'short', year: 'numeric' })
       : 'within 7 days';
     const amountNaira = new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 })
       .format(Number(req.amountMinor || 0) / 100);
 
-    for (const r of recipients) {
-      await prismaClient.notification.create({
-        data: {
-          employeeId: r.id,
-          type: 'RECURRING_DUE_REMINDER',
-          title: `Recurring payment due in ≤7 days: ${req.title}`,
-          body: `${req.requestNumber} (${req.subsidiary?.legalName || 'BEMS'}) for ${amountNaira} is due on ${dueStr}. Auto-Pay is OFF.`,
-          actionUrl: `/finance?tab=Recurring+commitments`,
-        },
-      }).catch(() => {});
-
-      await sendEmail({
-        to: r.workEmail,
-        subject: `[BEMS Finance] Recurring Payment Due ${dueStr}: ${req.title} (${req.requestNumber})`,
-        eventType: 'RECURRING_DUE_REMINDER',
-        html: `<p>Hello ${r.legalName},</p>
-          <p>The recurring commitment <strong>${req.title}</strong> (${req.requestNumber}) for <strong>${req.subsidiary?.legalName || 'BEMS'}</strong> (${amountNaira}) is due on <strong>${dueStr}</strong>.</p>
-          <p><strong>Auto-Pay is currently OFF</strong>, so manual GMD review and release will be required on the due date.</p>`,
-        text: `Recurring commitment ${req.title} (${req.requestNumber}) for ${amountNaira} is due on ${dueStr}. Auto-Pay is OFF.`,
-      }).catch(() => {});
+    try {
+      const { dispatchMatrixNotifications } = await import('@/lib/notifications/policy-matrix');
+      await dispatchMatrixNotifications({
+        eventKey: 'RECURRING_COMMITMENT_DUE',
+        title: `Recurring Commitment Due: ${req.title}`,
+        body: `${req.requestNumber} (${req.subsidiary?.legalName || 'BEMS'}) for ${amountNaira} is due on ${dueStr}. Auto-Pay is OFF.`,
+        category: 'REQUESTS_APPROVALS',
+        priority: 'IMPORTANT',
+        actionLabel: 'Open Recurring Commitments',
+        actionUrl: '/finance?tab=Recurring+commitments',
+      });
+    } catch (e) {
+      console.warn('[Recurring Reminders] Matrix dispatch warning:', e);
     }
 
-    await prismaClient.expenditureRequest.update({
-      where: { id: req.id },
-      data: { recurringReminderSentAt: now },
-    }).catch(() => {});
     notified += 1;
   }
 

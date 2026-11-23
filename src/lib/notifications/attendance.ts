@@ -56,7 +56,8 @@ export async function notifyGmdStaffClockIn(params: NotifyGmdClockInParams) {
       select: { id: true, legalName: true, workEmail: true },
     });
 
-    // 2. Insert in-app SystemNotification for each executive
+    // 2. Insert in-app SystemNotification for each executive (Individual sign-in emails disabled;
+    // executives receive the scheduled 12:00 PM WAT Daily Attendance Summary email instead)
     if (executives.length > 0) {
       await prisma.systemNotification.createMany({
         data: executives.map((exec) => ({
@@ -66,28 +67,6 @@ export async function notifyGmdStaffClockIn(params: NotifyGmdClockInParams) {
           body: notifBody,
           linkUrl: '/attendance',
         })),
-      });
-    }
-
-    // 3. Dispatch Executive Email to each executive recipient
-    const emailRecipients = await getExecutiveRecipients();
-    for (const recipient of emailRecipients) {
-      if (!recipient.email) continue;
-      sendGmdAttendanceAlert({
-        to: recipient.email,
-        gmdName: recipient.name || 'Group Managing Director',
-        staffName: params.employee.legalName,
-        employeeNumber: params.employee.employeeNumber,
-        subsidiaryName: params.subsidiaryName,
-        departmentName: params.departmentName,
-        stationName: params.stationName,
-        workDate: params.workDate,
-        timeStr: params.timeStr,
-        status: params.status,
-        deductionPercent: params.deductionPercent,
-        method: params.method,
-      }).catch((err) => {
-        console.warn(`[Attendance Notify] Could not send email to ${recipient.email}:`, err);
       });
     }
   } catch (error) {

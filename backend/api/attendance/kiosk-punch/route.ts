@@ -213,24 +213,9 @@ export async function POST(request: Request) {
       },
     });
 
-    // Dispatch async notification to GMD & Super Admin
+    // Dispatch async in-app notification to GMD & Super Admin (individual sign-in emails disabled)
     const subsidiaryName = matched.assignments?.[0]?.subsidiary?.legalName || 'BEMS Group';
     const departmentName = matched.assignments?.[0]?.department?.name;
-
-    if (isLate && deductionPercent > 0) {
-      void sendStaffAttendanceDeductionEmail({
-        employeeId: matched.id,
-        employeeName: matched.legalName,
-        employeeNumber: matched.employeeNumber,
-        workEmail: matched.workEmail,
-        workDate,
-        reasonType: 'LATE',
-        checkInTimeStr: currentTimeStr,
-        deductionPercent,
-        deductionMinor,
-        monthlyGrossMinor,
-      }).catch(() => {});
-    }
 
     notifyGmdStaffClockIn({
       employee: {

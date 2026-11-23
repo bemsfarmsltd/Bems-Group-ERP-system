@@ -282,23 +282,8 @@ export async function POST(request: Request) {
         },
       });
 
-      // Dispatch async notification to GMD & Super Admin (only on new check-in)
+      // Dispatch async in-app notification to GMD & Super Admin (only on new check-in; individual sign-in emails disabled)
       if (!existing?.checkInTime) {
-        if (status === 'LATE' && deductionPercent > 0) {
-          void sendStaffAttendanceDeductionEmail({
-            employeeId: employee.id,
-            employeeName: employee.legalName,
-            employeeNumber: employee.employeeNumber,
-            workEmail: employee.workEmail,
-            workDate,
-            reasonType: 'LATE',
-            checkInTimeStr: currentTimeStr,
-            deductionPercent,
-            deductionMinor,
-            monthlyGrossMinor,
-          }).catch(() => {});
-        }
-
         const subsidiaryName = employee.assignments[0]?.subsidiary?.legalName || 'BEMS Group';
         const departmentName = employee.assignments[0]?.department?.name;
 
