@@ -17,7 +17,7 @@ export function postingSources(tx: FinanceTx, organizationId: string, source?: {
       UNION ALL
       SELECT 'RECORDED_PAYMENT', d."id", d."externalReference", d."beneficiaryName",
         (d."paidAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Africa/Lagos')::date::text, d."amountMinor"
-      FROM "Disbursement" d WHERE d."payerOrgId"=${organizationId} AND d."currency"='NGN' AND d."status"='RECIPIENT_CONFIRMED'
+      FROM "Disbursement" d WHERE d."payerOrgId"=${organizationId} AND d."currency"='NGN' AND d."status" IN ('PAID','SETTLED','RECIPIENT_CONFIRMED')
         AND (${source?.kind ?? 'RECORDED_PAYMENT'}='RECORDED_PAYMENT') AND (${source?.id ?? null}::text IS NULL OR d."id"=${source?.id ?? null})
       UNION ALL
       SELECT 'INTERCOMPANY', n."id", n."noteNumber", n."description",

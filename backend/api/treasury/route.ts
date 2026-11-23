@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
     const subsidiary = searchParams.get('subsidiary') || searchParams.get('organization_id');
 
     let reqWhere: any = { approvalStatus: 'APPROVED', paymentStatus: { in: ['UNPAID', 'RECIPIENT_REPORTED_ISSUE'] } };
-    let disbWhere: any = { status: 'RECIPIENT_CONFIRMED' };
+    let disbWhere: any = { status: { in: ['PAID', 'SETTLED', 'RECIPIENT_CONFIRMED'] } };
     let bankWhere: any = { status: 'ACTIVE' };
 
     const { resolveAuthorizedOrganizationScope } = await import('@/lib/organizations');

@@ -171,7 +171,7 @@ export function RecurringCommitmentsView({ businessName }: { businessName: strin
         const matchesPayment =
           paymentFilter === 'ALL' ||
           (paymentFilter === 'PAID'
-            ? request.paymentStatus === 'RECIPIENT_CONFIRMED' || request.paymentStatus === 'AWAITING_RECIPIENT_CONFIRMATION'
+            ? ['PAID', 'SETTLED', 'RECIPIENT_CONFIRMED', 'AWAITING_RECIPIENT_CONFIRMATION'].includes(request.paymentStatus)
             : request.paymentStatus === 'UNPAID');
 
         return matchesQuery && matchesStatus && matchesCadence && matchesPayment;

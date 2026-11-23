@@ -26,7 +26,7 @@ export function InvoicesQueue({ requests }: InvoicesQueueProps) {
       return r.paymentStatus === "UNPAID";
     }
     if (activeTab === "PAID") {
-      return ["RECIPIENT_CONFIRMED", "RECIPIENT_REPORTED_ISSUE", "AWAITING_RECIPIENT_CONFIRMATION", "VERIFIED_PAID", "RECORDED"].includes(r.paymentStatus);
+      return ["PAID", "SETTLED", "RECIPIENT_CONFIRMED", "RECIPIENT_REPORTED_ISSUE", "AWAITING_RECIPIENT_CONFIRMATION", "VERIFIED_PAID", "RECORDED"].includes(r.paymentStatus);
     }
     if (activeTab === "RECENT") {
       return r.approvalStatus === "IN_REVIEW" || r.approvalStatus === "SUBMITTED";

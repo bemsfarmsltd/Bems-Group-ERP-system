@@ -276,6 +276,33 @@ export async function GET(request: Request) {
       return created;
     };
 
+    const SETTLED_PAYMENT_STATUSES = new Set([
+      'PAID',
+      'RECIPIENT_CONFIRMED',
+      'SETTLED',
+      'COMPLETED',
+      'DISBURSED',
+      'MONNIFY_SUCCEEDED',
+    ]);
+    const REJECTED_APPROVAL_STATUSES = new Set(['REJECTED', 'DECLINED', 'CANCELLED']);
+
+    const applyRequestToBucket = (b: BucketAccumulator, r: (typeof requests)[number]) => {
+      const isSettled = SETTLED_PAYMENT_STATUSES.has(r.paymentStatus);
+      const isRejected = REJECTED_APPROVAL_STATUSES.has(r.approvalStatus);
+      b.totalTxCount += 1;
+      b.totalRequestedMinor += r.amountMinor;
+      if (r.approvalStatus === 'APPROVED' || isSettled) {
+        b.approvedGrossMinor += r.amountMinor;
+      }
+      if (isSettled) {
+        b.settledTxCount += 1;
+        b.settledMinor += r.amountMinor;
+      } else if (!isRejected) {
+        b.pendingMinor += r.amountMinor;
+      }
+      b.chargesMinor += feesByRequest.get(r.id) ?? BigInt(0);
+    };
+
     if (view === 'ENTITIES') {
       for (const org of organizations) {
         getOrCreate(org.id, org.legalName, org.code, org.type);
@@ -283,24 +310,18 @@ export async function GET(request: Request) {
       for (const r of requests) {
         const b = buckets.get(r.subsidiaryId);
         if (!b) continue;
-        b.totalTxCount += 1;
-        b.totalRequestedMinor += r.amountMinor;
-        if (r.approvalStatus === 'APPROVED') {
-          b.approvedGrossMinor += r.amountMinor;
-          if (r.paymentStatus === 'UNPAID' || r.paymentStatus === 'AWAITING_RECIPIENT_CONFIRMATION') {
-            b.pendingMinor += r.amountMinor;
-          }
-          if (r.paymentStatus === 'RECIPIENT_CONFIRMED') {
-            b.settledTxCount += 1;
-            b.settledMinor += r.amountMinor;
-          }
-        }
-        b.chargesMinor += feesByRequest.get(r.id) ?? BigInt(0);
+        applyRequestToBucket(b, r);
       }
       for (const d of disbursements) {
-        if (d.status === 'RECIPIENT_CONFIRMED' && !d.requestId) {
+        if (SETTLED_PAYMENT_STATUSES.has(d.status) && !d.requestId) {
           const b = buckets.get(d.payerOrgId);
-          if (b) b.settledMinor += d.amountMinor;
+          if (b) {
+            b.totalTxCount += 1;
+            b.settledTxCount += 1;
+            b.approvedGrossMinor += d.amountMinor;
+            b.totalRequestedMinor += d.amountMinor;
+            b.settledMinor += d.amountMinor;
+          }
         }
       }
     } else if (view === 'STAFF') {
@@ -327,19 +348,7 @@ export async function GET(request: Request) {
           r.requester?.employeeNumber || r.requester?.role || 'STAFF',
           orgMap.get(r.subsidiaryId)?.code || '',
         );
-        b.totalTxCount += 1;
-        b.totalRequestedMinor += r.amountMinor;
-        if (r.approvalStatus === 'APPROVED') {
-          b.approvedGrossMinor += r.amountMinor;
-          if (r.paymentStatus === 'UNPAID' || r.paymentStatus === 'AWAITING_RECIPIENT_CONFIRMATION') {
-            b.pendingMinor += r.amountMinor;
-          }
-          if (r.paymentStatus === 'RECIPIENT_CONFIRMED') {
-            b.settledTxCount += 1;
-            b.settledMinor += r.amountMinor;
-          }
-        }
-        b.chargesMinor += feesByRequest.get(r.id) ?? BigInt(0);
+        applyRequestToBucket(b, r);
       }
     } else if (view === 'ACCOUNTS') {
       getOrCreate('MONNIFY_MAIN', 'Monnify Treasury Wallet (Group Pool)', 'MONNIFY-POOL', 'WALLET');
@@ -352,7 +361,7 @@ export async function GET(request: Request) {
         b.totalTxCount += 1;
         b.approvedGrossMinor += d.amountMinor;
         b.totalRequestedMinor += d.amountMinor;
-        if (d.status === 'RECIPIENT_CONFIRMED') {
+        if (SETTLED_PAYMENT_STATUSES.has(d.status)) {
           b.settledTxCount += 1;
           b.settledMinor += d.amountMinor;
         } else {
@@ -376,18 +385,7 @@ export async function GET(request: Request) {
       for (const r of requests) {
         const typeKey = r.requestType || 'ORDINARY';
         const b = getOrCreate(typeKey, typeKey.replaceAll('_', ' '), typeKey, 'Request Flow');
-        b.totalTxCount += 1;
-        b.totalRequestedMinor += r.amountMinor;
-        if (r.approvalStatus === 'APPROVED') {
-          b.approvedGrossMinor += r.amountMinor;
-          if (r.paymentStatus === 'RECIPIENT_CONFIRMED') {
-            b.settledTxCount += 1;
-            b.settledMinor += r.amountMinor;
-          } else {
-            b.pendingMinor += r.amountMinor;
-          }
-        }
-        b.chargesMinor += feesByRequest.get(r.id) ?? BigInt(0);
+        applyRequestToBucket(b, r);
       }
       const payrollDisb = disbursements.filter((d) => !d.requestId);
       if (payrollDisb.length > 0) {
@@ -396,7 +394,7 @@ export async function GET(request: Request) {
           b.totalTxCount += 1;
           b.approvedGrossMinor += d.amountMinor;
           b.totalRequestedMinor += d.amountMinor;
-          if (d.status === 'RECIPIENT_CONFIRMED') {
+          if (SETTLED_PAYMENT_STATUSES.has(d.status)) {
             b.settledTxCount += 1;
             b.settledMinor += d.amountMinor;
           } else {
@@ -408,18 +406,7 @@ export async function GET(request: Request) {
       for (const r of requests) {
         const cat = r.category || 'UNCATEGORIZED';
         const b = getOrCreate(cat, cat.replaceAll('_', ' '), cat, 'Expense Category');
-        b.totalTxCount += 1;
-        b.totalRequestedMinor += r.amountMinor;
-        if (r.approvalStatus === 'APPROVED') {
-          b.approvedGrossMinor += r.amountMinor;
-          if (r.paymentStatus === 'RECIPIENT_CONFIRMED') {
-            b.settledTxCount += 1;
-            b.settledMinor += r.amountMinor;
-          } else {
-            b.pendingMinor += r.amountMinor;
-          }
-        }
-        b.chargesMinor += feesByRequest.get(r.id) ?? BigInt(0);
+        applyRequestToBucket(b, r);
       }
     } else if (view === 'RECURRING') {
       getOrCreate('RECURRING_MONTHLY', 'Recurring Commitments (Monthly / Periodic)', 'RECURRING', 'Scheduled');
@@ -427,18 +414,7 @@ export async function GET(request: Request) {
       for (const r of requests) {
         const key = r.isRecurring ? 'RECURRING_MONTHLY' : 'ONE_OFF';
         const b = buckets.get(key)!;
-        b.totalTxCount += 1;
-        b.totalRequestedMinor += r.amountMinor;
-        if (r.approvalStatus === 'APPROVED') {
-          b.approvedGrossMinor += r.amountMinor;
-          if (r.paymentStatus === 'RECIPIENT_CONFIRMED') {
-            b.settledTxCount += 1;
-            b.settledMinor += r.amountMinor;
-          } else {
-            b.pendingMinor += r.amountMinor;
-          }
-        }
-        b.chargesMinor += feesByRequest.get(r.id) ?? BigInt(0);
+        applyRequestToBucket(b, r);
       }
     }
 

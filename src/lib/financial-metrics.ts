@@ -49,7 +49,7 @@ export async function getConsolidatedTreasury(subsidiaryId?: string): Promise<Co
   let disbWhere: any = {
     currency: 'NGN',
     paidAt: { gte: ninetyDaysAgo },
-    status: { in: ['RECIPIENT_CONFIRMED', 'AWAITING_RECIPIENT_CONFIRMATION'] },
+    status: { in: ['PAID', 'SETTLED', 'RECIPIENT_CONFIRMED', 'AWAITING_RECIPIENT_CONFIRMATION'] },
   };
 
   if (subsidiaryId && subsidiaryId !== 'ALL' && subsidiaryId !== 'BEMS-GROUP') {

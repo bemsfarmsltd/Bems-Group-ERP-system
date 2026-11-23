@@ -98,7 +98,7 @@ export function ExecutiveRecurringModal({ request, onClose }: ExecutiveRecurring
   const multiplierText = request.recurringInterval === 'ANNUAL' ? '1×' : request.recurringInterval === 'QUARTERLY' ? '4×' : '12×';
 
   const isApproved = request.approvalStatus === 'APPROVED';
-  const isPaid = request.paymentStatus === 'RECIPIENT_CONFIRMED' || request.paymentStatus === 'AWAITING_RECIPIENT_CONFIRMATION';
+  const isPaid = ['PAID', 'SETTLED', 'RECIPIENT_CONFIRMED', 'AWAITING_RECIPIENT_CONFIRMATION'].includes(request.paymentStatus);
   const isAccounted = request.accountabilityStatus === 'VERIFIED' || request.accountabilityStatus === 'CLOSED';
 
   return (

@@ -81,10 +81,10 @@ export async function GET(req: NextRequest) {
       orderBy: { createdAt: 'desc' }
     });
 
-    // 3. Payments whose receipt has been confirmed by the requesting staff member.
+    // 3. Payments whose receipt has been confirmed or recorded as paid.
     const verifiedDisbursements = await prisma.disbursement.findMany({
       where: {
-        status: 'RECIPIENT_CONFIRMED',
+        status: { in: ['PAID', 'SETTLED', 'RECIPIENT_CONFIRMED'] },
         ...(subsidiary !== 'ALL' ? { payerOrgId: subsidiary } : {})
       },
       include: {
