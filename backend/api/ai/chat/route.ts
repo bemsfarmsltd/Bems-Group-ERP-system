@@ -124,19 +124,26 @@ export async function POST(req: NextRequest) {
       body.is_tag_locked === true;
     const moduleDomain = (body.context?.module_domain || body.moduleDomain || null) as AiAgentDomain | null;
     const isLockedModule = Boolean(moduleDomain && moduleDomain !== 'master');
-    const rawRouteDecision = await resolveAiAgentRouteSmart({
-      message,
-      explicitMode: isLockedModule ? moduleDomain! : explicitAgentMode,
-      moduleDomain,
-      isTagLocked: isLockedModule ? true : explicitTagLocked,
-      threadDomain: body.context?.thread_domain || body.thread_domain,
-      history: body.history || [],
-      targetElement: body.context?.target_element,
-      currentPage: body.context?.target_element?.page || '',
-    });
     const routeDecision = isLockedModule
-      ? { ...rawRouteDecision, domain: moduleDomain as AiAgentDomain, isCrossDomain: false }
-      : rawRouteDecision;
+      ? {
+          domain: moduleDomain as AiAgentDomain,
+          isCrossDomain: false,
+          cleanMessage: message,
+          confidence: 1,
+          reason: 'Direct module agent binding (Control Center routing bypassed)',
+          intent: undefined,
+          matchedSignals: ['direct_module_agent'],
+        }
+      : await resolveAiAgentRouteSmart({
+          message,
+          explicitMode: explicitAgentMode,
+          moduleDomain,
+          isTagLocked: explicitTagLocked,
+          threadDomain: body.context?.thread_domain || body.thread_domain,
+          history: body.history || [],
+          targetElement: body.context?.target_element,
+          currentPage: body.context?.target_element?.page || '',
+        });
 
     const activeAgentMode: AiAgentDomain = routeDecision.domain;
     const cleanUserMessage = routeDecision.cleanMessage || message;
