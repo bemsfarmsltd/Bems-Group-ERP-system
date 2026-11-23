@@ -251,6 +251,12 @@ export async function buildBackendServer() {
       logger.warn({ err }, 'Could not ensure Operations Phase 1 schema tables at startup');
     }
     try {
+      const { ensureInnovationSchema } = await import('@/lib/innovation-ensure-schema');
+      await ensureInnovationSchema();
+    } catch (err) {
+      logger.warn({ err }, 'Could not ensure Product Management & Innovation tables at startup');
+    }
+    try {
       const { startWalletWorker } = await import('@/lib/wallet/runtime-worker');
       startWalletWorker();
       const { ensureMorningDigestSchedulerStarted } = await import('@/lib/notifications/scheduler');

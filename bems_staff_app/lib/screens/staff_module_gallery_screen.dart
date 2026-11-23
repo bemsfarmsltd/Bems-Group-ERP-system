@@ -9,6 +9,7 @@ import 'staff_main_screen.dart';
 import 'staff_admin_chat_screen.dart';
 import 'modules/staff_module_workstation_screen.dart';
 import 'modules/staff_operations_screen.dart';
+import 'modules/staff_innovation_screen.dart';
 import 'modules/staff_hr_screen.dart';
 import 'modules/hr/digital_id_card_screen.dart';
 
@@ -709,44 +710,21 @@ class _StaffModuleGalleryScreenState extends State<StaffModuleGalleryScreen> wit
         },
       ),
 
-      // 6. Innovation Management System
+      // 6. Product Management & Innovation System
       _ModuleItem(
         id: 'innovation',
-        eyebrow: 'TECHNOLOGY & R&D',
-        title: 'Innovation Management System',
-        description: 'Proprietary software technologies, digital platforms, system architecture, and technology R&D.',
-        badgeText: 'PIPELINE',
-        badgeColor: const Color(0xFF64748B),
+        eyebrow: 'PRODUCT & INNOVATION',
+        title: 'Product Management & Innovation',
+        description: 'Submit product ideas, collaborate on shared brainstorming boards, view roadmaps & PRDs, and contribute research.',
+        badgeText: 'ACTIVE',
+        badgeColor: const Color(0xFF059669),
         icon: Icons.code_rounded,
         gradient: [const Color(0xFF0891B2), const Color(0xFF0E7490)],
         onTap: (ctx) {
           Navigator.push(
             ctx,
             MaterialPageRoute(
-              builder: (_) => StaffModuleWorkstationScreen(
-                user: user,
-                config: const ModuleConfig(
-                  id: 'innovation',
-                  eyebrow: 'TECHNOLOGY & R&D',
-                  title: 'Innovation Management System',
-                  subtitle: 'Proprietary Platforms & Digital Systems',
-                  description: 'Proprietary software technologies, digital platforms, system architecture, and technology R&D.',
-                  icon: Icons.code_rounded,
-                  gradientColors: [Color(0xFF0891B2), Color(0xFF0E7490)],
-                  statusText: 'Pipeline (Phase 2)',
-                  quickActions: [
-                    {'title': 'SmartAIRS Platform', 'desc': 'State revenue automation and field terminals', 'icon': Icons.terminal_rounded, 'color': Color(0xFF0891B2)},
-                    {'title': 'Software Architecture', 'desc': 'Cloud services and core ERP infrastructure', 'icon': Icons.code_rounded, 'color': Color(0xFF7C3AED)},
-                  ],
-                  metricCards: [
-                    {'label': 'STATUS', 'value': 'Pipeline', 'sub': 'Phase 2 Development'},
-                    {'label': 'TECH SUBSIDIARY', 'value': 'BemsSoft Hub', 'sub': 'Enterprise Systems'},
-                  ],
-                  sampleTasks: [
-                    {'task': 'Cloud Infrastructure Framework', 'details': 'In active design', 'time': 'Phase 2'},
-                  ],
-                ),
-              ),
+              builder: (_) => StaffInnovationScreen(user: user),
             ),
           );
         },

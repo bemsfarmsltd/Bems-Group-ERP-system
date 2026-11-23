@@ -46,9 +46,9 @@ export const STAFF_APP_MODULE_CATALOG: StaffAppModuleDef[] = [
   },
   {
     key: 'innovation',
-    label: 'Innovation & R&D',
-    description: 'Digital systems, software engineering, and R&D initiatives.',
-    defaultEnabled: false,
+    label: 'Product Management & Innovation',
+    description: 'Product portfolios, ideas, shared brainstorming canvases, roadmaps, PRDs, and research.',
+    defaultEnabled: true,
   },
 ];
 

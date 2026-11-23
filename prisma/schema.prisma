@@ -2767,3 +2767,759 @@ model OpsAutomationRule {
 
   @@index([organizationId, isActive])
 }
+
+// ============================================================================
+// PRODUCT MANAGEMENT & INNOVATION SYSTEM (SECTIONS 1-69)
+// ============================================================================
+
+model ProductPortfolio {
+  id             String    @id @default(uuid())
+  portfolioCode  String    @unique
+  organizationId String
+  name           String
+  description    String?
+  strategicTheme String?
+  targetMarket   String?
+  ownerId        String?
+  sponsorId      String?
+  status         String    @default("ACTIVE") // ACTIVE | PAUSED | ARCHIVED
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  products       Product[]
+
+  @@index([organizationId, status])
+}
+
+model Product {
+  id              String            @id @default(uuid())
+  productCode     String            @unique
+  organizationId  String
+  portfolioId     String?
+  portfolio       ProductPortfolio? @relation(fields: [portfolioId], references: [id], onDelete: SetNull)
+  name            String
+  logoUrl         String?
+  category        String            @default("PLATFORM") // PLATFORM | SAAS | INTERNAL | PUBLIC_SECTOR | HARDWARE | MOBILE
+  productType     String            @default("SAAS") // INTERNAL | SAAS | PUBLIC_SECTOR | HARDWARE
+  summary         String
+  vision          String?
+  mission         String?
+  targetMarket    String?
+  targetCustomers String?
+  valueProposition String?
+  businessModel   String?
+  differentiation String?
+  strategyJson    String?           // SWOT, Lean Canvas, Business Model Canvas, Positioning
+  strategyStatus  String            @default("APPROVED") // DRAFT | STAKEHOLDER_REVIEW | REVISION | APPROVED | ACTIVE | SUPERSEDED
+  strategyVersion Int               @default(1)
+  lifecycleStage  String            @default("DEVELOPMENT") // IDEA | DISCOVERY | VALIDATION | APPROVED | DEVELOPMENT | PILOT | LAUNCHED | GROWTH | MATURE | MAINTENANCE | RETIRED
+  status          String            @default("ACTIVE") // ACTIVE | AT_RISK | PAUSED | RETIRED | ARCHIVED
+  healthScore     Int               @default(92)
+  strategicPriority String          @default("HIGH") // CRITICAL | HIGH | MEDIUM | LOW
+  ownerId         String?
+  sponsorId       String?
+  nextMilestone   String?
+  nextMilestoneAt DateTime?
+  archivalReason  String?
+  version         Int               @default(1)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  memberships     ProductMembership[]
+  goals           ProductGoal[]
+  boards          BrainstormBoard[]
+  ideas           ProductIdea[]
+  opportunities   ProductOpportunity[]
+  feedbackItems   CustomerFeedbackInsight[]
+  researchRecords ProductResearchRecord[]
+  features        ProductFeature[]
+  roadmapItems    ProductRoadmapItem[]
+  prds            ProductRequirementDoc[]
+  designArtifacts ProductDesignArtifact[]
+  experiments     ProductExperiment[]
+  releases        ProductRelease[]
+  launchChecklists ProductLaunchChecklist[]
+  metrics         ProductMetricSnapshot[]
+  budgets         ProductBudgetPlan[]
+  risks           ProductRiskItem[]
+  decisions       ProductDecisionLog[]
+  approvals       ProductApprovalRequest[]
+
+  @@index([organizationId, status, lifecycleStage])
+  @@index([portfolioId])
+}
+
+model ProductMembership {
+  id             String   @id @default(uuid())
+  productId      String
+  product        Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  employeeId     String
+  productRole    String   @default("CONTRIBUTOR") // PRODUCT_OWNER | PRODUCT_MANAGER | RESEARCHER | DESIGNER | ENGINEERING_LEAD | QA_REVIEWER | FINANCE_REVIEWER | EXECUTIVE_SPONSOR | CONTRIBUTOR | VIEWER
+  accessScope    String   @default("CONTRIBUTE") // READ_ONLY | CONTRIBUTE | REVIEW | MANAGE | APPROVE
+  status         String   @default("ACTIVE") // ACTIVE | PENDING_REQUEST | REVOKED
+  isFollowing    Boolean  @default(true)
+  joinedAt       DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([productId, employeeId])
+  @@index([employeeId, status])
+}
+
+model ProductGoal {
+  id               String             @id @default(uuid())
+  productId        String
+  product          Product            @relation(fields: [productId], references: [id], onDelete: Cascade)
+  organizationId   String
+  objectiveTitle   String
+  purpose          String?
+  measurementCycle String             @default("Q4 2026") // e.g., Q4 2026, FY 2026
+  ownerId          String?
+  sponsorId        String?
+  status           String             @default("ON_TRACK") // ON_TRACK | AT_RISK | OFF_TRACK | ACHIEVED
+  confidence       Int                @default(80)
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  keyResults       ProductKeyResult[]
+
+  @@index([productId, status])
+}
+
+model ProductKeyResult {
+  id             String      @id @default(uuid())
+  goalId         String
+  goal           ProductGoal @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  metricName     String
+  unit           String      @default("%")
+  baselineValue  Float       @default(0)
+  targetValue    Float       @default(100)
+  actualValue    Float       @default(0)
+  dataSource     String      @default("ERP Telemetry")
+  updateSchedule String      @default("WEEKLY")
+  confidence     Int         @default(85)
+  ownerId        String?
+  status         String      @default("ON_TRACK")
+  updatedAt      DateTime    @updatedAt
+}
+
+model BrainstormBoard {
+  id             String                   @id @default(uuid())
+  boardCode      String                   @unique
+  organizationId String
+  productId      String?
+  product        Product?                 @relation(fields: [productId], references: [id], onDelete: SetNull)
+  title          String
+  description    String?
+  templateType   String                   @default("FREEFORM") // FREEFORM | MIND_MAP | SWOT | JOURNEY_MAP | STORY_MAP | BUSINESS_MODEL_CANVAS | LEAN_CANVAS | IMPACT_EFFORT | OST
+  visibility     String                   @default("TEAM") // PRIVATE | TEAM | COMPANY
+  facilitatorId  String?
+  sessionStatus  String                   @default("ACTIVE") // SCHEDULED | ACTIVE | VOTING | CONCLUDED | FOLLOW_UP_ASSIGNED | ARCHIVED
+  agenda         String?
+  timeboxMinutes Int                      @default(45)
+  votingMaxDots  Int                      @default(5)
+  sessionSummary String?
+  nextReviewDate DateTime?
+  version        Int                      @default(1)
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+
+  objects        BrainstormCanvasObject[]
+  connectors     BrainstormConnector[]
+  snapshots      BrainstormSnapshot[]
+
+  @@index([organizationId, productId])
+}
+
+model BrainstormCanvasObject {
+  id              String          @id @default(uuid())
+  boardId         String
+  board           BrainstormBoard @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  objectType      String          @default("STICKY") // STICKY | TEXT | SHAPE | FRAME | TABLE | DIAGRAM | RECORD_CARD
+  content         String
+  subtitle        String?
+  x               Float           @default(100)
+  y               Float           @default(100)
+  width           Float           @default(220)
+  height          Float           @default(150)
+  rotation        Float           @default(0)
+  zIndex          Int             @default(1)
+  color           String          @default("#FEF08A")
+  clusterTag      String?
+  styleJson       String?
+  creatorId       String
+  creatorName     String?
+  votesCount      Int             @default(0)
+  voterIdsJson    String?         // JSON array of employeeIds to prevent duplicate votes
+  commentsJson    String?         // JSON array of object comments
+  convertedToType String?         // IDEA | OPPORTUNITY | FEATURE | PRD | PROJECT_TASK
+  convertedToId   String?
+  convertedCode   String?
+  version         Int             @default(1)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@index([boardId])
+}
+
+model BrainstormConnector {
+  id             String          @id @default(uuid())
+  boardId        String
+  board          BrainstormBoard @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  sourceObjectId String
+  targetObjectId String
+  label          String?
+  lineStyle      String          @default("CURVED") // STRAIGHT | CURVED | STEP
+  color          String          @default("#64748B")
+  createdAt      DateTime        @default(now())
+
+  @@index([boardId])
+}
+
+model BrainstormSnapshot {
+  id            String          @id @default(uuid())
+  boardId       String
+  board         BrainstormBoard @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  label         String
+  snapshotJson  String
+  createdById   String
+  createdByName String?
+  createdAt     DateTime        @default(now())
+
+  @@index([boardId, createdAt])
+}
+
+model ProductIdea {
+  id                 String    @id @default(uuid())
+  ideaNumber         String    @unique
+  organizationId     String
+  productId          String?
+  product            Product?  @relation(fields: [productId], references: [id], onDelete: SetNull)
+  title              String
+  description        String
+  category           String    @default("NEW_CAPABILITY") // NEW_CAPABILITY | NEW_PRODUCT | UX_IMPROVEMENT | AUTOMATION | REVENUE | COMPLIANCE
+  targetUsers        String?
+  problemStatement   String
+  expectedValue      String?
+  strategicTheme     String?
+  urgency            String    @default("MEDIUM") // CRITICAL | HIGH | MEDIUM | LOW
+  sourceType         String    @default("STAFF_SUBMISSION") // STAFF_SUBMISSION | BRAINSTORM_CANVAS | CUSTOMER_FEEDBACK | RESEARCH | EXECUTIVE
+  sourceCanvasId     String?
+  sourceObjectId     String?
+  evidenceLinksJson  String?
+  attachmentsJson    String?
+  assumptions        String?
+  submitterId        String
+  submitterName      String
+  reviewerId         String?
+  reviewerName       String?
+  status             String    @default("SUBMITTED") // DRAFT | SUBMITTED | TRIAGE | REVIEW | RESEARCH_REQUIRED | SHORTLISTED | APPROVED | DEFERRED | REJECTED
+  rubricScore        Float?
+  publicDecisionNote String?   // Visible to submitter & staff
+  restrictedNote     String?   // Visible only to reviewers & executives
+  votesCount         Int       @default(1)
+  voterIdsJson       String?   // JSON array of employeeIds
+  convertedFeatureId String?
+  convertedOppId     String?
+  clientSubmissionId String?   @unique
+  reviewedAt         DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@index([organizationId, status])
+  @@index([submitterId])
+  @@index([productId])
+}
+
+model ProductOpportunity {
+  id                  String    @id @default(uuid())
+  opportunityCode     String    @unique
+  organizationId      String
+  productId           String?
+  product             Product?  @relation(fields: [productId], references: [id], onDelete: SetNull)
+  parentOpportunityId String?
+  sourceIdeaId        String?
+  sourceCanvasObjId   String?
+  title               String
+  problemStatement    String
+  targetOutcome       String?
+  targetPersona       String?
+  assumptions         String?
+  hypothesis          String?
+  investigationPlan   String?
+  evidenceSummary     String?
+  confidenceScore     Int       @default(70) // 0-100
+  strategicAlignment  Int       @default(85) // 0-100
+  addressableUsers    String?
+  potentialImpact     String    @default("HIGH") // HIGH | MEDIUM | LOW
+  feasibility         String    @default("HIGH") // HIGH | MEDIUM | LOW
+  stage               String    @default("PROBLEM_IDENTIFIED") // PROBLEM_IDENTIFIED | RESEARCH_PLANNED | EVIDENCE_COLLECTION | SYNTHESIS | HYPOTHESIS | VALIDATION | DECISION
+  decision            String    @default("PENDING") // PENDING | PROCEED | ITERATE | PAUSE | REJECT
+  decisionRationale   String?
+  ownerId             String?
+  ownerName           String?
+  reviewDate          DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([organizationId, productId, stage])
+}
+
+model CustomerFeedbackInsight {
+  id               String   @id @default(uuid())
+  feedbackCode     String   @unique
+  organizationId   String
+  productId        String?
+  product          Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  sourceChannel    String   @default("STAFF_APP") // STAFF_APP | SUPPORT | SURVEY | FIELD_OPS | SALES | TELEMETRY
+  category         String   @default("FEATURE_REQUEST") // BUG | USABILITY | FEATURE_REQUEST | PRAISE | PERFORMANCE | COMPLIANCE | PROCESS_IMPROVEMENT
+  title            String
+  description      String
+  stepsToReproduce String?
+  expectedOutcome  String?
+  customerSegment  String?
+  themeTag         String?
+  severity         String   @default("MEDIUM") // CRITICAL | HIGH | MEDIUM | LOW
+  status           String   @default("NEW") // NEW | TRIAGED | LINKED_TO_FEATURE | ROUTED_TO_ENGINEERING | RESOLVED | CLOSED
+  reporterId       String?
+  reporterName     String?
+  linkedFeatureId  String?
+  linkedOppId      String?
+  linkedWorkItemId String?
+  resolutionNote   String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([organizationId, productId, category, status])
+}
+
+model ProductResearchRecord {
+  id                 String    @id @default(uuid())
+  researchCode       String    @unique
+  organizationId     String
+  productId          String?
+  product            Product?  @relation(fields: [productId], references: [id], onDelete: SetNull)
+  researchType       String    @default("USER_INTERVIEW") // USER_INTERVIEW | COMPETITOR_ANALYSIS | MARKET_TREND | USABILITY_STUDY | PERSONA | JOURNEY_MAP
+  title              String
+  researchQuestion   String
+  methodology        String?
+  competitorName     String?
+  personaProfileJson String?   // Goals, Jobs-to-be-done, Pain points, Confidence, Source
+  journeyStagesJson  String?   // Stages, Touchpoints, Emotions, Friction, Opportunities
+  capabilityMatrixJson String? // Side-by-side competitor capability matrix
+  findingsSummary    String?
+  sourcesVerifiedAt  DateTime?
+  consentObtained    Boolean   @default(true)
+  isConfidential     Boolean   @default(false)
+  assigneeId         String?
+  assigneeName       String?
+  reviewerId         String?
+  status             String    @default("ASSIGNED") // ASSIGNED | IN_PROGRESS | SUBMITTED | REVIEW | ACCEPTED | REVISION_NEEDED
+  linkedOppId        String?
+  linkedFeatureId    String?
+  dueDate            DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@index([organizationId, productId, researchType, status])
+  @@index([assigneeId])
+}
+
+model ProductFeature {
+  id                 String   @id @default(uuid())
+  featureCode        String   @unique
+  organizationId     String
+  productId          String
+  product            Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  sourceIdeaId       String?
+  opportunityId      String?
+  sourceCanvasObjId  String?
+  title              String
+  problemStatement   String
+  valueProposition   String?
+  intendedUser       String?
+  theme              String?
+  initiative         String?
+  workflowStage      String   @default("IDEA") // IDEA | DISCOVERY | VALIDATED | PRIORITIZED | APPROVED | DEVELOPMENT_READY | IN_DEVELOPMENT | VERIFIED | RELEASED | IMPACT_REVIEW
+  priority           String   @default("HIGH") // CRITICAL | HIGH | MEDIUM | LOW
+  moscowCategory     String   @default("MUST_HAVE") // MUST_HAVE | SHOULD_HAVE | COULD_HAVE | WONT_HAVE
+  mvpBucket          String   @default("MUST_HAVE") // MUST_HAVE | SHOULD_HAVE | LATER | EXCLUDED
+  roadmapHorizon     String   @default("NOW") // NOW | NEXT | LATER | Q1 | Q2 | Q3 | Q4
+  isCommitted        Boolean  @default(false)
+  targetReleaseCode  String?
+  targetDate         DateTime?
+  acceptanceCriteria String?
+  dependenciesJson   String?
+  evidenceSummary    String?
+  // Prioritization Engine (Section 15)
+  riceReach          Float    @default(500)
+  riceImpact         Float    @default(2.0) // 0.25, 0.5, 1, 2, 3
+  riceConfidence     Float    @default(80)  // %
+  riceEffort         Float    @default(2.0) // person-months
+  computedRiceScore  Float    @default(400)
+  iceScore           Float    @default(7.5)
+  weightedScore      Float    @default(82)
+  manualOverrideRank Int?
+  overrideReason     String?
+  scoredById         String?
+  scoredAt           DateTime?
+  // Engineering & Delivery Links (Section 22)
+  linkedPrdId        String?
+  linkedPrdVersion   Int?
+  linkedWorkItemId   String?
+  linkedWorkItemCode String?
+  engineeringStatus  String   @default("NOT_HANDED_OFF") // NOT_HANDED_OFF | HANDOFF_AUTHORIZED | EPIC_LINKED | IN_SPRINT | QA_TESTING | READY_FOR_ACCEPTANCE | ACCEPTED
+  progressPercent    Int      @default(0)
+  ownerId            String?
+  ownerName          String?
+  reviewerId         String?
+  decisionReason     String?
+  version            Int      @default(1)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([organizationId, productId, workflowStage])
+  @@index([roadmapHorizon])
+}
+
+model ProductRoadmapItem {
+  id               String    @id @default(uuid())
+  organizationId   String
+  productId        String
+  product          Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  featureId        String?
+  title            String
+  horizon          String    @default("NOW") // NOW | NEXT | LATER
+  quarterLabel     String    @default("Q4 2026")
+  commitmentLevel  String    @default("TENTATIVE") // TENTATIVE | APPROVED_COMMITMENT
+  startDate        DateTime?
+  targetDate       DateTime?
+  baselineDate     DateTime?
+  status           String    @default("PLANNED") // PLANNED | IN_PROGRESS | ON_TRACK | AT_RISK | DELIVERED
+  dependenciesNote String?
+  ownerName        String?
+  isPublished      Boolean   @default(true)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([organizationId, productId, horizon])
+}
+
+model ProductRequirementDoc {
+  id                String                      @id @default(uuid())
+  prdCode           String                      @unique
+  organizationId    String
+  productId         String
+  product           Product                     @relation(fields: [productId], references: [id], onDelete: Cascade)
+  featureId         String?
+  title             String
+  currentVersion    Int                         @default(1)
+  approvedVersion   Int?
+  status            String                      @default("DRAFT") // DRAFT | PRODUCT_REVIEW | ENGINEERING_FEASIBILITY | CHANGES_REQUESTED | APPROVED | SUPERSEDED
+  overview          String
+  problemStatement  String
+  targetOutcomes    String?
+  personas          String?
+  inScope           String
+  outOfScope        String?
+  userStories       String?
+  userFlows         String?
+  functionalReqs    String
+  nonFunctionalReqs String?
+  dataModelNotes    String?
+  securityPrivacy   String?
+  dependenciesRisks String?
+  acceptanceCriteria String
+  authorId          String
+  authorName        String
+  reviewerId        String?
+  reviewerName      String?
+  approvedById      String?
+  approvedByName    String?
+  approvedAt        DateTime?
+  createdAt         DateTime                    @default(now())
+  updatedAt         DateTime                    @updatedAt
+
+  versions          ProductRequirementVersion[]
+
+  @@index([organizationId, productId, status])
+}
+
+model ProductRequirementVersion {
+  id                 String                @id @default(uuid())
+  prdId              String
+  prd                ProductRequirementDoc @relation(fields: [prdId], references: [id], onDelete: Cascade)
+  versionNumber      Int
+  status             String                @default("DRAFT")
+  snapshotJson       String                // Immutable full snapshot of all 14 PRD sections at this version
+  changeSummary      String?
+  createdById        String
+  createdByName      String
+  approvedById       String?
+  approvedByName     String?
+  approvedAt         DateTime?
+  createdAt          DateTime              @default(now())
+
+  @@unique([prdId, versionNumber])
+}
+
+model ProductDesignArtifact {
+  id               String   @id @default(uuid())
+  designCode       String   @unique
+  organizationId   String
+  productId        String
+  product          Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  featureId        String?
+  prdId            String?
+  title            String
+  artifactType     String   @default("PROTOTYPE") // CONCEPT | WIREFRAME | MOCKUP | USER_FLOW | PROTOTYPE | ACCESSIBILITY_REVIEW
+  externalUrl      String?
+  previewImageUrl  String?
+  versionLabel     String   @default("v1.0")
+  workflowStage    String   @default("DESIGN") // CONCEPT | WIREFRAME | DESIGN | REVIEW | REVISION | APPROVED | HANDOFF
+  designerId       String?
+  designerName     String?
+  reviewerId       String?
+  reviewerName     String?
+  feedbackNotes    String?
+  accessibilityOk  Boolean  @default(true)
+  approvedAt       DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([organizationId, productId, workflowStage])
+}
+
+model ProductExperiment {
+  id               String    @id @default(uuid())
+  experimentCode   String    @unique
+  organizationId   String
+  productId        String
+  product          Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  featureId        String?
+  opportunityId    String?
+  title            String
+  experimentType   String    @default("PILOT") // USABILITY_TEST | AB_TEST | PILOT | PROTOTYPE_TEST | CONCEPT_TEST | TECHNICAL_POC
+  hypothesis       String
+  targetAudience   String
+  intervention     String?
+  targetMetric     String
+  baselineValue    String?
+  successCriterion String
+  sampleSize       String?
+  procedureNotes   String?
+  resultsSummary   String?
+  limitationsNote  String?   // Required: must not hide uncertainty or limitations
+  status           String    @default("PLANNED") // SCOPE_DRAFT | VALIDATION | APPROVED_MVP | DEVELOPMENT | PILOT | EVALUATION | COMPLETED
+  outcomeDecision  String    @default("PENDING") // PENDING | PROCEED | ITERATE | PAUSE | REJECT | MORE_RESEARCH
+  pilotGraduation  String    @default("IN_PILOT") // IN_PILOT | SCALE_APPROVED | ITERATE | STOPPED
+  ownerId          String?
+  ownerName        String?
+  startDate        DateTime?
+  endDate          DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([organizationId, productId, status])
+}
+
+model ProductRelease {
+  id                   String    @id @default(uuid())
+  releaseCode          String    @unique
+  organizationId       String
+  productId            String
+  product              Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  versionTag           String    // e.g. v2.4.0
+  title                String
+  rolloutAudience      String    @default("General Availability")
+  includedFeaturesJson String?   // JSON list of featureCodes
+  defectsFixedJson     String?
+  knownIssues          String?
+  internalNotes        String?
+  externalReleaseNotes String?
+  qaStatus             String    @default("PENDING") // PENDING | IN_QA | PASSED | BLOCKED
+  readinessChecklistJson String?
+  rollbackPlan         String?
+  linkedProjectReleaseId String?
+  workflowStage        String    @default("PLANNED") // PLANNED | IN_DEVELOPMENT | TESTING | RELEASE_CANDIDATE | APPROVED | RELEASED | MONITORING | CLOSED
+  ownerId              String?
+  ownerName            String?
+  approvedById         String?
+  approvedByName       String?
+  targetDate           DateTime?
+  releasedAt           DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  @@index([organizationId, productId, workflowStage])
+}
+
+model ProductLaunchChecklist {
+  id                  String    @id @default(uuid())
+  launchCode          String    @unique
+  organizationId      String
+  productId           String
+  product             Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  releaseId           String?
+  title               String
+  targetAudience      String
+  targetLaunchDate    DateTime?
+  productReadinessOk  Boolean   @default(true)
+  docsTrainingOk      Boolean   @default(true)
+  supportOpsOk        Boolean   @default(true)
+  marketingSalesOk    Boolean   @default(false)
+  legalPrivacyOk      Boolean   @default(true)
+  technicalSecurityOk Boolean   @default(true)
+  blockingRisksCount  Int       @default(0)
+  goNoGoDecision      String    @default("PENDING") // PENDING | GO_APPROVED | CONDITIONAL_GO | NO_GO_HOLD
+  decidedById         String?
+  decidedByName       String?
+  decisionNotes       String?
+  postLaunchSummary   String?
+  decidedAt           DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([organizationId, productId, goNoGoDecision])
+}
+
+model ProductMetricSnapshot {
+  id               String   @id @default(uuid())
+  organizationId   String
+  productId        String
+  product          Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  metricName       String
+  category         String   @default("ADOPTION") // ADOPTION | ACTIVE_USERS | RETENTION | CONVERSION | FEATURE_USAGE | RELIABILITY | SATISFACTION | REVENUE
+  formula          String
+  unit             String   @default("Users")
+  sourceSystem     String   @default("BEMS Product Telemetry")
+  periodLabel      String   @default("Nov 2026")
+  actualValue      Float
+  priorPeriodValue Float    @default(0)
+  targetValue      Float?
+  verificationState String  @default("VERIFIED") // VERIFIED | ESTIMATED | STALE | UNAVAILABLE
+  confidence       Int      @default(95)
+  caveats          String?
+  linkedFeatureCode String?
+  lastProcessedAt  DateTime @default(now())
+  createdAt        DateTime @default(now())
+
+  @@index([organizationId, productId, category])
+}
+
+model ProductBudgetPlan {
+  id                    String   @id @default(uuid())
+  budgetCode            String   @unique
+  organizationId        String
+  productId             String
+  product               Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  fiscalPeriod          String   @default("FY 2026 / Q4")
+  proposedInvestmentMinor BigInt @default(0)
+  approvedCapexMinor    BigInt   @default(0)
+  approvedOpexMinor     BigInt   @default(0)
+  committedSpendMinor   BigInt   @default(0)
+  actualSpendMinor      BigInt   @default(0)
+  attributableRevMinor  BigInt   @default(0)
+  allocationMethodology String   @default("Direct Requisition + 15% Shared Infrastructure")
+  status                String   @default("APPROVED") // DRAFT | FINANCE_REVIEW | APPROVED | REVISION_REQUIRED
+  linkedExpenditureIdsJson String?
+  notes                 String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([organizationId, productId])
+}
+
+model ProductRiskItem {
+  id                     String    @id @default(uuid())
+  riskCode               String    @unique
+  organizationId         String
+  productId              String
+  product                Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  category               String    @default("SECURITY") // SECURITY | PRIVACY | LEGAL | CUSTOMER | OPERATIONAL | FINANCIAL
+  title                  String
+  description            String
+  likelihood             String    @default("MEDIUM") // HIGH | MEDIUM | LOW
+  impact                 String    @default("HIGH") // CRITICAL | HIGH | MEDIUM | LOW
+  mitigationPlan         String
+  isLaunchBlocker        Boolean   @default(false)
+  status                 String    @default("OPEN") // OPEN | MITIGATING | RESIDUAL_ACCEPTED | CLOSED
+  ownerId                String?
+  ownerName              String?
+  residualRiskAcceptedBy String?
+  dueDate                DateTime?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  @@index([organizationId, productId, status])
+}
+
+model ProductDecisionLog {
+  id                  String   @id @default(uuid())
+  decisionCode        String   @unique
+  organizationId      String
+  productId           String
+  product             Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  targetRecordType    String   @default("FEATURE") // STRATEGY | OPPORTUNITY | FEATURE | PRD | EXPERIMENT | RELEASE | LAUNCH | RETIREMENT
+  targetRecordCode    String?
+  title               String
+  alternativesConsidered String?
+  rationale           String
+  outcome             String   @default("APPROVED") // APPROVED | DEFERRED | REJECTED | PIVOTED
+  evidenceLinksJson   String?
+  recordVersion       Int      @default(1)
+  decidedById         String
+  decidedByName       String
+  decidedAt           DateTime @default(now())
+
+  @@index([organizationId, productId, decidedAt])
+}
+
+model ProductApprovalRequest {
+  id                String    @id @default(uuid())
+  approvalCode      String    @unique
+  organizationId    String
+  productId         String
+  product           Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  gateType          String    @default("PRD_APPROVAL") // OPPORTUNITY_GATE | INVESTMENT_GATE | PRD_APPROVAL | FEATURE_APPROVAL | MVP_GATE | RELEASE_GATE | LAUNCH_GO_NO_GO | RETIREMENT_GATE
+  targetRecordType  String    // PRD | FEATURE | OPPORTUNITY | RELEASE | LAUNCH | BUDGET | PRODUCT
+  targetRecordId    String
+  targetRecordCode  String
+  targetVersion     Int       @default(1)
+  snapshotJson      String?   // Exact snapshot approved
+  title             String
+  summary           String
+  requesterId       String
+  requesterName     String
+  assignedApproverId String?
+  assignedRole      String    @default("GMD") // GMD | PRODUCT_OWNER | ENGINEERING_LEAD | QA_REVIEWER
+  status            String    @default("PENDING") // PENDING | APPROVED | CHANGES_REQUESTED | REJECTED | SUPERSEDED
+  decisionNote      String?
+  decidedById       String?
+  decidedByName     String?
+  dueDate           DateTime?
+  decidedAt         DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([organizationId, productId, status])
+  @@index([assignedApproverId, status])
+}
+
+model ProductComment {
+  id               String   @id @default(uuid())
+  organizationId   String
+  productId        String?
+  targetRecordType String   // IDEA | OPPORTUNITY | FEATURE | PRD | DESIGN | EXPERIMENT | RELEASE | CANVAS_OBJECT
+  targetRecordId   String
+  sectionKey       String?  // Optional section anchor for PRD section comments
+  authorId         String
+  authorName       String
+  authorRole       String?
+  body             String
+  isRestrictedNote Boolean  @default(false)
+  mentionsJson     String?
+  createdAt        DateTime @default(now())
+
+  @@index([targetRecordType, targetRecordId, createdAt])
+}
+

@@ -1724,4 +1724,154 @@ class StaffApiService {
       fallbackError: 'Could not sign document.',
     );
   }
+
+  // ===========================================================================
+  // PRODUCT MANAGEMENT & INNOVATION SYSTEM (STAFF APP WORKSPACE)
+  // ===========================================================================
+
+  /// Fetch Staff Product Management & Innovation Workspace (/api/innovation/staff/inbox)
+  static Future<Map<String, dynamic>> fetchInnovationInbox({
+    required String employeeId,
+    String? token,
+  }) async {
+    final res = await _executeWithFailover(
+      (host) => http.get(
+        Uri.parse('$host/api/innovation/staff/inbox'),
+        headers: _headers(token: token, employeeId: employeeId),
+      ),
+      timeout: const Duration(seconds: 12),
+    );
+    final data = res.body.trim().isNotEmpty ? jsonDecode(res.body) : {};
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      return data is Map<String, dynamic> ? data : {};
+    }
+    throw Exception(data['error']?.toString() ?? 'Could not load Product Management workspace.');
+  }
+
+  /// Submit an Idea with idempotent clientSubmissionId (/api/innovation/ideas)
+  static Future<Map<String, dynamic>> submitProductIdea({
+    required String employeeId,
+    required Map<String, dynamic> payload,
+    String? token,
+  }) async {
+    final res = await _executeWithFailover(
+      (host) => http.post(
+        Uri.parse('$host/api/innovation/ideas'),
+        headers: _headers(token: token, employeeId: employeeId),
+        body: jsonEncode(payload),
+      ),
+      timeout: const Duration(seconds: 12),
+    );
+    final data = res.body.trim().isNotEmpty ? jsonDecode(res.body) : {};
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      return data is Map<String, dynamic> ? data : {};
+    }
+    throw Exception(data['error']?.toString() ?? 'Could not submit product idea.');
+  }
+
+  /// Vote or withdraw an Idea (/api/innovation/ideas)
+  static Future<Map<String, dynamic>> patchProductIdea({
+    required String employeeId,
+    required String ideaId,
+    required String action,
+    String? token,
+  }) async {
+    final res = await _executeWithFailover(
+      (host) => http.patch(
+        Uri.parse('$host/api/innovation/ideas'),
+        headers: _headers(token: token, employeeId: employeeId),
+        body: jsonEncode({'id': ideaId, 'action': action}),
+      ),
+      timeout: const Duration(seconds: 12),
+    );
+    final data = res.body.trim().isNotEmpty ? jsonDecode(res.body) : {};
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      return data is Map<String, dynamic> ? data : {};
+    }
+    throw Exception(data['error']?.toString() ?? 'Could not update idea.');
+  }
+
+  /// Add Sticky Note or Convert Canvas Object (/api/innovation/canvases)
+  static Future<Map<String, dynamic>> postCanvasAction({
+    required String employeeId,
+    required Map<String, dynamic> payload,
+    String? token,
+  }) async {
+    final res = await _executeWithFailover(
+      (host) => http.post(
+        Uri.parse('$host/api/innovation/canvases'),
+        headers: _headers(token: token, employeeId: employeeId),
+        body: jsonEncode(payload),
+      ),
+      timeout: const Duration(seconds: 12),
+    );
+    final data = res.body.trim().isNotEmpty ? jsonDecode(res.body) : {};
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      return data is Map<String, dynamic> ? data : {};
+    }
+    throw Exception(data['error']?.toString() ?? 'Could not update brainstorming canvas.');
+  }
+
+  /// Vote on Canvas Sticky Note (/api/innovation/canvases)
+  static Future<Map<String, dynamic>> voteCanvasObject({
+    required String employeeId,
+    required String objectId,
+    String? token,
+  }) async {
+    final res = await _executeWithFailover(
+      (host) => http.patch(
+        Uri.parse('$host/api/innovation/canvases'),
+        headers: _headers(token: token, employeeId: employeeId),
+        body: jsonEncode({'action': 'VOTE_OBJECT', 'objectId': objectId}),
+      ),
+      timeout: const Duration(seconds: 12),
+    );
+    final data = res.body.trim().isNotEmpty ? jsonDecode(res.body) : {};
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      return data is Map<String, dynamic> ? data : {};
+    }
+    throw Exception(data['error']?.toString() ?? 'Could not vote on canvas note.');
+  }
+
+  /// Submit Staff Product Feedback or Research Observation (/api/innovation/discovery)
+  static Future<Map<String, dynamic>> postDiscoveryAction({
+    required String employeeId,
+    required Map<String, dynamic> payload,
+    String? token,
+  }) async {
+    final res = await _executeWithFailover(
+      (host) => http.post(
+        Uri.parse('$host/api/innovation/discovery'),
+        headers: _headers(token: token, employeeId: employeeId),
+        body: jsonEncode(payload),
+      ),
+      timeout: const Duration(seconds: 12),
+    );
+    final data = res.body.trim().isNotEmpty ? jsonDecode(res.body) : {};
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      return data is Map<String, dynamic> ? data : {};
+    }
+    throw Exception(data['error']?.toString() ?? 'Could not submit feedback.');
+  }
+
+  /// Synchronize Offline Innovation Drafts (/api/innovation/staff/sync)
+  static Future<Map<String, dynamic>> syncInnovationDrafts({
+    required String employeeId,
+    required List<Map<String, dynamic>> drafts,
+    String? token,
+  }) async {
+    final res = await _executeWithFailover(
+      (host) => http.post(
+        Uri.parse('$host/api/innovation/staff/sync'),
+        headers: _headers(token: token, employeeId: employeeId),
+        body: jsonEncode({'drafts': drafts}),
+      ),
+      timeout: const Duration(seconds: 15),
+    );
+    final data = res.body.trim().isNotEmpty ? jsonDecode(res.body) : {};
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      return data is Map<String, dynamic> ? data : {};
+    }
+    throw Exception(data['error']?.toString() ?? 'Could not sync offline product drafts.');
+  }
 }
