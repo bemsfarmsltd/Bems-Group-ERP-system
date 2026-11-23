@@ -1,15 +1,40 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Download, Printer, RefreshCw, Search, ShieldCheck, Wallet, Clock, CheckCircle2 } from 'lucide-react';
+import Link from 'next/link';
+import { Download, Printer, RefreshCw, Search, ShieldCheck, Wallet, Clock, CheckCircle2, X, ExternalLink, Eye, Layers, ArrowRight } from 'lucide-react';
 import { resolveApiUrl } from '@/lib/api-client';
 import { walletMoney } from '@/components/wallet/WalletView';
+
+type DrillTransactionItem = {
+  id: string;
+  reference: string;
+  requestNumber: string | null;
+  title: string;
+  subsidiaryName: string;
+  subsidiaryCode: string;
+  requesterName: string;
+  requesterCode: string;
+  category: string;
+  requestType: string;
+  isRecurring: boolean;
+  recurringInterval: string | null;
+  approvalStatus: string;
+  paymentStatus: string;
+  accountabilityStatus: string;
+  channel: string;
+  amountMinor: string;
+  feeMinor: string;
+  isSettled: boolean;
+  date: string;
+};
 
 type ReportRow = {
   organizationId: string;
   name: string;
   code: string;
-  type: string;
+  subtitle?: string;
+  type?: string;
   settledTxCount: number;
   totalTxCount: number;
   approvedGrossMinor: string;
@@ -19,6 +44,7 @@ type ReportRow = {
   pendingMinor: string;
   totalRequestedMinor: string;
   settlementPct: number;
+  transactions?: DrillTransactionItem[];
 };
 
 type ReportStudioPayload = {
@@ -85,6 +111,9 @@ export function ReportStudioView({
   const [data, setData] = useState<ReportStudioPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [selectedDrillRow, setSelectedDrillRow] = useState<ReportRow | null>(null);
+  const [drillFilter, setDrillFilter] = useState<'ALL' | 'SETTLED' | 'PENDING' | 'RECURRING'>('ALL');
+  const [drillSearch, setDrillSearch] = useState('');
 
   const activeViewMeta = VIEW_OPTIONS.find((v) => v.key === viewKey) || VIEW_OPTIONS[0];
 
@@ -454,19 +483,20 @@ export function ReportStudioView({
                 <th style={{ padding: '10px 12px', textAlign: 'right', fontSize: 10, fontWeight: 800, letterSpacing: '0.06em', color: '#64748b', textTransform: 'uppercase' }}>SETTLED TO BANK</th>
                 <th style={{ padding: '10px 12px', textAlign: 'right', fontSize: 10, fontWeight: 800, letterSpacing: '0.06em', color: '#64748b', textTransform: 'uppercase' }}>PENDING (UNPAID)</th>
                 <th style={{ padding: '10px 12px', textAlign: 'right', fontSize: 10, fontWeight: 800, letterSpacing: '0.06em', color: '#64748b', textTransform: 'uppercase' }}>TOTAL REQUESTED</th>
-                <th style={{ padding: '10px 14px', textAlign: 'right', fontSize: 10, fontWeight: 800, letterSpacing: '0.06em', color: '#64748b', textTransform: 'uppercase' }}>SETTL. %</th>
+                <th style={{ padding: '10px 12px', textAlign: 'right', fontSize: 10, fontWeight: 800, letterSpacing: '0.06em', color: '#64748b', textTransform: 'uppercase' }}>SETTL. %</th>
+                <th style={{ padding: '10px 14px', textAlign: 'right', fontSize: 10, fontWeight: 800, letterSpacing: '0.06em', color: '#64748b', textTransform: 'uppercase' }}>DEEP DIVE</th>
               </tr>
             </thead>
             <tbody>
               {loading && !data ? (
                 <tr>
-                  <td colSpan={10} style={{ padding: 28, textAlign: 'center', color: '#64748b' }}>
+                  <td colSpan={11} style={{ padding: 28, textAlign: 'center', color: '#64748b' }}>
                     Loading multi-subsidiary settlement statement…
                   </td>
                 </tr>
               ) : filteredRows.length === 0 ? (
                 <tr>
-                  <td colSpan={10} style={{ padding: 28, textAlign: 'center', color: '#64748b' }}>
+                  <td colSpan={11} style={{ padding: 28, textAlign: 'center', color: '#64748b' }}>
                     No subsidiary records match this filter.
                   </td>
                 </tr>
@@ -474,15 +504,25 @@ export function ReportStudioView({
                 filteredRows.map((row) => (
                   <tr
                     key={row.organizationId}
-                    onClick={() => viewKey === 'ENTITIES' && onSelectBusiness?.(row.organizationId)}
+                    onClick={() => {
+                      setDrillFilter('ALL');
+                      setDrillSearch('');
+                      setSelectedDrillRow(row);
+                    }}
                     style={{
                       borderBottom: '1px solid #f1f5f9',
-                      cursor: viewKey === 'ENTITIES' && onSelectBusiness ? 'pointer' : 'default',
+                      cursor: 'pointer',
                       transition: 'background 0.12s',
                     }}
                     className="hover:bg-orange-50/40"
+                    title={`Click to inspect deeper breakdown for ${row.name}`}
                   >
-                    <td style={{ padding: '11px 14px', fontWeight: 600, color: '#0f172a' }}>{row.name}</td>
+                    <td style={{ padding: '11px 14px', fontWeight: 600, color: '#0f172a' }}>
+                      <div>{row.name}</div>
+                      {row.subtitle && (
+                        <div style={{ fontSize: 10.5, color: '#64748b', fontWeight: 500 }}>{row.subtitle}</div>
+                      )}
+                    </td>
                     <td style={{ padding: '11px 12px', fontFamily: 'var(--font-mono-tech, monospace)', fontSize: 11.5, color: '#475569' }}>{row.code}</td>
                     <td style={{ padding: '11px 12px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: '#334155' }}>
                       {row.settledTxCount} / {row.totalTxCount}
@@ -505,7 +545,7 @@ export function ReportStudioView({
                     <td style={{ padding: '11px 12px', textAlign: 'right', fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: '#0f172a' }}>
                       {fmtNaira(row.totalRequestedMinor)}
                     </td>
-                    <td style={{ padding: '11px 14px', textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
+                    <td style={{ padding: '11px 12px', textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
                       <span
                         style={{
                           padding: '2px 7px',
@@ -518,6 +558,34 @@ export function ReportStudioView({
                       >
                         {row.settlementPct}%
                       </span>
+                    </td>
+                    <td style={{ padding: '11px 14px', textAlign: 'right' }}>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDrillFilter('ALL');
+                          setDrillSearch('');
+                          setSelectedDrillRow(row);
+                        }}
+                        style={{
+                          padding: '4px 9px',
+                          borderRadius: 6,
+                          border: '1px solid #fed7aa',
+                          background: '#fff7ed',
+                          color: '#ea580c',
+                          fontSize: 11,
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 4,
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        <Eye size={12} />
+                        <span>Inspect ({row.transactions?.length ?? row.totalTxCount})</span>
+                      </button>
                     </td>
                   </tr>
                 ))
@@ -549,15 +617,482 @@ export function ReportStudioView({
                   <td style={{ padding: '11px 12px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
                     {fmtNaira(data.totals.totalRequestedMinor)}
                   </td>
-                  <td style={{ padding: '11px 14px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                  <td style={{ padding: '11px 12px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
                     {data.totals.settlementPct}%
                   </td>
+                  <td style={{ padding: '11px 14px' }} />
                 </tr>
               </tfoot>
             )}
           </table>
         </div>
       </section>
+
+      {/* DEEP-DIVE DRILL-DOWN DOSSIER MODAL (Works across all 6 Report Studio Tabs) */}
+      {selectedDrillRow && (() => {
+        const allTxs = selectedDrillRow.transactions || [];
+        const settledTxs = allTxs.filter((t) => t.isSettled);
+        const pendingTxs = allTxs.filter((t) => !t.isSettled);
+        const recurringTxs = allTxs.filter((t) => t.isRecurring);
+        const q = drillSearch.trim().toLowerCase();
+
+        const displayedTxs = allTxs.filter((t) => {
+          if (drillFilter === 'SETTLED' && !t.isSettled) return false;
+          if (drillFilter === 'PENDING' && t.isSettled) return false;
+          if (drillFilter === 'RECURRING' && !t.isRecurring) return false;
+          if (!q) return true;
+          return (
+            t.reference.toLowerCase().includes(q) ||
+            t.title.toLowerCase().includes(q) ||
+            t.requesterName.toLowerCase().includes(q) ||
+            t.subsidiaryName.toLowerCase().includes(q) ||
+            t.category.toLowerCase().includes(q) ||
+            t.channel.toLowerCase().includes(q)
+          );
+        });
+
+        // Compute category distribution inside this row
+        const catTotals = new Map<string, { count: number; amountMinor: bigint }>();
+        for (const t of allTxs) {
+          const catKey = t.category.replace(/_/g, ' ');
+          const cur = catTotals.get(catKey) || { count: 0, amountMinor: BigInt(0) };
+          cur.count += 1;
+          cur.amountMinor += BigInt(t.amountMinor || '0');
+          catTotals.set(catKey, cur);
+        }
+        const categorySummary = Array.from(catTotals.entries())
+          .sort((a, b) => Number(b[1].amountMinor - a[1].amountMinor))
+          .slice(0, 6);
+
+        return (
+          <div
+            onClick={() => setSelectedDrillRow(null)}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 10000,
+              background: 'rgba(15, 23, 42, 0.65)',
+              backdropFilter: 'blur(8px)',
+              WebkitBackdropFilter: 'blur(8px)',
+              display: 'grid',
+              placeItems: 'center',
+              padding: '20px',
+            }}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                background: '#ffffff',
+                borderRadius: '20px',
+                border: '1px solid #e2e8f0',
+                width: 'min(1180px, 96vw)',
+                maxHeight: '90vh',
+                display: 'flex',
+                flexDirection: 'column',
+                overflow: 'hidden',
+                boxShadow: '0 30px 70px -15px rgba(15, 23, 42, 0.35)',
+              }}
+            >
+              {/* Modal Sticky Header */}
+              <div
+                style={{
+                  padding: '18px 24px',
+                  borderBottom: '1px solid #e2e8f0',
+                  background: '#ffffff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '16px',
+                  flexWrap: 'wrap',
+                }}
+              >
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <span
+                      style={{
+                        fontSize: '10px',
+                        fontWeight: 800,
+                        letterSpacing: '0.1em',
+                        textTransform: 'uppercase',
+                        padding: '3px 8px',
+                        borderRadius: '6px',
+                        background: '#fff7ed',
+                        color: '#ea580c',
+                        border: '1px solid #fed7aa',
+                      }}
+                    >
+                      DEEP-DIVE LEDGER BREAKDOWN · {activeViewMeta.label.toUpperCase()}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: '11px',
+                        fontWeight: 800,
+                        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                        padding: '3px 8px',
+                        borderRadius: '6px',
+                        background: '#f1f5f9',
+                        color: '#334155',
+                      }}
+                    >
+                      {selectedDrillRow.code}
+                    </span>
+                    {selectedDrillRow.subtitle && (
+                      <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 600 }}>
+                        · {selectedDrillRow.subtitle}
+                      </span>
+                    )}
+                  </div>
+                  <h2 style={{ margin: '6px 0 2px', fontSize: '20px', fontWeight: 900, color: '#0f172a' }}>
+                    {selectedDrillRow.name}
+                  </h2>
+                  <div style={{ fontSize: '12px', color: '#64748b' }}>
+                    Reporting Window: <strong>{data?.period.from} – {data?.period.to}</strong> ({data?.period.label}) · {allTxs.length} Underlying Ledger Transactions
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  {viewKey === 'ENTITIES' && onSelectBusiness && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onSelectBusiness(selectedDrillRow.organizationId);
+                        setSelectedDrillRow(null);
+                      }}
+                      style={{
+                        padding: '8px 13px',
+                        borderRadius: '8px',
+                        border: '1px solid #cbd5e1',
+                        background: '#f8fafc',
+                        color: '#0f172a',
+                        fontSize: '12px',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                      }}
+                    >
+                      <span>Switch Workspace to {selectedDrillRow.code}</span>
+                      <ArrowRight size={13} />
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setSelectedDrillRow(null)}
+                    style={{
+                      width: '36px',
+                      height: '36px',
+                      borderRadius: '10px',
+                      border: '1px solid #e2e8f0',
+                      background: '#f8fafc',
+                      color: '#475569',
+                      display: 'grid',
+                      placeItems: 'center',
+                      cursor: 'pointer',
+                    }}
+                    title="Close Deep-Dive Dossier"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Scrollable Body */}
+              <div style={{ padding: '20px 24px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '18px' }}>
+                {/* 5 Summary Stat Cards */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(185px, 1fr))', gap: '12px' }}>
+                  <div style={{ padding: '14px 16px', borderRadius: '12px', background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                    <div style={{ fontSize: '10px', fontWeight: 800, color: '#64748b', textTransform: 'uppercase' }}>
+                      TOTAL REQUESTED
+                    </div>
+                    <div style={{ fontSize: '19px', fontWeight: 900, color: '#0f172a', marginTop: '4px' }}>
+                      {fmtNaira(selectedDrillRow.totalRequestedMinor)}
+                    </div>
+                    <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
+                      {selectedDrillRow.totalTxCount} total transactions
+                    </div>
+                  </div>
+
+                  <div style={{ padding: '14px 16px', borderRadius: '12px', background: '#fff7ed', border: '1px solid #fed7aa' }}>
+                    <div style={{ fontSize: '10px', fontWeight: 800, color: '#c2410c', textTransform: 'uppercase' }}>
+                      APPROVED (GROSS)
+                    </div>
+                    <div style={{ fontSize: '19px', fontWeight: 900, color: '#ea580c', marginTop: '4px' }}>
+                      {fmtNaira(selectedDrillRow.approvedGrossMinor)}
+                    </div>
+                    <div style={{ fontSize: '11px', color: '#9a3412', marginTop: '2px' }}>
+                      Net Disbursable: {fmtNaira(selectedDrillRow.netDisbursableMinor)}
+                    </div>
+                  </div>
+
+                  <div style={{ padding: '14px 16px', borderRadius: '12px', background: '#ecfdf5', border: '1px solid #a7f3d0' }}>
+                    <div style={{ fontSize: '10px', fontWeight: 800, color: '#047857', textTransform: 'uppercase' }}>
+                      SETTLED TO BANK / PAID
+                    </div>
+                    <div style={{ fontSize: '19px', fontWeight: 900, color: '#059669', marginTop: '4px' }}>
+                      {fmtNaira(selectedDrillRow.settledMinor)}
+                    </div>
+                    <div style={{ fontSize: '11px', color: '#065f46', marginTop: '2px' }}>
+                      {selectedDrillRow.settledTxCount} paid · Charges: {fmtNaira(selectedDrillRow.chargesMinor)}
+                    </div>
+                  </div>
+
+                  <div style={{ padding: '14px 16px', borderRadius: '12px', background: BigInt(selectedDrillRow.pendingMinor) > BigInt(0) ? '#fffbeb' : '#f8fafc', border: `1px solid ${BigInt(selectedDrillRow.pendingMinor) > BigInt(0) ? '#fde68a' : '#e2e8f0'}` }}>
+                    <div style={{ fontSize: '10px', fontWeight: 800, color: BigInt(selectedDrillRow.pendingMinor) > BigInt(0) ? '#b45309' : '#64748b', textTransform: 'uppercase' }}>
+                      PENDING (UNPAID EXPOSURE)
+                    </div>
+                    <div style={{ fontSize: '19px', fontWeight: 900, color: BigInt(selectedDrillRow.pendingMinor) > BigInt(0) ? '#d97706' : '#64748b', marginTop: '4px' }}>
+                      {fmtNaira(selectedDrillRow.pendingMinor)}
+                    </div>
+                    <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
+                      {pendingTxs.length} unpaid / in-review items
+                    </div>
+                  </div>
+
+                  <div style={{ padding: '14px 16px', borderRadius: '12px', background: '#ffffff', border: '1px solid #e2e8f0' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: '10px', fontWeight: 800, color: '#64748b', textTransform: 'uppercase' }}>
+                        SETTLEMENT RATE
+                      </span>
+                      <strong style={{ fontSize: '14px', fontWeight: 900, color: selectedDrillRow.settlementPct >= 95 ? '#059669' : '#d97706' }}>
+                        {selectedDrillRow.settlementPct}%
+                      </strong>
+                    </div>
+                    <div style={{ width: '100%', height: '8px', borderRadius: '999px', background: '#f1f5f9', overflow: 'hidden', marginTop: '10px' }}>
+                      <div
+                        style={{
+                          width: `${Math.min(100, selectedDrillRow.settlementPct)}%`,
+                          height: '100%',
+                          background: selectedDrillRow.settlementPct >= 95 ? '#10b981' : '#f59e0b',
+                          borderRadius: '999px',
+                        }}
+                      />
+                    </div>
+                    <div style={{ fontSize: '10.5px', color: '#64748b', marginTop: '6px' }}>
+                      {selectedDrillRow.settledTxCount} of {selectedDrillRow.totalTxCount} items settled
+                    </div>
+                  </div>
+                </div>
+
+                {/* Category Composition Chips inside this Row */}
+                {categorySummary.length > 0 && (
+                  <div
+                    style={{
+                      padding: '12px 16px',
+                      borderRadius: '12px',
+                      background: '#f8fafc',
+                      border: '1px solid #e2e8f0',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      flexWrap: 'wrap',
+                    }}
+                  >
+                    <span style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                      <Layers size={13} color="#ea580c" />
+                      <span>CATEGORY COMPOSITION:</span>
+                    </span>
+                    {categorySummary.map(([catName, info]) => (
+                      <span
+                        key={catName}
+                        style={{
+                          padding: '4px 10px',
+                          borderRadius: '8px',
+                          background: '#ffffff',
+                          border: '1px solid #cbd5e1',
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          color: '#0f172a',
+                        }}
+                      >
+                        {catName}: <strong style={{ color: '#ea580c' }}>{fmtNaira(info.amountMinor)}</strong> ({info.count})
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {/* Filter Tabs & Search Bar */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                    {([
+                      { key: 'ALL', label: `All Transactions (${allTxs.length})` },
+                      { key: 'SETTLED', label: `Paid / Settled (${settledTxs.length})` },
+                      { key: 'PENDING', label: `Pending / Unpaid (${pendingTxs.length})` },
+                      { key: 'RECURRING', label: `Recurring (${recurringTxs.length})` },
+                    ] as const).map((tab) => {
+                      const active = drillFilter === tab.key;
+                      return (
+                        <button
+                          key={tab.key}
+                          type="button"
+                          onClick={() => setDrillFilter(tab.key)}
+                          style={{
+                            padding: '6px 12px',
+                            borderRadius: '8px',
+                            border: active ? '1px solid #ea580c' : '1px solid #cbd5e1',
+                            background: active ? '#ea580c' : '#ffffff',
+                            color: active ? '#ffffff' : '#334155',
+                            fontSize: '11.5px',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          {tab.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div style={{ position: 'relative' }}>
+                    <Search size={13} color="#94a3b8" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)' }} />
+                    <input
+                      type="search"
+                      placeholder="Search request #, title, staff, bank..."
+                      value={drillSearch}
+                      onChange={(e) => setDrillSearch(e.target.value)}
+                      style={{
+                        padding: '7px 12px 7px 30px',
+                        borderRadius: '8px',
+                        border: '1px solid #cbd5e1',
+                        fontSize: '12px',
+                        color: '#0f172a',
+                        background: '#f8fafc',
+                        width: '250px',
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* Line-by-Line Transactions Table */}
+                <div style={{ border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden' }}>
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                      <thead>
+                        <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                          <th style={{ padding: '10px 12px', textAlign: 'left', fontSize: '10px', fontWeight: 800, color: '#64748b' }}>REF &amp; DATE</th>
+                          <th style={{ padding: '10px 12px', textAlign: 'left', fontSize: '10px', fontWeight: 800, color: '#64748b' }}>REQUISITION TITLE &amp; CATEGORY</th>
+                          <th style={{ padding: '10px 12px', textAlign: 'left', fontSize: '10px', fontWeight: 800, color: '#64748b' }}>ENTITY</th>
+                          <th style={{ padding: '10px 12px', textAlign: 'left', fontSize: '10px', fontWeight: 800, color: '#64748b' }}>STAFF / BENEFICIARY</th>
+                          <th style={{ padding: '10px 12px', textAlign: 'left', fontSize: '10px', fontWeight: 800, color: '#64748b' }}>SETTLEMENT CHANNEL</th>
+                          <th style={{ padding: '10px 12px', textAlign: 'left', fontSize: '10px', fontWeight: 800, color: '#64748b' }}>APPROVAL</th>
+                          <th style={{ padding: '10px 12px', textAlign: 'left', fontSize: '10px', fontWeight: 800, color: '#64748b' }}>PAYMENT STATUS</th>
+                          <th style={{ padding: '10px 12px', textAlign: 'right', fontSize: '10px', fontWeight: 800, color: '#64748b' }}>AMOUNT</th>
+                          <th style={{ padding: '10px 12px', textAlign: 'right', fontSize: '10px', fontWeight: 800, color: '#64748b' }}>DOSSIER</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {displayedTxs.length === 0 ? (
+                          <tr>
+                            <td colSpan={9} style={{ padding: '28px', textAlign: 'center', color: '#64748b', fontWeight: 600 }}>
+                              No individual transactions recorded for {selectedDrillRow.name} in this filter.
+                            </td>
+                          </tr>
+                        ) : (
+                          displayedTxs.map((tx) => (
+                            <tr key={tx.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                              <td style={{ padding: '10px 12px', whiteSpace: 'nowrap' }}>
+                                <div style={{ fontWeight: 800, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', color: '#1d4ed8', fontSize: '11.5px' }}>
+                                  {tx.reference}
+                                </div>
+                                <div style={{ fontSize: '10.5px', color: '#64748b' }}>
+                                  {tx.date.slice(0, 10)}
+                                </div>
+                              </td>
+                              <td style={{ padding: '10px 12px' }}>
+                                <div style={{ fontWeight: 700, color: '#0f172a' }}>{tx.title}</div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '2px', flexWrap: 'wrap' }}>
+                                  <span style={{ fontSize: '10px', color: '#64748b', fontWeight: 600 }}>
+                                    {tx.category.replace(/_/g, ' ')} · {tx.requestType.replace(/_/g, ' ')}
+                                  </span>
+                                  {tx.isRecurring && (
+                                    <span style={{ fontSize: '9.5px', fontWeight: 800, padding: '1px 6px', borderRadius: '4px', background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0' }}>
+                                      🔁 {tx.recurringInterval || 'MONTHLY'}
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                              <td style={{ padding: '10px 12px' }}>
+                                <div style={{ fontWeight: 700, color: '#0f172a', fontSize: '11.5px' }}>{tx.subsidiaryName}</div>
+                                <div style={{ fontSize: '10px', color: '#64748b', fontFamily: 'monospace' }}>{tx.subsidiaryCode}</div>
+                              </td>
+                              <td style={{ padding: '10px 12px' }}>
+                                <div style={{ fontWeight: 600, color: '#0f172a' }}>{tx.requesterName}</div>
+                                <div style={{ fontSize: '10px', color: '#64748b' }}>{tx.requesterCode}</div>
+                              </td>
+                              <td style={{ padding: '10px 12px', color: '#334155', fontWeight: 600, fontSize: '11.5px' }}>
+                                {tx.channel}
+                              </td>
+                              <td style={{ padding: '10px 12px' }}>
+                                <span
+                                  style={{
+                                    padding: '2px 7px',
+                                    borderRadius: '5px',
+                                    fontSize: '10px',
+                                    fontWeight: 800,
+                                    background: tx.approvalStatus === 'APPROVED' ? '#ecfdf5' : '#fffbeb',
+                                    color: tx.approvalStatus === 'APPROVED' ? '#047857' : '#b45309',
+                                    border: `1px solid ${tx.approvalStatus === 'APPROVED' ? '#a7f3d0' : '#fde68a'}`,
+                                  }}
+                                >
+                                  {tx.approvalStatus.replace(/_/g, ' ')}
+                                </span>
+                              </td>
+                              <td style={{ padding: '10px 12px' }}>
+                                <span
+                                  style={{
+                                    padding: '2px 7px',
+                                    borderRadius: '5px',
+                                    fontSize: '10px',
+                                    fontWeight: 800,
+                                    background: tx.isSettled ? '#ecfdf5' : '#fef3c7',
+                                    color: tx.isSettled ? '#047857' : '#b45309',
+                                    border: `1px solid ${tx.isSettled ? '#a7f3d0' : '#fde68a'}`,
+                                  }}
+                                >
+                                  {tx.paymentStatus.replace(/_/g, ' ')}
+                                </span>
+                              </td>
+                              <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 800, color: tx.isSettled ? '#059669' : '#0f172a', whiteSpace: 'nowrap' }}>
+                                {fmtNaira(tx.amountMinor)}
+                              </td>
+                              <td style={{ padding: '10px 12px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                                {tx.requestNumber ? (
+                                  <Link
+                                    href={`/requests/${encodeURIComponent(tx.requestNumber)}`}
+                                    target="_blank"
+                                    style={{
+                                      padding: '4px 8px',
+                                      borderRadius: '6px',
+                                      border: '1px solid #cbd5e1',
+                                      background: '#ffffff',
+                                      color: '#0f172a',
+                                      fontSize: '11px',
+                                      fontWeight: 700,
+                                      textDecoration: 'none',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '4px',
+                                    }}
+                                  >
+                                    <span>Dossier</span>
+                                    <ExternalLink size={11} />
+                                  </Link>
+                                ) : (
+                                  <span style={{ fontSize: '11px', color: '#94a3b8' }}>—</span>
+                                )}
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

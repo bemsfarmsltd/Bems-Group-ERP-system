@@ -115,7 +115,14 @@ export async function POST(request: Request) {
         : station.starlinkOverrideMode === 'BYPASS'
         ? false
         : policy?.requireStarlinkIp ?? true;
-    const powerOutageMode = policy?.starlinkPowerOutageMode ?? false;
+    const powerOutageMode =
+      station.starlinkOverrideMode === 'ENFORCE'
+        ? false
+        : station.starlinkOverrideMode === 'BYPASS'
+        ? true
+        : !requireStarlink
+        ? true
+        : false;
     const starlinkIps = [station.starlinkIpAddresses, policy?.starlinkIpAddresses]
       .filter((s) => Boolean(s && s.trim()))
       .join(', ');

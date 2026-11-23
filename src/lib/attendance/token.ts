@@ -162,11 +162,11 @@ export function extractClientIp(request: Request): string {
 }
 
 /**
- * Known SpaceX Starlink IP ranges (IPv4 CGNAT / public pool + IPv6 allocation):
- * - IPv4: 98.97.0.0/16, 143.244.32.0/19, 170.203.192.0/18, 206.214.224.0/19, 129.222.0.0/16
+ * Known SpaceX Starlink IP ranges (IPv4 CGNAT / public pool + Nigeria POPs + IPv6 allocation):
+ * - IPv4: 98.97.0.0/16, 143.244.32.0/19, 170.203.192.0/18, 206.214.224.0/19, 129.222.0.0/16, 102.215.56.0/23
  * - IPv6: 2605:59c0::/28 (2605:59c0: - 2605:59cf:)
  */
-const STARLINK_IPV4_PREFIXES = ['98.97.', '143.244.', '170.203.', '206.214.', '129.222.'];
+const STARLINK_IPV4_PREFIXES = ['98.97.', '143.244.', '170.203.', '206.214.', '129.222.', '102.215.56.', '102.215.57.'];
 const STARLINK_IPV6_PREFIX = '2605:59c';
 
 function isStarlinkRange(ip: string): boolean {
@@ -198,25 +198,25 @@ export function isStarlinkIpAllowed(
     return { allowed: true };
   }
 
-  // 3. If no specific Starlink IP has been configured yet by the admin, allow with warning
-  if (!starlinkIps || !starlinkIps.trim()) {
+  // 3. Always allow official SpaceX Starlink ASN ranges (handles dual-stack where admin saved IPv6/IPv4 and phone connected on IPv4/IPv6)
+  const clientIsStarlink = isStarlinkRange(cleanIp);
+  if (clientIsStarlink) {
     return { allowed: true };
   }
 
-  // 4. Parse configured entries (comma, semicolon, or newline separated)
+  // 4. If no custom IP subnet is configured, require the client IP to be on SpaceX Starlink
+  if (!starlinkIps || !starlinkIps.trim()) {
+    return {
+      allowed: false,
+      reason: `Access blocked: Device IP (${cleanIp}) is not connected to a SpaceX Starlink Wi-Fi network. Please connect to the office Starlink Wi-Fi to clock in.`,
+    };
+  }
+
+  // 5. Parse configured entries (comma, semicolon, or newline separated)
   const allowedEntries = starlinkIps
     .split(/[,;\n]+/)
     .map(ip => ip.trim().toLowerCase())
     .filter(Boolean);
-
-  // Check if the configured network itself represents a Starlink network
-  const configIsStarlink = allowedEntries.some(entry => isStarlinkRange(entry) || entry.includes('starlink'));
-  const clientIsStarlink = isStarlinkRange(cleanIp);
-
-  // If company configured Starlink and the incoming client is connected via Starlink's AS14593 network
-  if (configIsStarlink && clientIsStarlink) {
-    return { allowed: true };
-  }
 
   // Check individual entries with prefix, CIDR, and IPv6 /64 subnet matching
   const isMatched = allowedEntries.some(target => {

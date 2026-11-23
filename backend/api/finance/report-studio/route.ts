@@ -56,6 +56,29 @@ function resolvePeriodRange(periodParam: string | null, fromParam: string | null
   };
 }
 
+type DrillTransactionItem = {
+  id: string;
+  reference: string;
+  requestNumber: string | null;
+  title: string;
+  subsidiaryName: string;
+  subsidiaryCode: string;
+  requesterName: string;
+  requesterCode: string;
+  category: string;
+  requestType: string;
+  isRecurring: boolean;
+  recurringInterval: string | null;
+  approvalStatus: string;
+  paymentStatus: string;
+  accountabilityStatus: string;
+  channel: string;
+  amountMinor: string;
+  feeMinor: string;
+  isSettled: boolean;
+  date: string;
+};
+
 type BucketAccumulator = {
   id: string;
   name: string;
@@ -68,6 +91,7 @@ type BucketAccumulator = {
   settledMinor: bigint;
   pendingMinor: bigint;
   totalRequestedMinor: bigint;
+  transactions: DrillTransactionItem[];
 };
 
 function finalizeBuckets(buckets: BucketAccumulator[]) {
@@ -84,8 +108,10 @@ function finalizeBuckets(buckets: BucketAccumulator[]) {
     .sort((a, b) => Number(b.approvedGrossMinor - a.approvedGrossMinor) || Number(b.totalRequestedMinor - a.totalRequestedMinor) || a.name.localeCompare(b.name))
     .map((b) => {
       const netDisbursableMinor = b.approvedGrossMinor > b.chargesMinor ? b.approvedGrossMinor - b.chargesMinor : BigInt(0);
-      const settlementPct = b.approvedGrossMinor > BigInt(0)
-        ? Math.min(100, Math.round((Number(b.settledMinor) / Number(b.approvedGrossMinor)) * 100))
+      const activeExposureMinor = b.settledMinor + b.pendingMinor;
+      const denomMinor = activeExposureMinor > BigInt(0) ? activeExposureMinor : b.approvedGrossMinor;
+      const settlementPct = denomMinor > BigInt(0)
+        ? Math.min(100, Math.round((Number(b.settledMinor) / Number(denomMinor)) * 100))
         : 0;
 
       totPaidTx += b.settledTxCount;
@@ -111,11 +137,14 @@ function finalizeBuckets(buckets: BucketAccumulator[]) {
         pendingMinor: b.pendingMinor.toString(),
         totalRequestedMinor: b.totalRequestedMinor.toString(),
         settlementPct,
+        transactions: b.transactions.sort((x, y) => y.date.localeCompare(x.date)),
       };
     });
 
-  const overallSettlementPct = totApprovedGross > BigInt(0)
-    ? Math.min(100, Math.round((Number(totSettled) / Number(totApprovedGross)) * 100))
+  const totActiveExposure = totSettled + totPending;
+  const totDenom = totActiveExposure > BigInt(0) ? totActiveExposure : totApprovedGross;
+  const overallSettlementPct = totDenom > BigInt(0)
+    ? Math.min(100, Math.round((Number(totSettled) / Number(totDenom)) * 100))
     : 0;
 
   return {
@@ -179,6 +208,8 @@ export async function GET(request: Request) {
         },
         select: {
           id: true,
+          requestNumber: true,
+          title: true,
           subsidiaryId: true,
           requestedById: true,
           requestType: true,
@@ -189,6 +220,7 @@ export async function GET(request: Request) {
           approvalStatus: true,
           paymentStatus: true,
           accountabilityStatus: true,
+          createdAt: true,
           requester: {
             select: {
               id: true,
@@ -196,6 +228,23 @@ export async function GET(request: Request) {
               employeeNumber: true,
               role: true,
             },
+          },
+          vendor: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+          disbursements: {
+            select: {
+              id: true,
+              bankName: true,
+              externalReference: true,
+              paidAt: true,
+              status: true,
+            },
+            orderBy: { paidAt: 'desc' },
+            take: 1,
           },
         },
       }),
@@ -209,9 +258,12 @@ export async function GET(request: Request) {
           payerOrgId: true,
           requestId: true,
           beneficiaryEmployeeId: true,
+          beneficiaryName: true,
+          externalReference: true,
           bankName: true,
           amountMinor: true,
           status: true,
+          paidAt: true,
         },
       }),
       prisma.walletWithdrawal.findMany({
@@ -225,9 +277,11 @@ export async function GET(request: Request) {
           requestId: true,
           sourceAccount: true,
           bankCode: true,
+          accountName: true,
           feeMinor: true,
           amountMinor: true,
           status: true,
+          createdAt: true,
         },
       }),
       prisma.companyBankAccount.findMany({
@@ -271,6 +325,7 @@ export async function GET(request: Request) {
         settledMinor: BigInt(0),
         pendingMinor: BigInt(0),
         totalRequestedMinor: BigInt(0),
+        transactions: [],
       };
       buckets.set(id, created);
       return created;
@@ -289,6 +344,9 @@ export async function GET(request: Request) {
     const applyRequestToBucket = (b: BucketAccumulator, r: (typeof requests)[number]) => {
       const isSettled = SETTLED_PAYMENT_STATUSES.has(r.paymentStatus);
       const isRejected = REJECTED_APPROVAL_STATUSES.has(r.approvalStatus);
+      const fee = feesByRequest.get(r.id) ?? BigInt(0);
+      const org = orgMap.get(r.subsidiaryId);
+      const disb = r.disbursements?.[0];
       b.totalTxCount += 1;
       b.totalRequestedMinor += r.amountMinor;
       if (r.approvalStatus === 'APPROVED' || isSettled) {
@@ -300,7 +358,67 @@ export async function GET(request: Request) {
       } else if (!isRejected) {
         b.pendingMinor += r.amountMinor;
       }
-      b.chargesMinor += feesByRequest.get(r.id) ?? BigInt(0);
+      b.chargesMinor += fee;
+
+      b.transactions.push({
+        id: r.id,
+        reference: r.requestNumber,
+        requestNumber: r.requestNumber,
+        title: r.title,
+        subsidiaryName: org?.legalName || 'BEMS Group',
+        subsidiaryCode: org?.code || 'BEMS',
+        requesterName: r.vendor?.name ? `${r.requester?.legalName || 'Staff'} → ${r.vendor.name}` : (r.requester?.legalName || 'Staff Member'),
+        requesterCode: r.requester?.employeeNumber || r.requester?.role || 'STAFF',
+        category: r.category || 'GENERAL',
+        requestType: r.requestType || 'ORDINARY',
+        isRecurring: Boolean(r.isRecurring),
+        recurringInterval: r.recurringInterval || null,
+        approvalStatus: r.approvalStatus,
+        paymentStatus: r.paymentStatus,
+        accountabilityStatus: r.accountabilityStatus || 'NOT_REQUIRED',
+        channel: disb?.bankName || (isSettled ? 'Monnify / Wallet Release' : 'Pending Settlement'),
+        amountMinor: r.amountMinor.toString(),
+        feeMinor: fee.toString(),
+        isSettled,
+        date: (disb?.paidAt || r.createdAt).toISOString(),
+      });
+    };
+
+    const applyDisbursementToBucket = (b: BucketAccumulator, d: (typeof disbursements)[number]) => {
+      const isSettled = SETTLED_PAYMENT_STATUSES.has(d.status);
+      const org = orgMap.get(d.payerOrgId);
+      const linkedReq = d.requestId ? reqMap.get(d.requestId) : undefined;
+      b.totalTxCount += 1;
+      b.approvedGrossMinor += d.amountMinor;
+      b.totalRequestedMinor += d.amountMinor;
+      if (isSettled) {
+        b.settledTxCount += 1;
+        b.settledMinor += d.amountMinor;
+      } else {
+        b.pendingMinor += d.amountMinor;
+      }
+      b.transactions.push({
+        id: d.id,
+        reference: linkedReq?.requestNumber || d.externalReference || `DISB-${d.id.slice(0, 8)}`,
+        requestNumber: linkedReq?.requestNumber || null,
+        title: linkedReq?.title || `Disbursement to ${d.beneficiaryName || 'Beneficiary'}`,
+        subsidiaryName: org?.legalName || 'BEMS Group',
+        subsidiaryCode: org?.code || 'BEMS',
+        requesterName: d.beneficiaryName || linkedReq?.requester?.legalName || 'Beneficiary',
+        requesterCode: linkedReq?.requester?.employeeNumber || 'DISBURSEMENT',
+        category: linkedReq?.category || 'DISBURSEMENT',
+        requestType: linkedReq?.requestType || 'DIRECT_DISBURSEMENT',
+        isRecurring: Boolean(linkedReq?.isRecurring),
+        recurringInterval: linkedReq?.recurringInterval || null,
+        approvalStatus: linkedReq?.approvalStatus || 'APPROVED',
+        paymentStatus: d.status,
+        accountabilityStatus: linkedReq?.accountabilityStatus || 'NOT_REQUIRED',
+        channel: d.bankName || 'Bank Transfer',
+        amountMinor: d.amountMinor.toString(),
+        feeMinor: '0',
+        isSettled,
+        date: d.paidAt.toISOString(),
+      });
     };
 
     if (view === 'ENTITIES') {
@@ -315,13 +433,7 @@ export async function GET(request: Request) {
       for (const d of disbursements) {
         if (SETTLED_PAYMENT_STATUSES.has(d.status) && !d.requestId) {
           const b = buckets.get(d.payerOrgId);
-          if (b) {
-            b.totalTxCount += 1;
-            b.settledTxCount += 1;
-            b.approvedGrossMinor += d.amountMinor;
-            b.totalRequestedMinor += d.amountMinor;
-            b.settledMinor += d.amountMinor;
-          }
+          if (b) applyDisbursementToBucket(b, d);
         }
       }
     } else if (view === 'STAFF') {
@@ -358,28 +470,45 @@ export async function GET(request: Request) {
       }
       for (const d of disbursements) {
         const b = getOrCreate(`BANK:${d.bankName || 'Bank Transfer'}`, d.bankName || 'Bank Transfer', 'BANK', orgMap.get(d.payerOrgId)?.code);
-        b.totalTxCount += 1;
-        b.approvedGrossMinor += d.amountMinor;
-        b.totalRequestedMinor += d.amountMinor;
-        if (SETTLED_PAYMENT_STATUSES.has(d.status)) {
-          b.settledTxCount += 1;
-          b.settledMinor += d.amountMinor;
-        } else {
-          b.pendingMinor += d.amountMinor;
-        }
+        applyDisbursementToBucket(b, d);
       }
       for (const w of walletWithdrawals) {
         const b = buckets.get('MONNIFY_MAIN')!;
+        const isSettled = ['SUCCESS', 'SETTLED', 'COMPLETED'].includes(w.status);
+        const linkedReq = w.requestId ? reqMap.get(w.requestId) : undefined;
+        const org = linkedReq ? orgMap.get(linkedReq.subsidiaryId) : undefined;
         b.totalTxCount += 1;
         b.approvedGrossMinor += w.amountMinor;
         b.totalRequestedMinor += w.amountMinor;
         b.chargesMinor += w.feeMinor ?? BigInt(0);
-        if (['SUCCESS', 'SETTLED', 'COMPLETED'].includes(w.status)) {
+        if (isSettled) {
           b.settledTxCount += 1;
           b.settledMinor += w.amountMinor;
         } else {
           b.pendingMinor += w.amountMinor;
         }
+        b.transactions.push({
+          id: w.id,
+          reference: linkedReq?.requestNumber || `WDR-${w.id.slice(0, 8)}`,
+          requestNumber: linkedReq?.requestNumber || null,
+          title: linkedReq?.title || `Wallet Withdrawal (${w.accountName || 'Staff'})`,
+          subsidiaryName: org?.legalName || 'BEMS Group',
+          subsidiaryCode: org?.code || 'BEMS',
+          requesterName: w.accountName || linkedReq?.requester?.legalName || 'Staff Member',
+          requesterCode: linkedReq?.requester?.employeeNumber || 'WALLET',
+          category: linkedReq?.category || 'WALLET_WITHDRAWAL',
+          requestType: linkedReq?.requestType || 'WALLET',
+          isRecurring: Boolean(linkedReq?.isRecurring),
+          recurringInterval: linkedReq?.recurringInterval || null,
+          approvalStatus: 'APPROVED',
+          paymentStatus: w.status,
+          accountabilityStatus: linkedReq?.accountabilityStatus || 'NOT_REQUIRED',
+          channel: 'Monnify Treasury Wallet',
+          amountMinor: w.amountMinor.toString(),
+          feeMinor: (w.feeMinor ?? BigInt(0)).toString(),
+          isSettled,
+          date: w.createdAt.toISOString(),
+        });
       }
     } else if (view === 'PAYMENT_TYPES') {
       for (const r of requests) {
@@ -391,15 +520,7 @@ export async function GET(request: Request) {
       if (payrollDisb.length > 0) {
         const b = getOrCreate('PAYROLL', 'Payroll & Salary Disbursements', 'PAYROLL', 'Salary Run');
         for (const d of payrollDisb) {
-          b.totalTxCount += 1;
-          b.approvedGrossMinor += d.amountMinor;
-          b.totalRequestedMinor += d.amountMinor;
-          if (SETTLED_PAYMENT_STATUSES.has(d.status)) {
-            b.settledTxCount += 1;
-            b.settledMinor += d.amountMinor;
-          } else {
-            b.pendingMinor += d.amountMinor;
-          }
+          applyDisbursementToBucket(b, d);
         }
       }
     } else if (view === 'CATEGORIES') {
