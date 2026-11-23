@@ -177,6 +177,7 @@ export async function POST(req: NextRequest) {
           allowedScopes: 'ALL',
           operationMode: isReadOnlyUser ? 'READ_ONLY' : 'READ_AND_STAGE',
           ttlMs: 5 * 60 * 1000,
+          allowAuthorizedSuperAdmin: canonicalActorRole === 'SUPER_ADMIN',
         });
         const authToken = delegationToken;
 

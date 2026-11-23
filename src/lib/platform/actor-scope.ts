@@ -1,4 +1,4 @@
-import { hasGmdFeatureAccess } from '@/lib/gmd-access';
+import { hasGmdFeatureAccess, superAdminGmdAccessEnabled } from '@/lib/gmd-access';
 import { canAccessEmployeePortal } from '@/lib/portal-access';
 import crypto from 'node:crypto';
 import { prisma } from '@/lib/prisma';
@@ -75,8 +75,9 @@ export function createScopedAutomationToken(input: {
   allowedScopes?: AiAccessScopeKey[] | 'ALL';
   operationMode?: DelegationOperationMode;
   ttlMs?: number;
+  allowAuthorizedSuperAdmin?: boolean;
 }): string {
-  if(!hasGmdFeatureAccess(input.requesterRole))throw new Error('Only authorized GMD or Super Admin accounts can delegate AI access.');
+  if(!hasGmdFeatureAccess(input.requesterRole, superAdminGmdAccessEnabled() || Boolean(input.allowAuthorizedSuperAdmin)))throw new Error('Only authorized GMD or Super Admin accounts can delegate AI access.');
   const now = Date.now();
   const isExecutiveRole = input.requesterRole === 'GMD' || input.requesterRole === 'SUPER_ADMIN';
   const effectiveOperationMode: DelegationOperationMode =
