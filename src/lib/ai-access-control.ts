@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { parsePermissionsJson } from '@/lib/admin-permissions';
 import {
   AI_ACCESS_SCOPES,
   AiAccessMatrix,
@@ -233,17 +234,57 @@ export async function getAccountAiPolicy(
   employeeId: string,
   role: string
 ): Promise<AccountAiPolicy> {
-  const isGmd = String(role || '').toUpperCase() === 'GMD';
+  const normalizedRole = String(role || '').toUpperCase();
+  const isGmd = normalizedRole === 'GMD';
   const defaultScopes: Record<string, boolean> = {};
   for (const s of AI_ACCESS_SCOPES) {
     defaultScopes[`${s.key}.read`] = isGmd;
     defaultScopes[`${s.key}.write`] = isGmd;
   }
+
+  // Ordinary STAFF accounts never have AI access — only GMD, Super Admin, or Custom Admins granted AI Copilot
+  if (normalizedRole === 'STAFF') {
+    return {
+      aiEnabled: false,
+      masterRead: false,
+      masterWrite: false,
+      scopes: defaultScopes,
+    };
+  }
+
+  // For CUSTOM_ADMIN, check if their assigned Named Custom Admin Profile grants the `ai-copilot` module
+  let customAdminProfileAllowsAi = false;
+  let customAdminAllowsWrite = false;
+  if (normalizedRole === 'CUSTOM_ADMIN') {
+    try {
+      const emp = await prisma.employee.findUnique({
+        where: { id: employeeId },
+        select: { customAdminProfile: { select: { permissionsJson: true } } },
+      });
+      const perms = parsePermissionsJson(emp?.customAdminProfile?.permissionsJson);
+      const aiGrant = perms['ai-copilot'];
+      if (aiGrant?.enabled) {
+        customAdminProfileAllowsAi = true;
+        customAdminAllowsWrite = Boolean(aiGrant.categories?.['ai_staging']?.enabled);
+      }
+    } catch {}
+  }
+
+  const fallbackScopes = { ...defaultScopes };
+  if (customAdminProfileAllowsAi) {
+    for (const s of AI_ACCESS_SCOPES) {
+      // Never grant wallet/approvals write to Custom Admins via profile default
+      fallbackScopes[`${s.key}.read`] = true;
+      fallbackScopes[`${s.key}.write`] =
+        customAdminAllowsWrite && !['wallet', 'approvals', 'salary', 'payroll'].includes(s.key);
+    }
+  }
+
   const fallback: AccountAiPolicy = {
-    aiEnabled: isGmd,
-    masterRead: isGmd,
-    masterWrite: isGmd,
-    scopes: defaultScopes,
+    aiEnabled: isGmd || customAdminProfileAllowsAi,
+    masterRead: isGmd || customAdminProfileAllowsAi,
+    masterWrite: isGmd || customAdminAllowsWrite,
+    scopes: fallbackScopes,
   };
   try {
     let parsed: Record<string, Partial<AccountAiPolicy>> | null = null;
@@ -268,9 +309,9 @@ export async function getAccountAiPolicy(
     }
     const stored = parsed?.[employeeId];
     if (!stored) return fallback;
-    const mergedScopes = { ...defaultScopes, ...(stored.scopes || {}) };
+    const mergedScopes = { ...fallbackScopes, ...(stored.scopes || {}) };
     const anyScopeTrue = Object.values(mergedScopes).some(Boolean);
-    const aiEnabled = Boolean(stored.aiEnabled);
+    const aiEnabled = Boolean(stored.aiEnabled) || customAdminProfileAllowsAi;
     // If Layer 1 was activated without any read scope yet, permit basic chat context read
     const masterRead =
       aiEnabled && stored.masterRead === false && !anyScopeTrue ? true : stored.masterRead !== false;

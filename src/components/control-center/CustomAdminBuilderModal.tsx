@@ -500,7 +500,7 @@ export function CustomAdminBuilderModal({
         {/* Footer */}
         <div className="px-6 py-3.5 border-t border-slate-200 bg-[#f8fafc] flex items-center justify-between gap-3">
           <div className="text-[11px] text-slate-500">
-            Note: AI Copilot &amp; Financial Manager remain strictly exclusive to the <strong>GMD</strong>.
+            Note: <strong>AI Copilot Access</strong> is OFF by default and only enabled when toggled above; live Monnify disbursements remain strictly exclusive to the <strong>GMD</strong>.
           </div>
           <div className="flex items-center gap-2">
             <button

@@ -206,25 +206,8 @@ export function AiAccessControlPanel({
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-1.5 rounded-xl bg-slate-200/70 p-1">
-                <button
-                  type="button"
-                  onClick={() => setFilterGroup('admins')}
-                  className={`rounded-lg py-1.5 text-[11px] font-bold transition ${
-                    filterGroup === 'admins' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600'
-                  }`}
-                >
-                  Admins &amp; GMD
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFilterGroup('all')}
-                  className={`rounded-lg py-1.5 text-[11px] font-bold transition ${
-                    filterGroup === 'all' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600'
-                  }`}
-                >
-                  All Staff ({accounts.filter((a) => String(a.role).toUpperCase() === 'STAFF').length})
-                </button>
+              <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] text-slate-600">
+                <strong className="text-slate-900">Admins, Custom Admins &amp; GMD only.</strong> Ordinary Staff never receive AI — assign a Custom Admin Profile with <strong>AI Copilot Access</strong> enabled to delegate scoped AI.
               </div>
 
               <div className="relative">

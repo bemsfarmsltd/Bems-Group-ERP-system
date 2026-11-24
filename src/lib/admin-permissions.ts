@@ -5,7 +5,8 @@ export type AdminModuleKey =
   | 'control-center'
   | 'operations'
   | 'media'
-  | 'innovation';
+  | 'innovation'
+  | 'ai-copilot';
 
 export interface PermissionActionDef {
   key: string;
@@ -470,6 +471,29 @@ export const ADMIN_PERMISSION_CATALOG: PermissionModuleDef[] = [
           { key: 'view_module', label: 'View Innovation Module' },
           { key: 'manage_records', label: 'Manage R&D & Platform Records' },
           { key: 'approve_workflows', label: 'Approve Innovation Releases' },
+        ],
+      },
+    ],
+  },
+  {
+    key: 'ai-copilot',
+    label: 'AI Copilot Access',
+    description: 'Scoped executive AI assistant across permitted modules (OFF by default; live Monnify releases remain strictly GMD-only).',
+    categories: [
+      {
+        key: 'ai_queries',
+        label: 'AI Queries & Summaries',
+        actions: [
+          { key: 'use_copilot_read', label: 'Ask AI & Read Scoped Module Summaries' },
+          { key: 'inspect_kpis', label: 'Inspect KPIs & Executive Briefings via AI' },
+        ],
+      },
+      {
+        key: 'ai_staging',
+        label: 'AI Action Staging (Human Confirmation Required)',
+        actions: [
+          { key: 'stage_operational_actions', label: 'Stage Scoped Non-Financial Actions' },
+          { key: 'draft_reports', label: 'Draft Reports & Recommendations' },
         ],
       },
     ],
