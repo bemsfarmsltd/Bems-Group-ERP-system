@@ -281,9 +281,12 @@ export function CustomAdminBuilderModal({
         )}
 
         {/* 4-Level Builder Body */}
-        <div className="flex-1 min-h-0 grid grid-cols-1 md:grid-cols-12 overflow-hidden">
+        <div className="flex-1 min-h-0 grid grid-cols-1 md:grid-cols-12 overflow-y-auto md:overflow-hidden">
           {/* Level 1: Module List */}
-          <div className="md:col-span-4 border-r border-slate-200 bg-[#f8fafc] p-3 overflow-y-auto space-y-1.5">
+          <div
+            className="md:col-span-4 border-r border-slate-200 bg-[#f8fafc] p-3 pb-8 overflow-y-auto min-h-0 space-y-1.5"
+            style={{ maxHeight: '60vh', WebkitOverflowScrolling: 'touch' }}
+          >
             <div className="px-2 py-1 text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
               1. Select Modules
             </div>
