@@ -66,7 +66,7 @@ export async function buildBackendServer() {
       'idempotency-key',
       'x-correlation-id',
     ],
-    exposedHeaders: ['X-Bems-Cache', 'X-Bems-Cache-Domain'],
+    exposedHeaders: ['X-Bems-Cache', 'X-Bems-Cache-Domain', 'X-Bems-Image-Cache', 'ETag'],
   });
 
   await app.register(cookie);
