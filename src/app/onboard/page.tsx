@@ -4,11 +4,9 @@ import React, { useState, useEffect, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import {
   ShieldCheck,
-  Building2,
   Lock,
   User,
   Phone,
-  CreditCard,
   MapPin,
   CheckCircle2,
   AlertCircle,
@@ -29,6 +27,16 @@ interface InvitationDetails {
   expiresAt: string;
 }
 
+interface ExistingStaffProfile {
+  employeeNumber?: string;
+  legalName: string;
+  phone: string;
+  gender: string;
+  residentialAddress: string;
+  cityState: string;
+  role: string;
+}
+
 function OnboardingContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -37,95 +45,23 @@ function OnboardingContent() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [invitation, setInvitation] = useState<InvitationDetails | null>(null);
+  const [existingProfile, setExistingProfile] = useState<ExistingStaffProfile | null>(null);
 
-  // Form State
+  // Form State (no bank account fields on admin registration)
   const [legalName, setLegalName] = useState('');
   const [phone, setPhone] = useState('');
   const [gender, setGender] = useState('MALE');
   const [residentialAddress, setResidentialAddress] = useState('');
   const [cityState, setCityState] = useState('');
-  const [bankName, setBankName] = useState('');
-  const [accountNumber, setAccountNumber] = useState('');
-  const [accountName, setAccountName] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-
-  // Monnify Verification State
-  const [banksList, setBanksList] = useState<string[]>([
-    'Access Bank',
-    'Zenith Bank',
-    'Guaranty Trust Bank (GTBank)',
-    'First Bank of Nigeria',
-    'United Bank for Africa (UBA)',
-    'Stanbic IBTC Bank',
-    'Fidelity Bank',
-    'Moniepoint MFB',
-    'OPay Digital Services',
-    'PalmPay',
-    'Kuda Bank',
-    'First City Monument Bank (FCMB)',
-    'Union Bank of Nigeria',
-    'Sterling Bank',
-    'Wema Bank / ALAT',
-    'Polaris Bank',
-    'Providus Bank',
-  ]);
-  const [isVerifyingBank, setIsVerifyingBank] = useState(false);
-  const [verifiedAccountName, setVerifiedAccountName] = useState<string | null>(null);
-  const [bankVerifyError, setBankVerifyError] = useState<string | null>(null);
 
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
-  useEffect(() => {
-    fetch('/api/banking/banks')
-      .then((res) => res.json())
-      .then((data) => {
-        if (data?.banks && Array.isArray(data.banks)) {
-          const names = data.banks.map((b: any) => b.name);
-          if (names.length > 0) {
-            setBanksList(names);
-            if (!bankName) setBankName(names[0]);
-          }
-        }
-      })
-      .catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    const clean = accountNumber.trim().replace(/\D/g, '');
-    if (clean.length === 10 && bankName) {
-      setIsVerifyingBank(true);
-      setBankVerifyError(null);
-      fetch('/api/banking/verify-account', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ accountNumber: clean, bankName }),
-      })
-        .then((res) => res.json())
-        .then((data) => {
-          if (data.isValid && data.accountName) {
-            setVerifiedAccountName(data.accountName);
-            setAccountName(data.accountName);
-          } else {
-            setVerifiedAccountName(null);
-            setBankVerifyError(data.message || 'Could not verify account.');
-          }
-        })
-        .catch(() => {
-          setVerifiedAccountName(null);
-          setBankVerifyError('Verification failed. Check network connectivity.');
-        })
-        .finally(() => setIsVerifyingBank(false));
-    } else {
-      setVerifiedAccountName(null);
-      setBankVerifyError(null);
-    }
-  }, [accountNumber, bankName]);
-
-  // Validate invitation token on mount
+  // Validate invitation token on mount and auto-populate from existing staff profile if found
   useEffect(() => {
     if (!token) {
       setError('An invitation token is required. Please check the link in your invitation email.');
@@ -140,6 +76,15 @@ function OnboardingContent() {
           setError(data.error || 'This invitation is invalid or has expired.');
         } else {
           setInvitation(data.invitation);
+          if (data.existingProfile) {
+            const prof = data.existingProfile as ExistingStaffProfile;
+            setExistingProfile(prof);
+            if (prof.legalName) setLegalName(prof.legalName);
+            if (prof.phone) setPhone(prof.phone);
+            if (prof.gender) setGender(String(prof.gender).toUpperCase());
+            if (prof.residentialAddress) setResidentialAddress(prof.residentialAddress);
+            if (prof.cityState) setCityState(prof.cityState);
+          }
         }
       })
       .catch((err) => {
@@ -148,6 +93,8 @@ function OnboardingContent() {
       })
       .finally(() => setIsLoading(false));
   }, [token]);
+
+  const isCustomAdminPromotion = invitation?.role === 'CUSTOM_ADMIN' && Boolean(existingProfile);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -158,7 +105,7 @@ function OnboardingContent() {
       return;
     }
 
-    if (password !== confirmPassword) {
+    if (!isCustomAdminPromotion && password !== confirmPassword) {
       setSubmitError('Passwords do not match.');
       return;
     }
@@ -176,9 +123,6 @@ function OnboardingContent() {
           gender,
           residentialAddress: residentialAddress.trim(),
           cityState: cityState.trim(),
-          bankName: bankName.trim(),
-          accountNumber: accountNumber.trim(),
-          accountName: accountName.trim() || legalName.trim(),
           password,
         }),
       });
@@ -346,9 +290,15 @@ function OnboardingContent() {
           }}
         >
           <div style={{ marginBottom: 20 }}>
-            <h3 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: '#0f172a' }}>Complete Your Dossier</h3>
+            <h3 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: '#0f172a' }}>
+              {existingProfile ? 'Confirm Your Linked Staff Profile' : 'Complete Your Profile'}
+            </h3>
             <p style={{ margin: '4px 0 0', fontSize: 13, color: '#64748b' }}>
-              Please enter your personal contact and banking credentials. You will use the password you set below to sign in.
+              {isCustomAdminPromotion
+                ? 'Your details have been auto-filled from your existing BEMS Staff profile. Enter your current staff password below to activate your admin role.'
+                : existingProfile
+                ? 'Your details have been auto-filled from your existing BEMS Staff profile. Set your executive sign-in password below.'
+                : 'Enter your contact details and set your secure executive sign-in password below.'}
             </p>
           </div>
 
@@ -359,167 +309,134 @@ function OnboardingContent() {
           )}
 
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-            {/* Full Legal Name */}
-            <div>
-              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 5 }}>
-                Full Legal Name *
-              </label>
-              <div style={{ position: 'relative' }}>
-                <input
-                  required
-                  type="text"
-                  placeholder="e.g. Dr. Pastra Adeleke"
-                  value={legalName}
-                  onChange={(e) => setLegalName(e.target.value)}
-                  style={{ width: '100%', padding: '10px 14px 10px 38px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 14, boxSizing: 'border-box' }}
-                />
-                <User size={16} color="#94a3b8" style={{ position: 'absolute', left: 12, top: 12 }} />
-              </div>
-            </div>
-
-            {/* Phone & Gender */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-              <div>
-                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 5 }}>
-                  Phone Number *
-                </label>
-                <div style={{ position: 'relative' }}>
-                  <input
-                    required
-                    type="tel"
-                    placeholder="+234 803 000 0000"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    style={{ width: '100%', padding: '10px 14px 10px 38px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 14, boxSizing: 'border-box' }}
-                  />
-                  <Phone size={16} color="#94a3b8" style={{ position: 'absolute', left: 12, top: 12 }} />
+            {existingProfile ? (
+              <div
+                style={{
+                  background: '#f0fdf4',
+                  border: '1px solid #bbf7d0',
+                  borderRadius: 12,
+                  padding: '16px 18px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 10,
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#15803d', fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  <CheckCircle2 size={15} />
+                  <span>Auto-Loaded from Existing BEMS Staff Profile {existingProfile.employeeNumber ? `(${existingProfile.employeeNumber})` : ''}</span>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, fontSize: 13 }}>
+                  <div>
+                    <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600 }}>Full Legal Name</div>
+                    <div style={{ fontWeight: 700, color: '#0f172a' }}>{existingProfile.legalName || '—'}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600 }}>Phone Number</div>
+                    <div style={{ fontWeight: 700, color: '#0f172a' }}>{existingProfile.phone || '—'}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600 }}>Gender</div>
+                    <div style={{ fontWeight: 700, color: '#0f172a' }}>{existingProfile.gender || '—'}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600 }}>Location</div>
+                    <div style={{ fontWeight: 700, color: '#0f172a' }}>
+                      {[existingProfile.residentialAddress, existingProfile.cityState].filter(Boolean).join(', ') || '—'}
+                    </div>
+                  </div>
                 </div>
               </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 5 }}>
-                  Gender
-                </label>
-                <select
-                  value={gender}
-                  onChange={(e) => setGender(e.target.value)}
-                  style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 14, background: '#ffffff', boxSizing: 'border-box' }}
-                >
-                  <option value="MALE">Male</option>
-                  <option value="FEMALE">Female</option>
-                  <option value="OTHER">Prefer not to say</option>
-                </select>
-              </div>
-            </div>
-
-            {/* Residential Location */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 14 }}>
-              <div>
-                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 5 }}>
-                  Residential Address
-                </label>
-                <div style={{ position: 'relative' }}>
-                  <input
-                    type="text"
-                    placeholder="Street address"
-                    value={residentialAddress}
-                    onChange={(e) => setResidentialAddress(e.target.value)}
-                    style={{ width: '100%', padding: '10px 14px 10px 38px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 14, boxSizing: 'border-box' }}
-                  />
-                  <MapPin size={16} color="#94a3b8" style={{ position: 'absolute', left: 12, top: 12 }} />
-                </div>
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 5 }}>
-                  City &amp; State
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Lagos State"
-                  value={cityState}
-                  onChange={(e) => setCityState(e.target.value)}
-                  style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 14, boxSizing: 'border-box' }}
-                />
-              </div>
-            </div>
-
-            {/* Banking Details (For Compensation / Requisitions) */}
-            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 10, padding: 16 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, color: '#0f172a', marginBottom: 12 }}>
-                <CreditCard size={15} color="#ea580c" />
-                <span>DISBURSEMENT &amp; SALARY SETTLEMENT BANK ACCOUNT</span>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 10 }}>
+            ) : (
+              <>
+                {/* Full Legal Name */}
                 <div>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 4 }}>
-                    Bank Name
+                  <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 5 }}>
+                    Full Legal Name *
                   </label>
-                  <select
-                    value={bankName}
-                    onChange={(e) => setBankName(e.target.value)}
-                    style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13, boxSizing: 'border-box', background: '#ffffff' }}
-                  >
-                    {banksList.map((b) => (
-                      <option key={b} value={b}>
-                        {b}
-                      </option>
-                    ))}
-                  </select>
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      required
+                      type="text"
+                      placeholder="e.g. Dr. Pastra Adeleke"
+                      value={legalName}
+                      onChange={(e) => setLegalName(e.target.value)}
+                      style={{ width: '100%', padding: '10px 14px 10px 38px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 14, boxSizing: 'border-box' }}
+                    />
+                    <User size={16} color="#94a3b8" style={{ position: 'absolute', left: 12, top: 12 }} />
+                  </div>
                 </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 4 }}>
-                    Account Number (10 digits)
-                  </label>
-                  <input
-                    type="text"
-                    maxLength={10}
-                    placeholder="0123456789"
-                    value={accountNumber}
-                    onChange={(e) => setAccountNumber(e.target.value.replace(/\D/g, ''))}
-                    style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13, boxSizing: 'border-box', background: '#ffffff', fontFamily: 'monospace' }}
-                  />
+
+                {/* Phone & Gender */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 5 }}>
+                      Phone Number *
+                    </label>
+                    <div style={{ position: 'relative' }}>
+                      <input
+                        required
+                        type="tel"
+                        placeholder="+234 803 000 0000"
+                        value={phone}
+                        onChange={(e) => setPhone(e.target.value)}
+                        style={{ width: '100%', padding: '10px 14px 10px 38px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 14, boxSizing: 'border-box' }}
+                      />
+                      <Phone size={16} color="#94a3b8" style={{ position: 'absolute', left: 12, top: 12 }} />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 5 }}>
+                      Gender
+                    </label>
+                    <select
+                      value={gender}
+                      onChange={(e) => setGender(e.target.value)}
+                      style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 14, background: '#ffffff', boxSizing: 'border-box' }}
+                    >
+                      <option value="MALE">Male</option>
+                      <option value="FEMALE">Female</option>
+                      <option value="OTHER">Prefer not to say</option>
+                    </select>
+                  </div>
                 </div>
-              </div>
 
-              {isVerifyingBank && (
-                <div style={{ padding: '8px 12px', borderRadius: 6, background: '#fff7ed', border: '1px solid #fed7aa', marginBottom: 10, fontSize: 12, color: '#c2410c', display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <div style={{ width: 14, height: 14, border: '2px solid #fed7aa', borderTopColor: '#ea580c', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-                  <span>Verifying account with Monnify &amp; NIBSS...</span>
+                {/* Residential Location */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 14 }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 5 }}>
+                      Residential Address
+                    </label>
+                    <div style={{ position: 'relative' }}>
+                      <input
+                        type="text"
+                        placeholder="Street address"
+                        value={residentialAddress}
+                        onChange={(e) => setResidentialAddress(e.target.value)}
+                        style={{ width: '100%', padding: '10px 14px 10px 38px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 14, boxSizing: 'border-box' }}
+                      />
+                      <MapPin size={16} color="#94a3b8" style={{ position: 'absolute', left: 12, top: 12 }} />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 5 }}>
+                      City &amp; State
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Lagos State"
+                      value={cityState}
+                      onChange={(e) => setCityState(e.target.value)}
+                      style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 14, boxSizing: 'border-box' }}
+                    />
+                  </div>
                 </div>
-              )}
+              </>
+            )}
 
-              {verifiedAccountName && (
-                <div style={{ padding: '8px 12px', borderRadius: 6, background: '#ecfdf5', border: '1px solid #a7f3d0', marginBottom: 10, fontSize: 12, color: '#065f46', display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700 }}>
-                  <CheckCircle2 size={16} color="#059669" />
-                  <span>✓ Monnify Verified: {verifiedAccountName}</span>
-                </div>
-              )}
-
-              {bankVerifyError && (
-                <div style={{ padding: '8px 12px', borderRadius: 6, background: '#fef2f2', border: '1px solid #fecaca', marginBottom: 10, fontSize: 12, color: '#991b1b', display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <AlertCircle size={16} color="#dc2626" />
-                  <span>{bankVerifyError}</span>
-                </div>
-              )}
-
-              <div>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 4 }}>
-                  Account Holder Name
-                </label>
-                <input
-                  type="text"
-                  placeholder="As verified on your bank record"
-                  value={accountName}
-                  onChange={(e) => setAccountName(e.target.value)}
-                  style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13, boxSizing: 'border-box', background: verifiedAccountName ? '#f8fafc' : '#ffffff' }}
-                />
-              </div>
-            </div>
-
-            {/* Create Password */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+            {/* Password Section */}
+            <div style={{ display: 'grid', gridTemplateColumns: isCustomAdminPromotion ? '1fr' : '1fr 1fr', gap: 14 }}>
               <div>
                 <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 5 }}>
                   {invitation?.role === 'CUSTOM_ADMIN' ? 'Current Staff Password' : 'Create Password'} *
@@ -529,7 +446,7 @@ function OnboardingContent() {
                     required
                     type={showPassword ? 'text' : 'password'}
                     minLength={invitation?.role === 'CUSTOM_ADMIN' ? 1 : 10}
-                    placeholder={invitation?.role === 'CUSTOM_ADMIN' ? 'Enter your current staff password' : 'Min 10 characters'}
+                    placeholder={invitation?.role === 'CUSTOM_ADMIN' ? 'Enter your current staff password to verify' : 'Min 10 characters'}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     style={{ width: '100%', padding: '10px 40px 10px 38px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 14, boxSizing: 'border-box' }}
@@ -545,23 +462,25 @@ function OnboardingContent() {
                 </div>
               </div>
 
-              <div>
-                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 5 }}>
-                  Confirm Password *
-                </label>
-                <div style={{ position: 'relative' }}>
-                  <input
-                    required
-                    type={showPassword ? 'text' : 'password'}
-                    minLength={invitation?.role === 'CUSTOM_ADMIN' ? 1 : 10}
-                    placeholder="Re-type password"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    style={{ width: '100%', padding: '10px 14px 10px 38px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 14, boxSizing: 'border-box' }}
-                  />
-                  <Lock size={16} color="#94a3b8" style={{ position: 'absolute', left: 12, top: 12 }} />
+              {!isCustomAdminPromotion && (
+                <div>
+                  <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 5 }}>
+                    Confirm Password *
+                  </label>
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      required
+                      type={showPassword ? 'text' : 'password'}
+                      minLength={invitation?.role === 'CUSTOM_ADMIN' ? 1 : 10}
+                      placeholder="Re-type password"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      style={{ width: '100%', padding: '10px 14px 10px 38px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 14, boxSizing: 'border-box' }}
+                    />
+                    <Lock size={16} color="#94a3b8" style={{ position: 'absolute', left: 12, top: 12 }} />
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
 
             {/* Submit Button */}
@@ -588,7 +507,13 @@ function OnboardingContent() {
                   transition: 'all 0.15s ease',
                 }}
               >
-                <span>{submitting ? 'Creating Account & Setting Session...' : 'Complete Onboarding & Enter Portal'}</span>
+                <span>
+                  {submitting
+                    ? 'Activating Account & Setting Session...'
+                    : isCustomAdminPromotion
+                    ? 'Activate Admin Access & Enter Portal'
+                    : 'Complete Onboarding & Enter Portal'}
+                </span>
                 {!submitting && <ArrowRight size={16} />}
               </button>
             </div>

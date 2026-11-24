@@ -31,10 +31,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Invitation token is missing.' }, { status: 400 });
     }
 
-    if (!legalName || legalName.length < 2) {
-      return NextResponse.json({ error: 'Please enter your full legal name.' }, { status: 400 });
-    }
-
     if (!password || password.length > 256) {
       return NextResponse.json({ error: 'Enter your account password (up to 256 characters).' }, { status: 400 });
     }
@@ -73,10 +69,14 @@ export async function POST(request: Request) {
     // 2. Check existing accounts on this email (never overwrite a STAFF row when creating an Admin account)
     const accountsForEmail = await prisma.employee.findMany({
       where: { workEmail: { equals: invitation.workEmail, mode: 'insensitive' } },
-      select: { id: true, role: true, passwordHash: true, status: true, approvalStatus: true },
+      select: { id: true, legalName: true, role: true, passwordHash: true, status: true, approvalStatus: true },
     });
 
     const isCustomAdmin = invitation.role === 'CUSTOM_ADMIN';
+    const resolvedLegalName = legalName || accountsForEmail[0]?.legalName || '';
+    if (!isCustomAdmin && (!resolvedLegalName || resolvedLegalName.length < 2)) {
+      return NextResponse.json({ error: 'Please enter your full legal name.' }, { status: 400 });
+    }
     const staffAccount = accountsForEmail.find(account => account.role === 'STAFF' && account.status === 'ACTIVE' && account.approvalStatus === 'APPROVED');
     if (isCustomAdmin) {
       if (!staffAccount || accountsForEmail.length !== 1 || !invitation.customAdminProfileId) {

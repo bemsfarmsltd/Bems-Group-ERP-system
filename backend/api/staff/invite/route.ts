@@ -72,8 +72,36 @@ export async function GET(request: Request) {
         departmentName = dept?.name || '';
       }
 
+      const existingEmployee = await prisma.employee.findFirst({
+        where: {
+          workEmail: { equals: invitation.workEmail, mode: 'insensitive' },
+          status: { in: ['ACTIVE', 'ON_LEAVE'] },
+        },
+        select: {
+          id: true,
+          employeeNumber: true,
+          legalName: true,
+          phone: true,
+          gender: true,
+          residentialAddress: true,
+          cityState: true,
+          role: true,
+        },
+      });
+
       return NextResponse.json({
         valid: true,
+        existingProfile: existingEmployee
+          ? {
+              employeeNumber: existingEmployee.employeeNumber || '',
+              legalName: existingEmployee.legalName || '',
+              phone: existingEmployee.phone || '',
+              gender: existingEmployee.gender || 'MALE',
+              residentialAddress: existingEmployee.residentialAddress || '',
+              cityState: existingEmployee.cityState || '',
+              role: existingEmployee.role,
+            }
+          : null,
         invitation: {
           id: invitation.id,
           workEmail: invitation.workEmail,
