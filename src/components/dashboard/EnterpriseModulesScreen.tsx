@@ -23,6 +23,9 @@ import {
   hasModuleAccess,
   isReadOnlyCustomAdmin,
 } from '@/lib/admin-permissions';
+import { useGmdAccess } from '@/components/ai/useGmdAccess';
+import { useAiFinancialManager } from '@/components/ai/useAiFinancialManager';
+import { AmbientBottomAiBar } from '@/components/ai/AmbientBottomAiBar';
 
 export interface EnterpriseUserSummary {
   id: string;
@@ -49,6 +52,16 @@ interface ModuleTileConfig {
 
 export function EnterpriseModulesScreen({ user }: { user: EnterpriseUserSummary }) {
   const [search, setSearch] = useState('');
+  const isAiAuthorized = useGmdAccess(user?.role || '');
+
+  const aiManager = useAiFinancialManager({
+    userRole: user?.role || '',
+    userName: user?.legalName || 'User',
+    businessName: user?.subsidiaryName || 'BEMS Group',
+    businessId: 'BEMS-GROUP',
+    currentPage: 'Enterprise Management Systems',
+    moduleDomain: 'master',
+  });
 
   const isStaff = user?.role === 'STAFF';
   const isReadOnly = isReadOnlyCustomAdmin(user?.role, user?.customAdminPermissions);
@@ -484,6 +497,22 @@ export function EnterpriseModulesScreen({ user }: { user: EnterpriseUserSummary 
           </div>
         )}
       </main>
+
+      {isAiAuthorized && (
+        <AmbientBottomAiBar
+          currentPage="Enterprise Management Systems"
+          businessName={user?.subsidiaryName || 'BEMS Group'}
+          userName={user?.legalName || 'User'}
+          userRole={user?.role || ''}
+          messages={aiManager.messages}
+          isTyping={aiManager.isTyping}
+          onSendMessage={aiManager.sendMessage}
+          onConfirmAction={aiManager.handleConfirmAction}
+          onCancelAction={aiManager.handleCancelAction}
+          onNewChat={aiManager.startNewChat}
+          onOpenFullCockpit={() => {}}
+        />
+      )}
     </div>
   );
 }
