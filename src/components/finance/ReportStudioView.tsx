@@ -42,6 +42,8 @@ type ReportRow = {
   netDisbursableMinor: string;
   settledMinor: string;
   pendingMinor: string;
+  walletCreditedMinor?: string;
+  awaitingReleaseMinor?: string;
   totalRequestedMinor: string;
   settlementPct: number;
   transactions?: DrillTransactionItem[];
@@ -55,6 +57,8 @@ type ReportStudioPayload = {
     chargesMinor: string;
     netSettledMinor: string;
     pendingMinor: string;
+    walletCreditedMinor?: string;
+    awaitingReleaseMinor?: string;
     totalRequestedMinor: string;
     settledTxCount: number;
     totalTxCount: number;
@@ -72,6 +76,8 @@ type ReportStudioPayload = {
     netDisbursableMinor: string;
     settledMinor: string;
     pendingMinor: string;
+    walletCreditedMinor?: string;
+    awaitingReleaseMinor?: string;
     totalRequestedMinor: string;
     settlementPct: number;
   };
@@ -166,6 +172,8 @@ export function ReportStudioView({
       'Net Disbursable (NGN)',
       'Settled (NGN)',
       'Pending Unpaid (NGN)',
+      'In Staff Wallet (NGN)',
+      'Awaiting Release (NGN)',
       'Total Requested (NGN)',
       'Settlement %',
     ];
@@ -179,6 +187,8 @@ export function ReportStudioView({
       (Number(r.netDisbursableMinor) / 100).toFixed(2),
       (Number(r.settledMinor) / 100).toFixed(2),
       (Number(r.pendingMinor) / 100).toFixed(2),
+      (Number(r.walletCreditedMinor || '0') / 100).toFixed(2),
+      (Number(r.awaitingReleaseMinor || '0') / 100).toFixed(2),
       (Number(r.totalRequestedMinor) / 100).toFixed(2),
       `${r.settlementPct}%`,
     ]);
@@ -387,7 +397,14 @@ export function ReportStudioView({
             {data ? fmtNaira(data.kpis.pendingMinor) : '—'}
           </div>
           <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
-            {data ? `Charges: ${fmtNaira(data.kpis.chargesMinor)}` : '—'}
+            {data ? (
+              <>
+                <span style={{ color: '#0284c7', fontWeight: 700 }}>In Wallet: {fmtNaira(data.kpis.walletCreditedMinor || '0')}</span>
+                {' · '}
+                <span style={{ color: '#b45309', fontWeight: 700 }}>Awaiting Release: {fmtNaira(data.kpis.awaitingReleaseMinor || '0')}</span>
+                {' · '}Charges: {fmtNaira(data.kpis.chargesMinor)}
+              </>
+            ) : '—'}
           </div>
         </div>
 
@@ -540,7 +557,21 @@ export function ReportStudioView({
                       {fmtNaira(row.settledMinor)}
                     </td>
                     <td style={{ padding: '11px 12px', textAlign: 'right', fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: BigInt(row.pendingMinor) > BigInt(0) ? '#d97706' : '#64748b' }}>
-                      {fmtNaira(row.pendingMinor)}
+                      <div>{fmtNaira(row.pendingMinor)}</div>
+                      {BigInt(row.pendingMinor) > BigInt(0) && (
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 4, flexWrap: 'wrap', marginTop: 3 }}>
+                          {BigInt(row.walletCreditedMinor || '0') > BigInt(0) && (
+                            <span style={{ fontSize: 9.5, fontWeight: 800, padding: '1px 6px', borderRadius: 4, background: '#e0f2fe', color: '#0369a1', border: '1px solid #bae6fd' }}>
+                              In Staff Wallet
+                            </span>
+                          )}
+                          {BigInt(row.awaitingReleaseMinor || '0') > BigInt(0) && (
+                            <span style={{ fontSize: 9.5, fontWeight: 800, padding: '1px 6px', borderRadius: 4, background: '#fef3c7', color: '#b45309', border: '1px solid #fde68a' }}>
+                              Awaiting Release
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </td>
                     <td style={{ padding: '11px 12px', textAlign: 'right', fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: '#0f172a' }}>
                       {fmtNaira(row.totalRequestedMinor)}
@@ -845,7 +876,7 @@ export function ReportStudioView({
                       {fmtNaira(selectedDrillRow.pendingMinor)}
                     </div>
                     <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
-                      {pendingTxs.length} unpaid / in-review items
+                      In Wallet: <strong style={{ color: '#0369a1' }}>{fmtNaira(selectedDrillRow.walletCreditedMinor || '0')}</strong> · Awaiting Release: <strong style={{ color: '#b45309' }}>{fmtNaira(selectedDrillRow.awaitingReleaseMinor || '0')}</strong>
                     </div>
                   </div>
 
@@ -1044,12 +1075,16 @@ export function ReportStudioView({
                                     borderRadius: '5px',
                                     fontSize: '10px',
                                     fontWeight: 800,
-                                    background: tx.isSettled ? '#ecfdf5' : '#fef3c7',
-                                    color: tx.isSettled ? '#047857' : '#b45309',
-                                    border: `1px solid ${tx.isSettled ? '#a7f3d0' : '#fde68a'}`,
+                                    background: tx.isSettled ? '#ecfdf5' : tx.paymentStatus === 'WALLET_CREDITED' ? '#e0f2fe' : '#fef3c7',
+                                    color: tx.isSettled ? '#047857' : tx.paymentStatus === 'WALLET_CREDITED' ? '#0369a1' : '#b45309',
+                                    border: `1px solid ${tx.isSettled ? '#a7f3d0' : tx.paymentStatus === 'WALLET_CREDITED' ? '#bae6fd' : '#fde68a'}`,
                                   }}
                                 >
-                                  {tx.paymentStatus.replace(/_/g, ' ')}
+                                  {tx.paymentStatus === 'WALLET_CREDITED'
+                                    ? 'IN STAFF WALLET'
+                                    : tx.paymentStatus === 'UNPAID'
+                                    ? 'AWAITING RELEASE'
+                                    : tx.paymentStatus.replace(/_/g, ' ')}
                                 </span>
                               </td>
                               <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 800, color: tx.isSettled ? '#059669' : '#0f172a', whiteSpace: 'nowrap' }}>

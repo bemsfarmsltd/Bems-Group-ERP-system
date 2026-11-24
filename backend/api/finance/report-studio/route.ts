@@ -90,6 +90,8 @@ type BucketAccumulator = {
   chargesMinor: bigint;
   settledMinor: bigint;
   pendingMinor: bigint;
+  walletCreditedMinor: bigint;
+  awaitingReleaseMinor: bigint;
   totalRequestedMinor: bigint;
   transactions: DrillTransactionItem[];
 };
@@ -102,6 +104,8 @@ function finalizeBuckets(buckets: BucketAccumulator[]) {
   let totNetDisbursable = BigInt(0);
   let totSettled = BigInt(0);
   let totPending = BigInt(0);
+  let totWalletCredited = BigInt(0);
+  let totAwaitingRelease = BigInt(0);
   let totRequested = BigInt(0);
 
   const rows = buckets
@@ -121,6 +125,8 @@ function finalizeBuckets(buckets: BucketAccumulator[]) {
       totNetDisbursable += netDisbursableMinor;
       totSettled += b.settledMinor;
       totPending += b.pendingMinor;
+      totWalletCredited += b.walletCreditedMinor;
+      totAwaitingRelease += b.awaitingReleaseMinor;
       totRequested += b.totalRequestedMinor;
 
       return {
@@ -135,6 +141,8 @@ function finalizeBuckets(buckets: BucketAccumulator[]) {
         netDisbursableMinor: netDisbursableMinor.toString(),
         settledMinor: b.settledMinor.toString(),
         pendingMinor: b.pendingMinor.toString(),
+        walletCreditedMinor: b.walletCreditedMinor.toString(),
+        awaitingReleaseMinor: b.awaitingReleaseMinor.toString(),
         totalRequestedMinor: b.totalRequestedMinor.toString(),
         settlementPct,
         transactions: b.transactions.sort((x, y) => y.date.localeCompare(x.date)),
@@ -157,6 +165,8 @@ function finalizeBuckets(buckets: BucketAccumulator[]) {
       netDisbursableMinor: totNetDisbursable.toString(),
       settledMinor: totSettled.toString(),
       pendingMinor: totPending.toString(),
+      walletCreditedMinor: totWalletCredited.toString(),
+      awaitingReleaseMinor: totAwaitingRelease.toString(),
       totalRequestedMinor: totRequested.toString(),
       settlementPct: overallSettlementPct,
     },
@@ -324,6 +334,8 @@ export async function GET(request: Request) {
         chargesMinor: BigInt(0),
         settledMinor: BigInt(0),
         pendingMinor: BigInt(0),
+        walletCreditedMinor: BigInt(0),
+        awaitingReleaseMinor: BigInt(0),
         totalRequestedMinor: BigInt(0),
         transactions: [],
       };
@@ -357,6 +369,11 @@ export async function GET(request: Request) {
         b.settledMinor += r.amountMinor;
       } else if (!isRejected) {
         b.pendingMinor += r.amountMinor;
+        if (r.paymentStatus === 'WALLET_CREDITED') {
+          b.walletCreditedMinor += r.amountMinor;
+        } else {
+          b.awaitingReleaseMinor += r.amountMinor;
+        }
       }
       b.chargesMinor += fee;
 
@@ -376,7 +393,7 @@ export async function GET(request: Request) {
         approvalStatus: r.approvalStatus,
         paymentStatus: r.paymentStatus,
         accountabilityStatus: r.accountabilityStatus || 'NOT_REQUIRED',
-        channel: disb?.bankName || (isSettled ? 'Monnify / Wallet Release' : 'Pending Settlement'),
+        channel: disb?.bankName || (isSettled ? 'Monnify / Wallet Release' : r.paymentStatus === 'WALLET_CREDITED' ? 'BEMS Staff Wallet (Awaiting Withdrawal)' : 'Awaiting Release'),
         amountMinor: r.amountMinor.toString(),
         feeMinor: fee.toString(),
         isSettled,
@@ -396,6 +413,7 @@ export async function GET(request: Request) {
         b.settledMinor += d.amountMinor;
       } else {
         b.pendingMinor += d.amountMinor;
+        b.awaitingReleaseMinor += d.amountMinor;
       }
       b.transactions.push({
         id: d.id,
@@ -486,6 +504,7 @@ export async function GET(request: Request) {
           b.settledMinor += w.amountMinor;
         } else {
           b.pendingMinor += w.amountMinor;
+          b.walletCreditedMinor += w.amountMinor;
         }
         b.transactions.push({
           id: w.id,
@@ -561,6 +580,8 @@ export async function GET(request: Request) {
         chargesMinor: totals.chargesMinor,
         netSettledMinor: totals.settledMinor,
         pendingMinor: totals.pendingMinor,
+        walletCreditedMinor: totals.walletCreditedMinor,
+        awaitingReleaseMinor: totals.awaitingReleaseMinor,
         totalRequestedMinor: totals.totalRequestedMinor,
         settledTxCount: totals.settledTxCount,
         totalTxCount: totals.totalTxCount,
