@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
   }
 
   const { searchParams } = new URL(request.url);
-  const authorizedScope = await resolveAuthorizedOrganizationScope(actor as any, searchParams.get('subsidiary_id') || searchParams.get('subsidiary') || searchParams.get('organization_id') || 'ALL');
+  const authorizedScope = await resolveAuthorizedOrganizationScope(actor as any, searchParams.get('subsidiary_id') || searchParams.get('subsidiary') || searchParams.get('organization_id') || 'ALL', 'ai-copilot');
   const query = (searchParams.get('query') || searchParams.get('search') || '').trim();
   const subsidiaryId = searchParams.get('subsidiary_id') || searchParams.get('subsidiaryId') || undefined;
   const status = searchParams.get('status') || undefined;
@@ -163,7 +163,7 @@ export async function POST(request: NextRequest) {
     const scopeBlocked = await checkAiScopeOrResponse(targetScope, 'write');
     if (scopeBlocked) return scopeBlocked;
 
-    const authorizedScope = await resolveAuthorizedOrganizationScope(actor as any, actor.scopedOrganizationId || 'ALL');
+    const authorizedScope = await resolveAuthorizedOrganizationScope(actor as any, actor.scopedOrganizationId || 'ALL', 'ai-copilot');
 
     if (subAction === 'REGISTER_OFFLINE') {
       const legalName = String(body.legalName || body.legal_name || '').trim();

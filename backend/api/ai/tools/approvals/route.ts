@@ -50,7 +50,7 @@ export async function GET(req: NextRequest) {
     url.searchParams.get('subsidiary_id') ||
     actor.scopedOrganizationId ||
     'ALL';
-  const scope = await resolveAuthorizedOrganizationScope(actor as any, requestedOrgId);
+  const scope = await resolveAuthorizedOrganizationScope(actor as any, requestedOrgId, 'ai-copilot');
   if (scope.organizationIds.length === 0) {
     return NextResponse.json({
       ok: true,

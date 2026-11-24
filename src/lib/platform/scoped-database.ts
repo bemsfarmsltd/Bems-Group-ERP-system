@@ -6,7 +6,7 @@ import type { AuthenticatedAiActor } from '@/lib/ai-tools-auth';
 // All model reads made by an AI tool inherit the verified workspace, including
 // lists nested in include/select. A query parameter can narrow this boundary.
 export async function getAiReadClient(actor: AuthenticatedAiActor) {
-  const scope = await resolveAuthorizedOrganizationScope(actor as any, actor.scopedOrganizationId || 'ALL');
+  const scope = await resolveAuthorizedOrganizationScope(actor as any, actor.scopedOrganizationId || 'ALL', 'ai-copilot');
   const ids = scope.organizationIds;
   const employee = { assignments: { some: { subsidiaryId: { in: ids }, status: 'ACTIVE' } } };
   const filters: Record<string, any> = {

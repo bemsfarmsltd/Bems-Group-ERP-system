@@ -234,7 +234,7 @@ export async function resolvePlatformActorContext(
 
   const [hrScope, orgScope] = await Promise.all([
     getHrAuthorizationScope(humanActor),
-    resolveAuthorizedOrganizationScope(humanActor, effectiveOrgFilter),
+    resolveAuthorizedOrganizationScope(humanActor, effectiveOrgFilter, 'ai-copilot'),
   ]);
 
   return {

@@ -43,7 +43,29 @@ const READ_ONLY_AUTH_ALLOWLIST = new Set([
   '/api/ai/chat',
   '/api/attendance/punch',
   '/api/attendance/verify-geofence',
+  '/api/notifications',
+  '/api/notifications/push-token',
+  '/api/mobile/version-check',
+  '/api/staff/me',
+  '/api/staff/chat/admin',
+  '/api/staff/profile/submit-update',
+  '/api/requests',
+  '/api/accountability',
+  '/api/hr/leave',
+  '/api/wallet/withdrawals',
+  '/api/wallet/bank',
+  '/api/wallet/challenges',
+  '/api/wallet/withdrawal-plan',
+  '/api/wallet/banks/resolve',
 ]);
+
+function isReadOnlyAllowedPath(cleanPath: string): boolean {
+  if (READ_ONLY_AUTH_ALLOWLIST.has(cleanPath)) return true;
+  if (cleanPath.startsWith('/api/wallet/withdrawals/')) return true;
+  if (cleanPath.startsWith('/api/wallet/issues/')) return true;
+  if (cleanPath.startsWith('/api/staff/me/')) return true;
+  return false;
+}
 
 /**
  * Global server-side read-only enforcement guard.
@@ -60,7 +82,7 @@ export async function evaluateReadOnlyGuard(
   if (!MUTATING_METHODS.has(upperMethod)) return null;
 
   const cleanPath = nextPath.split('?')[0];
-  if (READ_ONLY_AUTH_ALLOWLIST.has(cleanPath)) return null;
+  if (isReadOnlyAllowedPath(cleanPath)) return null;
 
   const cookieHeader = req.headers.get('cookie') || '';
   const authHeader = req.headers.get('authorization') || '';

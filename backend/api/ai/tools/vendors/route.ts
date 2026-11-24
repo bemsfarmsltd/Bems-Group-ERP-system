@@ -42,7 +42,7 @@ export async function GET(req: NextRequest) {
     searchParams.get('subsidiary_id') ||
     actor.scopedOrganizationId ||
     'ALL';
-  const scope = await resolveAuthorizedOrganizationScope(actor as any, requestedOrgId);
+  const scope = await resolveAuthorizedOrganizationScope(actor as any, requestedOrgId, 'ai-copilot');
 
   // 1. Request Match Dossier permission & target ownership check
   if (requestId) {
@@ -206,7 +206,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error_code: 'NOT_FOUND', message: `Request "${requestId}" not found.` }, { status: 404 });
     }
 
-    const scope = await resolveAuthorizedOrganizationScope(actor as any, actor.scopedOrganizationId || 'ALL');
+    const scope = await resolveAuthorizedOrganizationScope(actor as any, actor.scopedOrganizationId || 'ALL', 'ai-copilot');
     const withinOrgScope = scope.organizationIds.includes(request.subsidiaryId);
     const isOwnerOrExec = isExecutive || request.requestedById === actor.id;
     if (!withinOrgScope || !isOwnerOrExec) {

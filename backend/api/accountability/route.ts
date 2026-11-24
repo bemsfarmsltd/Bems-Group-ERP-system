@@ -17,10 +17,9 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const rawSubsidiary = searchParams.get('subsidiaryId') || searchParams.get('subsidiary') || 'ALL';
-  const scope = await resolveAuthorizedOrganizationScope(actor, rawSubsidiary);
-
   // Staff can see and submit proof only for requests they own or requested.
   const ownCasesOnly = isStaffAccount(actor.role);
+  const scope = await resolveAuthorizedOrganizationScope(actor, rawSubsidiary, ownCasesOnly ? 'staff' : 'finance');
 
   const cases = await prisma.accountabilityCase.findMany({
     where: ownCasesOnly

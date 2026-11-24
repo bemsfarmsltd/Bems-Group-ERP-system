@@ -82,7 +82,7 @@ export async function GET(req: Request) {
 
     let filtered = processedEmployees;
     if (orgId && orgId !== 'ALL' && orgId !== 'all') {
-      const scope = await resolveAuthorizedOrganizationScope(actor, orgId);
+      const scope = await resolveAuthorizedOrganizationScope(actor, orgId, 'hr');
       if (!scope.isGroup) {
         filtered = processedEmployees.filter((e: any) =>
           e.assignments?.some((a: any) =>

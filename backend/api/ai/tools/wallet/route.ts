@@ -11,7 +11,7 @@ export const dynamic='force-dynamic';
 async function handle(request:NextRequest,write:boolean){try{
  const {actor,errorResponse}=await authenticateAiToolRequest(request,{scope:'wallet',mode:write?'write':'read'});if(errorResponse)return errorResponse;if(!actor)return NextResponse.json({error:'Authentication required.'},{status:401});requireWallet();
  const limit=await checkRateLimit('wallet-ai:'+actor.id+':'+write,{windowMs:60000,maxAttempts:write?20:60});if(!limit.allowed)return NextResponse.json({error:'Wallet tool rate limit reached.'},{status:429});
- const scope=await resolveAuthorizedOrganizationScope(actor as any,actor.scopedOrganizationId||'ALL');
+ const scope=await resolveAuthorizedOrganizationScope(actor as any,actor.scopedOrganizationId||'ALL','ai-copilot');
  if(write){if(!actor.isExecutive)return NextResponse.json({error:'AI can stage releases only for an authorized executive.'},{status:403});const b=await request.json();
  if(['ALLOCATE_BUDGET','ADJUST_BUDGET'].includes(b.action)){
    let organizationId=String(b.organizationId||''),existing:any=null;

@@ -90,7 +90,7 @@ export async function resolveOrganizationScope(orgIdentifier?: string | null): P
 export async function resolveAuthorizedOrganizationScope(
   actor: AuthenticatedEmployee | null | undefined,
   orgIdentifier?: string | null,
-  access?: AdminModuleKey | 'staff'
+  access?: AdminModuleKey | AdminModuleKey[] | 'staff'
 ): Promise<OrganizationScopeResult> {
   if (!actor) {
     return new OrganizationScopeResult(false, []);
@@ -114,15 +114,21 @@ export async function resolveAuthorizedOrganizationScope(
   if (isExecutive) return permittedScope;
 
   if (actor.role === 'CUSTOM_ADMIN' && access !== 'staff') {
-    if (!access) return new OrganizationScopeResult(false, []);
-    const allowed = getAllowedSubsidiariesForModule(
-      actor.role,
-      actor.customAdminPermissions,
-      access,
-      actor.subsidiaryId
-    );
-    if (allowed === 'ALL') return permittedScope;
-    const allowedIds = new Set(allowed);
+    if (!access || (Array.isArray(access) && access.length === 0)) {
+      return new OrganizationScopeResult(false, []);
+    }
+    const modules = Array.isArray(access) ? access : [access];
+    const allowedIds = new Set<string>();
+    for (const mod of modules) {
+      const allowed = getAllowedSubsidiariesForModule(
+        actor.role,
+        actor.customAdminPermissions,
+        mod,
+        actor.subsidiaryId
+      );
+      if (allowed === 'ALL') return permittedScope;
+      for (const id of allowed) allowedIds.add(id);
+    }
     return new OrganizationScopeResult(false, permittedScope.organizationIds.filter(id => allowedIds.has(id)));
   }
 

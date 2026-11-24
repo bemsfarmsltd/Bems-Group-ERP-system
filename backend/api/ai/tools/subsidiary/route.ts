@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
     url.searchParams.get('subsidiary_id') ||
     actor.scopedOrganizationId ||
     'ALL';
-  const scope = await resolveAuthorizedOrganizationScope(actor as any, requestedOrgId);
+  const scope = await resolveAuthorizedOrganizationScope(actor as any, requestedOrgId, 'ai-copilot');
   const { limit, offset } = clampPagination(
     url.searchParams.get('limit'),
     url.searchParams.get('offset'),

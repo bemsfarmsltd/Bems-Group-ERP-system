@@ -17,7 +17,7 @@ export async function GET(request: Request) {
   if (!(await prisma.organization.findUnique({ where: { id: organizationId }, select: { id: true } }))) {
     return NextResponse.json({ error: 'Company not found.' }, { status: 404 });
   }
-  const scope = await resolveAuthorizedOrganizationScope(actor, organizationId);
+  const scope = await resolveAuthorizedOrganizationScope(actor, organizationId, ['control-center', 'finance']);
   if (scope.organizationIds.length === 0 || (!scope.isGroup && !scope.organizationIds.includes(organizationId))) {
     return NextResponse.json({ error: 'Forbidden: You do not have access to this company\'s workspace settings.' }, { status: 403 });
   }

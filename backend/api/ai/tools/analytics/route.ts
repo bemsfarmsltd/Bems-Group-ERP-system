@@ -46,7 +46,7 @@ async function handleAnalytics(req: NextRequest) {
       avatarUrl: null,
     };
 
-    const scope = await resolveAuthorizedOrganizationScope(authEmp, orgId);
+    const scope = await resolveAuthorizedOrganizationScope(authEmp, orgId, 'ai-copilot');
     if (scope.organizationIds.length === 0) {
       return NextResponse.json(
         { ok: false, error_code: 'NOT_PERMITTED', message: 'Outside authorized organization scope.' },

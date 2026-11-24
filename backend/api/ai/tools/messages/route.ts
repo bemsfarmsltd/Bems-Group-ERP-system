@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
   }
 
   const { searchParams } = new URL(req.url);
-  const authorizedScope = await resolveAuthorizedOrganizationScope(actor as any, searchParams.get('subsidiary_id') || searchParams.get('subsidiary') || searchParams.get('organization_id') || 'ALL');
+  const authorizedScope = await resolveAuthorizedOrganizationScope(actor as any, searchParams.get('subsidiary_id') || searchParams.get('subsidiary') || searchParams.get('organization_id') || 'ALL', 'ai-copilot');
   const channel = (searchParams.get('channel') || (hasGmdFeatureAccess(actor.role) ? 'GMD' : 'HR')).toUpperCase();
   if (channel === 'GMD' && !actor.isExecutive) {
     return NextResponse.json(

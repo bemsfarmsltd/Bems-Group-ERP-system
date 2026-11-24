@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
   if (errorResponse || !actor) return errorResponse!;
 
   const { searchParams } = new URL(request.url);
-  const authorizedScope = await resolveAuthorizedOrganizationScope(actor as any, searchParams.get('subsidiary_id') || searchParams.get('subsidiary') || searchParams.get('organization_id') || 'ALL');
+  const authorizedScope = await resolveAuthorizedOrganizationScope(actor as any, searchParams.get('subsidiary_id') || searchParams.get('subsidiary') || searchParams.get('organization_id') || 'ALL', 'ai-copilot');
 
   const mode = (searchParams.get('mode') || '').toLowerCase();
   const status = searchParams.get('status') || undefined;
@@ -381,7 +381,7 @@ export async function POST(request: NextRequest) {
       if (!reqLookup) {
         return NextResponse.json({ ok: false, error: 'requestId or requestNumber is required.' }, { status: 400 });
       }
-      const authorizedScope = await resolveAuthorizedOrganizationScope(actor as any, actor.scopedOrganizationId || 'ALL');
+      const authorizedScope = await resolveAuthorizedOrganizationScope(actor as any, actor.scopedOrganizationId || 'ALL', 'ai-copilot');
       const reqItem = await db.expenditureRequest.findFirst({
         where: {
           OR: [{ id: reqLookup }, { requestNumber: reqLookup }],
@@ -575,7 +575,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: `Active subsidiary organization "${subsidiaryLookup}" not found.` }, { status: 404 });
     }
 
-    const createScope = await resolveAuthorizedOrganizationScope(actor as any, actor.scopedOrganizationId || 'ALL');
+    const createScope = await resolveAuthorizedOrganizationScope(actor as any, actor.scopedOrganizationId || 'ALL', 'ai-copilot');
     if (!createScope.organizationIds.includes(org.id)) {
       return NextResponse.json({ ok: false, error: 'Cannot stage requests outside your authorized subsidiary workspace.' }, { status: 403 });
     }
