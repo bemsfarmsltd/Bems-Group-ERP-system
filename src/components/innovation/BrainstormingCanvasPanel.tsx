@@ -74,6 +74,7 @@ export interface CanvasBoardRecord {
 interface Props {
   boards: CanvasBoardRecord[];
   products: Array<{ id: string; name: string; productCode: string }>;
+  brandColor?: string;
   isStaffMode?: boolean;
   onRefresh: () => void;
   onNotice?: (msg: string) => void;
@@ -91,6 +92,7 @@ const STICKY_COLORS = [
 export function BrainstormingCanvasPanel({
   boards,
   products,
+  brandColor = '#ea580c',
   isStaffMode = false,
   onRefresh,
   onNotice,
@@ -394,7 +396,7 @@ export function BrainstormingCanvasPanel({
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <Layers size={16} color="#ea580c" />
+            <Layers size={16} color={brandColor} />
             <span style={{ fontSize: 12, fontWeight: 800, color: '#0f172a' }}>ACTIVE BOARD:</span>
           </div>
           <select
@@ -413,11 +415,15 @@ export function BrainstormingCanvasPanel({
               color: '#0f172a',
             }}
           >
-            {boards.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.boardCode} · {b.title} ({b.templateType})
-              </option>
-            ))}
+            {boards.length === 0 ? (
+              <option value="">No board yet — launch a template →</option>
+            ) : (
+              boards.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.boardCode} · {b.title} ({b.templateType})
+                </option>
+              ))
+            )}
           </select>
 
           <button
@@ -426,9 +432,9 @@ export function BrainstormingCanvasPanel({
             style={{
               padding: '7px 12px',
               borderRadius: 9,
-              border: '1px solid #fed7aa',
-              background: '#fff7ed',
-              color: '#ea580c',
+              border: `1px solid ${brandColor}44`,
+              background: `${brandColor}14`,
+              color: brandColor,
               fontSize: 12,
               fontWeight: 800,
               cursor: 'pointer',
@@ -636,12 +642,12 @@ export function BrainstormingCanvasPanel({
 
         <button
           type="submit"
-          disabled={busy || !newContent.trim()}
+          disabled={busy || !newContent.trim() || !activeBoard}
           style={{
             padding: '8px 14px',
             borderRadius: 9,
             border: 'none',
-            background: '#ea580c',
+            background: brandColor,
             color: '#ffffff',
             fontSize: 12,
             fontWeight: 800,
@@ -649,6 +655,7 @@ export function BrainstormingCanvasPanel({
             display: 'inline-flex',
             alignItems: 'center',
             gap: 5,
+            opacity: !activeBoard ? 0.55 : 1,
           }}
         >
           <Plus size={14} /> Add to Canvas

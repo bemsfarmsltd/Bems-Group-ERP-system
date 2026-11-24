@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import { resolveApiUrl } from '@/lib/api-client';
 import { BrainstormingCanvasPanel } from './BrainstormingCanvasPanel';
+import { InnovationDeepPanels } from './InnovationDeepPanels';
 import { useGmdAccess } from '@/components/ai/useGmdAccess';
 
 const FEATURE_STAGE_ORDER = [
@@ -496,6 +497,13 @@ export default function InnovationWorkspaceClient({
           height: 100vh !important;
           overflow: hidden !important;
         }
+        .sidebar-circuit:before {
+          border: 1.5px solid ${activeBrandColor}70 !important;
+          box-shadow: 0 0 0 35px ${activeBrandColor}12, 0 0 0 85px ${activeBrandColor}05 !important;
+        }
+        .sidebar-glow i {
+          background: ${activeBrandColor} !important;
+        }
         .nav-item.active {
           background: linear-gradient(90deg, ${activeBrandColor}, ${activeBrandColor}cc) !important;
           box-shadow: inset 3px 0 #ffffff, 0 6px 16px ${activeBrandColor}40 !important;
@@ -677,6 +685,9 @@ export default function InnovationWorkspaceClient({
                     type="button"
                     onClick={() => {
                       setSelectedOrgId('');
+                      setSelectedPortfolioId('');
+                      setSelectedProductId('');
+                      setLogoFailed(false);
                       setSwitcher(false);
                     }}
                     style={{
@@ -708,6 +719,9 @@ export default function InnovationWorkspaceClient({
                       key={sub.id}
                       onClick={() => {
                         setSelectedOrgId(sub.id);
+                        setSelectedPortfolioId('');
+                        setSelectedProductId('');
+                        setLogoFailed(false);
                         setSwitcher(false);
                       }}
                       style={{
@@ -782,11 +796,11 @@ export default function InnovationWorkspaceClient({
                 height: '28px',
                 padding: '0 8px',
                 borderRadius: '8px',
-                border: '1px solid #fed7aa',
-                background: '#fff7ed',
+                border: `1px solid ${activeBrandColor}45`,
+                background: `${activeBrandColor}12`,
                 fontSize: '11.5px',
                 fontWeight: 700,
-                color: '#9a3412',
+                color: activeBrandColor,
                 maxWidth: 190,
               }}
             >
@@ -938,7 +952,8 @@ export default function InnovationWorkspaceClient({
               </p>
             </div>
           </div>
-        {/* Executive KPI Cards with 1-Click Drill-Down (Section 3) */}
+        {/* Executive KPI Cards with 1-Click Drill-Down — Only on Overview & Portfolios */}
+        {activeTab === 'overview' && (
         <div
           style={{
             display: 'grid',
@@ -951,7 +966,7 @@ export default function InnovationWorkspaceClient({
               label: 'ACTIVE PRODUCTS',
               value: kpis.activeProductsCount ?? 0,
               sub: `${kpis.totalPortfoliosCount ?? 0} Group Portfolios`,
-              accent: '#ea580c',
+              accent: activeBrandColor,
               tab: 'overview' as NavTabKey,
             },
             {
@@ -1016,6 +1031,7 @@ export default function InnovationWorkspaceClient({
             </button>
           ))}
         </div>
+        )}
 
         {/* =================================================================== */}
         {/* TAB 1: OVERVIEW, PORTFOLIOS & PRODUCT REGISTRY (SECTIONS 2–4, 28, 33) */}
@@ -1047,7 +1063,7 @@ export default function InnovationWorkspaceClient({
                       padding: '8px 14px',
                       borderRadius: 9,
                       border: 'none',
-                      background: '#ea580c',
+                      background: activeBrandColor,
                       color: '#ffffff',
                       fontSize: 12,
                       fontWeight: 800,
@@ -1082,6 +1098,43 @@ export default function InnovationWorkspaceClient({
               </div>
 
               {/* Product Cards Grid */}
+              {products.length === 0 ? (
+                <div
+                  style={{
+                    background: '#f8fafc',
+                    border: '1px dashed #cbd5e1',
+                    borderRadius: 14,
+                    padding: '32px 24px',
+                    textAlign: 'center',
+                  }}
+                >
+                  <div style={{ fontSize: 15, fontWeight: 850, color: '#0f172a' }}>
+                    No products registered yet for {activeBusinessName}
+                  </div>
+                  <p style={{ margin: '6px auto 16px', maxWidth: 460, fontSize: 12.5, color: '#64748b', lineHeight: 1.5 }}>
+                    Register the first canonical product for {activeBusinessName} to unlock its 10-stage Product Board, RICE prioritization, infinite brainstorming canvas, versioned PRDs, and Finance-linked budgets.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setShowNewProductModal(true)}
+                    style={{
+                      padding: '9px 16px',
+                      borderRadius: 9,
+                      border: 'none',
+                      background: activeBrandColor,
+                      color: '#ffffff',
+                      fontSize: 12.5,
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6,
+                    }}
+                  >
+                    <Plus size={14} /> Register First Product
+                  </button>
+                </div>
+              ) : (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 14 }}>
                 {products.map((prod: any) => {
                   const prodFeatures = (data?.features || []).filter((f: any) => f.productId === prod.id);
@@ -1092,10 +1145,10 @@ export default function InnovationWorkspaceClient({
                     <div
                       key={prod.id}
                       style={{
-                        border: selectedProductId === prod.id ? '2px solid #ea580c' : '1px solid #e2e8f0',
+                        border: selectedProductId === prod.id ? `2px solid ${activeBrandColor}` : '1px solid #e2e8f0',
                         borderRadius: 14,
                         padding: 16,
-                        background: selectedProductId === prod.id ? '#fff7ed' : '#f8fafc',
+                        background: selectedProductId === prod.id ? `${activeBrandColor}10` : '#f8fafc',
                         display: 'flex',
                         flexDirection: 'column',
                         justifyContent: 'space-between',
@@ -1135,7 +1188,7 @@ export default function InnovationWorkspaceClient({
                         <h3 style={{ margin: '10px 0 4px', fontSize: 15, fontWeight: 900, color: '#0f172a' }}>
                           {prod.name}
                         </h3>
-                        <div style={{ fontSize: 11.5, fontWeight: 700, color: '#ea580c', marginBottom: 6 }}>
+                        <div style={{ fontSize: 11.5, fontWeight: 700, color: activeBrandColor, marginBottom: 6 }}>
                           {prod.organizationName} {prod.portfolio?.name ? `· ${prod.portfolio.name}` : ''}
                         </div>
                         <p style={{ margin: 0, fontSize: 12, color: '#475569', lineHeight: 1.5 }}>
@@ -1231,7 +1284,42 @@ export default function InnovationWorkspaceClient({
                   );
                 })}
               </div>
+              )}
             </div>
+
+            {/* Portfolio Grouping & Strategic Health Overview */}
+            {(data?.portfolios || []).length > 0 && (
+              <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 16, padding: 18 }}>
+                <div style={{ marginBottom: 12 }}>
+                  <h2 style={{ margin: 0, fontSize: 15, fontWeight: 900, color: '#0f172a' }}>
+                    Strategic Product Portfolios ({(data?.portfolios || []).length})
+                  </h2>
+                  <p style={{ margin: '2px 0 0', fontSize: 12, color: '#64748b' }}>
+                    Executive grouping of products by business domain, strategic theme, and sponsor.
+                  </p>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 12 }}>
+                  {(data?.portfolios || []).map((pf: any) => {
+                    const pfProducts = products.filter((p: any) => p.portfolioId === pf.id);
+                    return (
+                      <div key={pf.id} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 12, padding: 14 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontSize: 10.5, fontWeight: 900, color: activeBrandColor }}>{pf.code}</span>
+                          <span style={{ fontSize: 10.5, fontWeight: 800, padding: '2px 8px', borderRadius: 99, background: '#ffffff', border: '1px solid #cbd5e1', color: '#334155' }}>
+                            {pfProducts.length} {pfProducts.length === 1 ? 'Product' : 'Products'}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: 14, fontWeight: 850, color: '#0f172a', marginTop: 6 }}>{pf.name}</div>
+                        {pf.description && <p style={{ margin: '4px 0 0', fontSize: 11.5, color: '#475569' }}>{pf.description}</p>}
+                        <div style={{ fontSize: 10.5, color: '#64748b', marginTop: 8 }}>
+                          Lead: <strong style={{ color: '#0f172a' }}>{pf.leadName || 'Executive Product Office'}</strong>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -1301,7 +1389,7 @@ export default function InnovationWorkspaceClient({
                       padding: '8px 14px',
                       borderRadius: 9,
                       border: 'none',
-                      background: '#ea580c',
+                      background: activeBrandColor,
                       color: '#ffffff',
                       fontSize: 12,
                       fontWeight: 800,
@@ -1328,8 +1416,8 @@ export default function InnovationWorkspaceClient({
                         style={{
                           minWidth: 270,
                           maxWidth: 270,
-                          background: isApprovalGate ? '#fff7ed' : '#f8fafc',
-                          border: `1px solid ${isApprovalGate ? '#fed7aa' : '#e2e8f0'}`,
+                          background: isApprovalGate ? `${activeBrandColor}10` : '#f8fafc',
+                          border: `1px solid ${isApprovalGate ? `${activeBrandColor}44` : '#e2e8f0'}`,
                           borderRadius: 12,
                           padding: 12,
                           display: 'flex',
@@ -1338,7 +1426,7 @@ export default function InnovationWorkspaceClient({
                         }}
                       >
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                          <span style={{ fontSize: 11, fontWeight: 900, color: isApprovalGate ? '#c2410c' : '#0f172a' }}>
+                          <span style={{ fontSize: 11, fontWeight: 900, color: isApprovalGate ? activeBrandColor : '#0f172a' }}>
                             {stage.replace(/_/g, ' ')} {isApprovalGate ? '🔒' : ''}
                           </span>
                           <span
@@ -1370,7 +1458,7 @@ export default function InnovationWorkspaceClient({
                             }}
                           >
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
-                              <span style={{ fontSize: 10, fontWeight: 900, color: '#ea580c' }}>
+                              <span style={{ fontSize: 10, fontWeight: 900, color: activeBrandColor }}>
                                 {feat.featureCode}
                               </span>
                               <span
@@ -1437,9 +1525,9 @@ export default function InnovationWorkspaceClient({
                                 style={{
                                   padding: '3px 8px',
                                   borderRadius: 6,
-                                  border: '1px solid #fed7aa',
-                                  background: '#fff7ed',
-                                  color: '#ea580c',
+                                  border: `1px solid ${activeBrandColor}44`,
+                                  background: `${activeBrandColor}12`,
+                                  color: activeBrandColor,
                                   fontSize: 10,
                                   fontWeight: 800,
                                   cursor: 'pointer',
@@ -1478,7 +1566,7 @@ export default function InnovationWorkspaceClient({
                         <tr key={feat.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
                           <td style={{ padding: '10px 12px' }}>
                             <div style={{ fontWeight: 800, color: '#0f172a' }}>
-                              <span style={{ color: '#ea580c', marginRight: 6 }}>{feat.featureCode}</span>
+                              <span style={{ color: activeBrandColor, marginRight: 6 }}>{feat.featureCode}</span>
                               {feat.title}
                             </div>
                             <div style={{ fontSize: 11, color: '#64748b' }}>{feat.problemStatement}</div>
@@ -1490,7 +1578,7 @@ export default function InnovationWorkspaceClient({
                             </span>
                           </td>
                           <td style={{ padding: '10px 12px', fontSize: 11, fontWeight: 700 }}>
-                            {feat.moscowCategory} · <span style={{ color: '#ea580c' }}>{feat.roadmapHorizon}</span>
+                            {feat.moscowCategory} · <span style={{ color: activeBrandColor }}>{feat.roadmapHorizon}</span>
                           </td>
                           <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace' }}>
                             {feat.riceReach} × {feat.riceImpact} × {feat.riceConfidence}% ÷ {feat.riceEffort}m
@@ -1500,7 +1588,7 @@ export default function InnovationWorkspaceClient({
                           </td>
                           <td style={{ padding: '10px 12px', fontSize: 11 }}>
                             {feat.manualOverrideRank ? (
-                              <span style={{ color: '#c2410c', fontWeight: 800 }}>
+                              <span style={{ color: activeBrandColor, fontWeight: 800 }}>
                                 Rank #{feat.manualOverrideRank} ({feat.overrideReason || 'Manager override'})
                               </span>
                             ) : (
@@ -1519,9 +1607,9 @@ export default function InnovationWorkspaceClient({
                                 style={{
                                   padding: '5px 10px',
                                   borderRadius: 7,
-                                  border: '1px solid #fed7aa',
-                                  background: '#fff7ed',
-                                  color: '#ea580c',
+                                  border: `1px solid ${activeBrandColor}44`,
+                                  background: `${activeBrandColor}12`,
+                                  color: activeBrandColor,
                                   fontSize: 11,
                                   fontWeight: 800,
                                   cursor: 'pointer',
@@ -1549,845 +1637,34 @@ export default function InnovationWorkspaceClient({
             boards={data?.boards || []}
             products={products}
             isStaffMode={false}
+            brandColor={activeBrandColor}
             onRefresh={() => void fetchOverview()}
             onNotice={showToast}
           />
         )}
 
         {/* =================================================================== */}
-        {/* TAB 4: IDEAS, DISCOVERY OST, FEEDBACK & RESEARCH (SECTIONS 8–11, 19) */}
+        {/* TABS 4–8: DEEP INTERACTIVE WORKSPACE PANELS (BRAND-THEMED & FULL CRUD) */}
         {/* =================================================================== */}
-        {activeTab === 'ideas_discovery' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 16, padding: 18 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, marginBottom: 16 }}>
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  {[
-                    { id: 'IDEAS', label: `Idea Management Board (${(data?.ideas || []).length})` },
-                    { id: 'OST', label: `Discovery & Opportunity Solution Tree (${(data?.opportunities || []).length})` },
-                    { id: 'FEEDBACK', label: `Customer & Staff Feedback Repository (${(data?.feedbackItems || []).length})` },
-                    { id: 'RESEARCH', label: `User Research, Personas & Competitors (${(data?.researchRecords || []).length})` },
-                  ].map((st) => (
-                    <button
-                      key={st.id}
-                      type="button"
-                      onClick={() => setDiscoverySubTab(st.id as any)}
-                      style={{
-                        padding: '7px 13px',
-                        borderRadius: 9,
-                        border: discoverySubTab === st.id ? '1px solid #0f172a' : '1px solid #e2e8f0',
-                        background: discoverySubTab === st.id ? '#0f172a' : '#f8fafc',
-                        color: discoverySubTab === st.id ? '#ffffff' : '#334155',
-                        fontSize: 12,
-                        fontWeight: 800,
-                        cursor: 'pointer',
-                      }}
-                    >
-                      {st.label}
-                    </button>
-                  ))}
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setShowNewIdeaModal(true)}
-                  style={{
-                    padding: '8px 14px',
-                    borderRadius: 9,
-                    border: 'none',
-                    background: '#ea580c',
-                    color: '#ffffff',
-                    fontSize: 12,
-                    fontWeight: 800,
-                    cursor: 'pointer',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 5,
-                  }}
-                >
-                  <Plus size={14} /> Submit New Idea
-                </button>
-              </div>
-
-              {/* SUB-VIEW 1: IDEA MANAGEMENT BOARD */}
-              {discoverySubTab === 'IDEAS' && (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 12 }}>
-                  {(data?.ideas || []).map((idea: any) => (
-                    <div
-                      key={idea.id}
-                      style={{
-                        background: '#f8fafc',
-                        border: '1px solid #e2e8f0',
-                        borderRadius: 12,
-                        padding: 14,
-                        display: 'flex',
-                        flexDirection: 'column',
-                        justifyContent: 'space-between',
-                        gap: 10,
-                      }}
-                    >
-                      <div>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                          <span style={{ fontSize: 11, fontWeight: 900, color: '#ea580c' }}>
-                            {idea.ideaNumber} · {idea.productName}
-                          </span>
-                          <span
-                            style={{
-                              fontSize: 10,
-                              fontWeight: 800,
-                              padding: '2px 7px',
-                              borderRadius: 6,
-                              background: idea.status === 'APPROVED' ? '#ecfdf5' : '#fff7ed',
-                              color: idea.status === 'APPROVED' ? '#047857' : '#c2410c',
-                            }}
-                          >
-                            {idea.status}
-                          </span>
-                        </div>
-                        <h4 style={{ margin: '8px 0 4px', fontSize: 14, fontWeight: 800, color: '#0f172a' }}>
-                          {idea.title}
-                        </h4>
-                        <div style={{ fontSize: 11.5, color: '#334155', marginBottom: 6 }}>
-                          <strong>Problem:</strong> {idea.problemStatement}
-                        </div>
-                        {idea.expectedValue && (
-                          <div style={{ fontSize: 11, color: '#047857', fontWeight: 700 }}>
-                            Expected Value: {idea.expectedValue}
-                          </div>
-                        )}
-                        {idea.publicDecisionNote && (
-                          <div style={{ marginTop: 6, padding: '6px 8px', borderRadius: 7, background: '#ffffff', border: '1px solid #e2e8f0', fontSize: 11, color: '#334155' }}>
-                            <strong>Decision Note:</strong> {idea.publicDecisionNote}
-                          </div>
-                        )}
-                      </div>
-
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6, paddingTop: 8, borderTop: '1px solid #e2e8f0' }}>
-                        <span style={{ fontSize: 10.5, color: '#64748b' }}>
-                          By <strong>{idea.submitterName}</strong> · Score: <strong>{idea.rubricScore ?? '—'}</strong>
-                        </span>
-
-                        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-                          <button
-                            type="button"
-                            onClick={() => void handleIdeaAction(idea.id, 'VOTE')}
-                            style={{
-                              padding: '4px 8px',
-                              borderRadius: 6,
-                              border: '1px solid #cbd5e1',
-                              background: '#ffffff',
-                              fontSize: 11,
-                              fontWeight: 800,
-                              cursor: 'pointer',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: 4,
-                            }}
-                          >
-                            <ThumbsUp size={11} color="#ea580c" /> {idea.votesCount}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void handleIdeaAction(idea.id, 'CONVERT_TO_OPPORTUNITY')}
-                            style={{
-                              padding: '4px 8px',
-                              borderRadius: 6,
-                              border: '1px solid #bfdbfe',
-                              background: '#eff6ff',
-                              color: '#1d4ed8',
-                              fontSize: 10.5,
-                              fontWeight: 800,
-                              cursor: 'pointer',
-                            }}
-                          >
-                            → Opportunity
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void handleIdeaAction(idea.id, 'CONVERT_TO_FEATURE')}
-                            style={{
-                              padding: '4px 8px',
-                              borderRadius: 6,
-                              border: '1px solid #fed7aa',
-                              background: '#fff7ed',
-                              color: '#ea580c',
-                              fontSize: 10.5,
-                              fontWeight: 800,
-                              cursor: 'pointer',
-                            }}
-                          >
-                            → Feature
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* SUB-VIEW 2: DISCOVERY OPPORTUNITIES (OST) */}
-              {discoverySubTab === 'OST' && (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 12 }}>
-                  {(data?.opportunities || []).map((opp: any) => (
-                    <div key={opp.id} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 12, padding: 14 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontSize: 11, fontWeight: 900, color: '#0284c7' }}>
-                          {opp.opportunityCode} · {opp.productName}
-                        </span>
-                        <span style={{ fontSize: 10.5, fontWeight: 800, padding: '2px 7px', borderRadius: 6, background: '#ecfdf5', color: '#047857' }}>
-                          Confidence {opp.confidenceScore}% · {opp.decision}
-                        </span>
-                      </div>
-                      <h4 style={{ margin: '8px 0 4px', fontSize: 14, fontWeight: 800 }}>{opp.title}</h4>
-                      <p style={{ margin: '0 0 6px', fontSize: 11.5, color: '#334155' }}>
-                        <strong>Problem:</strong> {opp.problemStatement}
-                      </p>
-                      {opp.hypothesis && (
-                        <div style={{ fontSize: 11, color: '#475569', marginBottom: 6 }}>
-                          <strong>Hypothesis:</strong> {opp.hypothesis}
-                        </div>
-                      )}
-                      {opp.evidenceSummary && (
-                        <div style={{ padding: '6px 8px', borderRadius: 7, background: '#ffffff', border: '1px solid #e2e8f0', fontSize: 11, color: '#0f172a' }}>
-                          <strong>Evidence:</strong> {opp.evidenceSummary}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* SUB-VIEW 3: CUSTOMER & STAFF FEEDBACK REPOSITORY */}
-              {discoverySubTab === 'FEEDBACK' && (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 12 }}>
-                  {(data?.feedbackItems || []).map((fb: any) => (
-                    <div key={fb.id} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 12, padding: 14 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontSize: 11, fontWeight: 900, color: '#ea580c' }}>
-                          {fb.feedbackCode} · {fb.category}
-                        </span>
-                        <span style={{ fontSize: 10.5, fontWeight: 800, padding: '2px 7px', borderRadius: 6, background: '#ffffff', border: '1px solid #cbd5e1' }}>
-                          {fb.status}
-                        </span>
-                      </div>
-                      <h4 style={{ margin: '8px 0 4px', fontSize: 13.5, fontWeight: 800 }}>{fb.title}</h4>
-                      <p style={{ margin: 0, fontSize: 11.5, color: '#475569' }}>{fb.description}</p>
-                      <div style={{ fontSize: 10.5, color: '#64748b', marginTop: 8 }}>
-                        Channel: <strong>{fb.sourceChannel}</strong> · Segment: <strong>{fb.customerSegment || 'Staff'}</strong>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* SUB-VIEW 4: USER RESEARCH & PERSONAS */}
-              {discoverySubTab === 'RESEARCH' && (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 12 }}>
-                  {(data?.researchRecords || []).map((resRec: any) => (
-                    <div key={resRec.id} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 12, padding: 14 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontSize: 11, fontWeight: 900, color: '#7c3aed' }}>
-                          {resRec.researchCode} · {resRec.researchType}
-                        </span>
-                        <span style={{ fontSize: 10.5, fontWeight: 800, padding: '2px 7px', borderRadius: 6, background: '#ecfdf5', color: '#047857' }}>
-                          {resRec.status} · Consent ✓
-                        </span>
-                      </div>
-                      <h4 style={{ margin: '8px 0 4px', fontSize: 13.5, fontWeight: 800 }}>{resRec.title}</h4>
-                      <div style={{ fontSize: 11.5, color: '#334155', marginBottom: 6 }}>
-                        <strong>Research Question:</strong> {resRec.researchQuestion}
-                      </div>
-                      {resRec.findingsSummary && (
-                        <div style={{ padding: '6px 8px', borderRadius: 7, background: '#ffffff', border: '1px solid #e2e8f0', fontSize: 11, color: '#0f172a' }}>
-                          <strong>Verified Findings:</strong> {resRec.findingsSummary}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* =================================================================== */}
-        {/* TAB 5: STRATEGY, OKRs, ROADMAPS & VERSIONED PRD EDITOR (SECTIONS 12, 13, 16, 17) */}
-        {/* =================================================================== */}
-        {activeTab === 'strategy_prds' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {/* OKRs & Roadmaps Row */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: 16 }}>
-              {/* Product OKRs */}
-              <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 16, padding: 18 }}>
-                <h3 style={{ margin: '0 0 10px', fontSize: 15, fontWeight: 900, color: '#0f172a' }}>
-                  Product Objectives &amp; Key Results (OKRs — Section 13)
-                </h3>
-                {(data?.goals || []).map((g: any) => (
-                  <div key={g.id} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 12, padding: 12, marginBottom: 10 }}>
-                    <div style={{ fontSize: 13, fontWeight: 800, color: '#0f172a' }}>
-                      {g.objectiveTitle} ({g.measurementCycle})
-                    </div>
-                    <div style={{ fontSize: 11, color: '#64748b', marginBottom: 8 }}>{g.purpose}</div>
-                    {(g.keyResults || []).map((kr: any) => {
-                      const pct = Math.min(100, Math.max(0, Math.round((kr.actualValue / (kr.targetValue || 1)) * 100)));
-                      return (
-                        <div key={kr.id} style={{ marginTop: 8 }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.5, fontWeight: 700 }}>
-                            <span>{kr.metricName}</span>
-                            <span style={{ color: '#059669' }}>
-                              {kr.actualValue}{kr.unit} / {kr.targetValue}{kr.unit} (Baseline: {kr.baselineValue}{kr.unit})
-                            </span>
-                          </div>
-                          <div style={{ height: 7, borderRadius: 99, background: '#e2e8f0', marginTop: 4, overflow: 'hidden' }}>
-                            <div style={{ width: `${pct}%`, height: '100%', background: '#10b981' }} />
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ))}
-              </div>
-
-              {/* Roadmaps: Now / Next / Later */}
-              <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 16, padding: 18 }}>
-                <h3 style={{ margin: '0 0 10px', fontSize: 15, fontWeight: 900, color: '#0f172a' }}>
-                  Strategic Product Roadmap (Now / Next / Later — Section 16)
-                </h3>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  {(data?.roadmapItems || []).map((rm: any) => (
-                    <div
-                      key={rm.id}
-                      style={{
-                        background: '#f8fafc',
-                        border: '1px solid #e2e8f0',
-                        borderRadius: 11,
-                        padding: 12,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        gap: 10,
-                      }}
-                    >
-                      <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <span style={{ fontSize: 10, fontWeight: 900, padding: '2px 7px', borderRadius: 5, background: '#ea580c', color: '#ffffff' }}>
-                            {rm.horizon} · {rm.quarterLabel}
-                          </span>
-                          <span
-                            style={{
-                              fontSize: 10,
-                              fontWeight: 800,
-                              padding: '2px 7px',
-                              borderRadius: 5,
-                              background: rm.commitmentLevel === 'APPROVED_COMMITMENT' ? '#ecfdf5' : '#fff7ed',
-                              color: rm.commitmentLevel === 'APPROVED_COMMITMENT' ? '#047857' : '#c2410c',
-                            }}
-                          >
-                            {rm.commitmentLevel}
-                          </span>
-                        </div>
-                        <div style={{ fontSize: 13, fontWeight: 800, color: '#0f172a', marginTop: 5 }}>{rm.title}</div>
-                        <div style={{ fontSize: 11, color: '#64748b' }}>
-                          {rm.productName} · Dependencies: {rm.dependenciesNote || 'None'}
-                        </div>
-                      </div>
-                      <span style={{ fontSize: 11, fontWeight: 800, color: '#0f172a' }}>{rm.status}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* 14-Section Version-Controlled PRD Editor (Section 17) */}
-            <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 16, padding: 18 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, marginBottom: 14 }}>
-                <div>
-                  <h3 style={{ margin: 0, fontSize: 16, fontWeight: 900, color: '#0f172a' }}>
-                    Version-Controlled PRD &amp; Requirements Specification Editor (Section 17)
-                  </h3>
-                  <p style={{ margin: '2px 0 0', fontSize: 12, color: '#64748b' }}>
-                    Engineering handoffs reference an immutable approved PRD version snapshot — editing creates a new revision without overwriting prior approvals.
-                  </p>
-                </div>
-
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  <select
-                    value={activePrd?.id || ''}
-                    onChange={(e) => setSelectedPrdId(e.target.value)}
-                    style={{ padding: '7px 11px', borderRadius: 8, border: '1px solid #cbd5e1', background: '#f8fafc', fontSize: 12, fontWeight: 700 }}
-                  >
-                    {(data?.prds || []).map((p: any) => (
-                      <option key={p.id} value={p.id}>
-                        {p.prdCode} · {p.title} (v{p.currentVersion} · {p.status})
-                      </option>
-                    ))}
-                  </select>
-
-                  {activePrd && (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => void handlePrdRevisionOrApprove(activePrd.id, 'NEW_VERSION')}
-                        style={{
-                          padding: '7px 12px',
-                          borderRadius: 8,
-                          border: '1px solid #cbd5e1',
-                          background: '#ffffff',
-                          fontSize: 11.5,
-                          fontWeight: 800,
-                          cursor: 'pointer',
-                        }}
-                      >
-                        + Draft New Version (v{(activePrd.currentVersion || 1) + 1})
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void handlePrdRevisionOrApprove(activePrd.id, 'APPROVE')}
-                        style={{
-                          padding: '7px 12px',
-                          borderRadius: 8,
-                          border: 'none',
-                          background: '#059669',
-                          color: '#ffffff',
-                          fontSize: 11.5,
-                          fontWeight: 800,
-                          cursor: 'pointer',
-                        }}
-                      >
-                        ✓ Approve Snapshot v{activePrd.currentVersion}
-                      </button>
-                    </>
-                  )}
-
-                  <button
-                    type="button"
-                    onClick={() => setShowNewPrdModal(true)}
-                    style={{
-                      padding: '7px 12px',
-                      borderRadius: 8,
-                      border: 'none',
-                      background: '#ea580c',
-                      color: '#ffffff',
-                      fontSize: 11.5,
-                      fontWeight: 800,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    + New PRD
-                  </button>
-                </div>
-              </div>
-
-              {activePrd && (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 12 }}>
-                  {[
-                    { label: '1. Overview & Context', val: activePrd.overview },
-                    { label: '2. Problem Statement', val: activePrd.problemStatement },
-                    { label: '3. Target Outcomes & Metrics', val: activePrd.targetOutcomes },
-                    { label: '4. Target Personas', val: activePrd.personas },
-                    { label: '5. In-Scope Capabilities', val: activePrd.inScope },
-                    { label: '6. Out-of-Scope Exclusions', val: activePrd.outOfScope },
-                    { label: '7. User Stories', val: activePrd.userStories },
-                    { label: '8. User Flows', val: activePrd.userFlows },
-                    { label: '9. Functional Requirements', val: activePrd.functionalReqs },
-                    { label: '10. Non-Functional Requirements', val: activePrd.nonFunctionalReqs },
-                    { label: '11. Data Model & Schema Notes', val: activePrd.dataModelNotes },
-                    { label: '12. Security, Privacy & Compliance', val: activePrd.securityPrivacy },
-                    { label: '13. Dependencies & Risks', val: activePrd.dependenciesRisks },
-                    { label: '14. Acceptance Criteria', val: activePrd.acceptanceCriteria },
-                  ].map((sec) => (
-                    <div
-                      key={sec.label}
-                      style={{
-                        background: '#f8fafc',
-                        border: '1px solid #e2e8f0',
-                        borderRadius: 11,
-                        padding: 12,
-                      }}
-                    >
-                      <div style={{ fontSize: 11, fontWeight: 800, color: '#ea580c', textTransform: 'uppercase', marginBottom: 4 }}>
-                        {sec.label}
-                      </div>
-                      <div style={{ fontSize: 12, color: '#1e293b', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>
-                        {sec.val || '—'}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Immutable Version Snapshot History */}
-              {activePrd?.versions?.length > 0 && (
-                <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid #e2e8f0' }}>
-                  <div style={{ fontSize: 12, fontWeight: 800, color: '#0f172a', marginBottom: 8 }}>
-                    Immutable Version Snapshot Trail ({activePrd.versions.length} versions)
-                  </div>
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    {activePrd.versions.map((v: any) => (
-                      <div
-                        key={v.id}
-                        style={{
-                          padding: '6px 10px',
-                          borderRadius: 8,
-                          background: v.status === 'APPROVED' ? '#ecfdf5' : '#f8fafc',
-                          border: `1px solid ${v.status === 'APPROVED' ? '#a7f3d0' : '#e2e8f0'}`,
-                          fontSize: 11,
-                        }}
-                      >
-                        <strong>v{v.versionNumber} ({v.status})</strong> · {v.changeSummary} · by {v.createdByName}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* =================================================================== */}
-        {/* TAB 6: DESIGN, EXPERIMENTS, RELEASES & LAUNCH GO/NO-GO (SECTIONS 18, 20–24) */}
-        {/* =================================================================== */}
-        {activeTab === 'delivery_releases' && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: 16 }}>
-            {/* Experiments & MVP Pilot Control */}
-            <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 16, padding: 18 }}>
-              <h3 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 900, color: '#0f172a' }}>
-                Experiments, Validation &amp; MVP Pilot Graduation (Sections 20 &amp; 21)
-              </h3>
-              {(data?.experiments || []).map((ex: any) => (
-                <div key={ex.id} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 12, padding: 14, marginBottom: 10 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: 11, fontWeight: 900, color: '#0891b2' }}>
-                      {ex.experimentCode} · {ex.experimentType}
-                    </span>
-                    <span style={{ fontSize: 10.5, fontWeight: 800, padding: '2px 7px', borderRadius: 6, background: '#ecfdf5', color: '#047857' }}>
-                      {ex.outcomeDecision} · {ex.pilotGraduation}
-                    </span>
-                  </div>
-                  <h4 style={{ margin: '6px 0 4px', fontSize: 13.5, fontWeight: 800 }}>{ex.title}</h4>
-                  <div style={{ fontSize: 11.5, color: '#334155', marginBottom: 4 }}>
-                    <strong>Hypothesis:</strong> {ex.hypothesis}
-                  </div>
-                  <div style={{ fontSize: 11.5, color: '#047857', fontWeight: 700, marginBottom: 4 }}>
-                    <strong>Results ({ex.sampleSize}):</strong> {ex.resultsSummary}
-                  </div>
-                  <div style={{ fontSize: 11, color: '#b45309', background: '#fffbeb', padding: '5px 8px', borderRadius: 6, border: '1px solid #fde68a' }}>
-                    <strong>Declared Limitations (Section 20 Control):</strong> {ex.limitationsNote}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Releases & Go/No-Go Launch Board */}
-            <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 16, padding: 18 }}>
-              <h3 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 900, color: '#0f172a' }}>
-                Product Releases &amp; Commercial Go/No-Go Launch Board (Sections 23 &amp; 24)
-              </h3>
-              {(data?.releases || []).map((rel: any) => (
-                <div key={rel.id} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 12, padding: 14, marginBottom: 10 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: 11, fontWeight: 900, color: '#ea580c' }}>
-                      {rel.releaseCode} · {rel.versionTag}
-                    </span>
-                    <span style={{ fontSize: 10.5, fontWeight: 800, padding: '2px 7px', borderRadius: 6, background: '#eff6ff', color: '#1d4ed8' }}>
-                      {rel.workflowStage} · QA: {rel.qaStatus}
-                    </span>
-                  </div>
-                  <h4 style={{ margin: '6px 0 4px', fontSize: 13.5, fontWeight: 800 }}>{rel.title}</h4>
-                  <div style={{ fontSize: 11.5, color: '#475569' }}>
-                    <strong>Release Notes:</strong> {rel.externalReleaseNotes}
-                  </div>
-                  <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>
-                    <strong>Rollback Plan:</strong> {rel.rollbackPlan}
-                  </div>
-                </div>
-              ))}
-
-              {(data?.launchChecklists || []).map((lc: any) => (
-                <div key={lc.id} style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 12, padding: 14 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <strong style={{ fontSize: 12.5, color: '#9a3412' }}>{lc.launchCode} · {lc.title}</strong>
-                    <span style={{ fontSize: 10.5, fontWeight: 900, padding: '2px 8px', borderRadius: 6, background: '#ffffff', color: '#ea580c' }}>
-                      Go/No-Go: {lc.goNoGoDecision}
-                    </span>
-                  </div>
-                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
-                    {[
-                      { label: 'Product Readiness', ok: lc.productReadinessOk },
-                      { label: 'Docs & Training', ok: lc.docsTrainingOk },
-                      { label: 'Support & Ops', ok: lc.supportOpsOk },
-                      { label: 'Marketing & Sales', ok: lc.marketingSalesOk },
-                      { label: 'Legal & Privacy', ok: lc.legalPrivacyOk },
-                      { label: 'Technical Security', ok: lc.technicalSecurityOk },
-                    ].map((s) => (
-                      <span
-                        key={s.label}
-                        style={{
-                          fontSize: 10.5,
-                          fontWeight: 700,
-                          padding: '3px 8px',
-                          borderRadius: 6,
-                          background: s.ok ? '#ecfdf5' : '#fef2f2',
-                          color: s.ok ? '#047857' : '#dc2626',
-                          border: `1px solid ${s.ok ? '#a7f3d0' : '#fecaca'}`,
-                        }}
-                      >
-                        {s.ok ? '✓' : '✕'} {s.label}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* =================================================================== */}
-        {/* TAB 7: ADOPTION ANALYTICS & PRODUCT BUDGETS (SECTIONS 25 & 27)      */}
-        {/* =================================================================== */}
-        {activeTab === 'analytics_budget' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {/* Adoption & Performance Analytics */}
-            <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 16, padding: 18 }}>
-              <h3 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 900, color: '#0f172a' }}>
-                Traceable Product Adoption, Retention &amp; Performance Analytics (Section 25)
-              </h3>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 12 }}>
-                {(data?.metrics || []).map((m: any) => (
-                  <div key={m.id} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 12, padding: 14 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontSize: 10.5, fontWeight: 800, color: '#64748b' }}>
-                        {m.productName} · {m.category}
-                      </span>
-                      <span style={{ fontSize: 10, fontWeight: 800, padding: '2px 6px', borderRadius: 5, background: '#ecfdf5', color: '#047857' }}>
-                        {m.verificationState} ({m.confidence}%)
-                      </span>
-                    </div>
-                    <div style={{ fontSize: 13, fontWeight: 800, color: '#0f172a', marginTop: 6 }}>{m.metricName}</div>
-                    <div style={{ fontSize: 22, fontWeight: 900, color: '#ea580c', marginTop: 2 }}>
-                      {m.actualValue.toLocaleString()} {m.unit}
-                    </div>
-                    <div style={{ fontSize: 11, color: '#475569', marginTop: 2 }}>
-                      Prior: {m.priorPeriodValue} {m.unit} · Target: {m.targetValue ?? '—'} {m.unit}
-                    </div>
-                    <div style={{ fontSize: 10, color: '#64748b', marginTop: 6, fontFamily: 'monospace' }}>
-                      Formula: {m.formula} · Source: {m.sourceSystem}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Product Budget & Finance Governance Link (Section 27) */}
-            <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 16, padding: 18 }}>
-              <div style={{ marginBottom: 12 }}>
-                <h3 style={{ margin: 0, fontSize: 15, fontWeight: 900, color: '#0f172a' }}>
-                  Product Investment &amp; Budget Ledger (Finance Authoritative — Section 27)
-                </h3>
-                <p style={{ margin: '2px 0 0', fontSize: 12, color: '#64748b' }}>
-                  Control Rule: Proposed funding is not available cash; approved product budget is not a disbursement. All payouts remain governed by Finance.
-                </p>
-              </div>
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                  <thead>
-                    <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', textAlign: 'left' }}>
-                      <th style={{ padding: '10px 12px' }}>CODE &amp; PRODUCT</th>
-                      <th style={{ padding: '10px 12px' }}>PERIOD</th>
-                      <th style={{ padding: '10px 12px', textAlign: 'right' }}>PROPOSED INVESTMENT</th>
-                      <th style={{ padding: '10px 12px', textAlign: 'right' }}>APPROVED CAPEX + OPEX</th>
-                      <th style={{ padding: '10px 12px', textAlign: 'right' }}>COMMITTED / ACTUAL</th>
-                      <th style={{ padding: '10px 12px', textAlign: 'right' }}>ATTRIBUTABLE REVENUE</th>
-                      <th style={{ padding: '10px 12px' }}>METHODOLOGY</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(data?.budgets || []).map((b: any) => (
-                      <tr key={b.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                        <td style={{ padding: '10px 12px', fontWeight: 800 }}>
-                          <span style={{ color: '#ea580c', marginRight: 6 }}>{b.budgetCode}</span>
-                          {b.productName}
-                        </td>
-                        <td style={{ padding: '10px 12px' }}>{b.fiscalPeriod}</td>
-                        <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 700 }}>{formatNaira(b.proposedInvestmentNaira)}</td>
-                        <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 800, color: '#0f172a' }}>
-                          {formatNaira(b.approvedCapexNaira + b.approvedOpexNaira)}
-                        </td>
-                        <td style={{ padding: '10px 12px', textAlign: 'right', color: '#047857', fontWeight: 800 }}>
-                          {formatNaira(b.committedSpendNaira)} / {formatNaira(b.actualSpendNaira)}
-                        </td>
-                        <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 800, color: '#1d4ed8' }}>
-                          {formatNaira(b.attributableRevNaira)}
-                        </td>
-                        <td style={{ padding: '10px 12px', fontSize: 11, color: '#64748b' }}>{b.allocationMethodology}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* =================================================================== */}
-        {/* TAB 8: RISKS, DECISION REGISTER & VERSION-BOUND APPROVALS (SECTIONS 29, 31, 32) */}
-        {/* =================================================================== */}
-        {activeTab === 'governance_approvals' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {/* Version-Bound Approval Queue */}
-            <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 16, padding: 18 }}>
-              <h3 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 900, color: '#0f172a' }}>
-                Version-Bound Product Approval Queue (Section 32)
-              </h3>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 12 }}>
-                {(data?.approvals || []).map((apr: any) => (
-                  <div
-                    key={apr.id}
-                    style={{
-                      background: apr.status === 'PENDING' ? '#fff7ed' : '#f8fafc',
-                      border: `1px solid ${apr.status === 'PENDING' ? '#fed7aa' : '#e2e8f0'}`,
-                      borderRadius: 12,
-                      padding: 14,
-                      display: 'flex',
-                      flexDirection: 'column',
-                      justifyContent: 'space-between',
-                      gap: 10,
-                    }}
-                  >
-                    <div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontSize: 11, fontWeight: 900, color: '#ea580c' }}>
-                          {apr.approvalCode} · {apr.gateType} (v{apr.targetVersion})
-                        </span>
-                        <span
-                          style={{
-                            fontSize: 10.5,
-                            fontWeight: 800,
-                            padding: '2px 8px',
-                            borderRadius: 6,
-                            background: apr.status === 'APPROVED' ? '#ecfdf5' : '#ffffff',
-                            color: apr.status === 'APPROVED' ? '#047857' : '#c2410c',
-                          }}
-                        >
-                          {apr.status}
-                        </span>
-                      </div>
-                      <h4 style={{ margin: '6px 0 4px', fontSize: 13.5, fontWeight: 800, color: '#0f172a' }}>{apr.title}</h4>
-                      <p style={{ margin: 0, fontSize: 11.5, color: '#475569' }}>{apr.summary}</p>
-                      <div style={{ fontSize: 10.5, color: '#64748b', marginTop: 6 }}>
-                        Product: <strong>{apr.productName}</strong> · Target: <strong>{apr.targetRecordCode}</strong> · Requested by <strong>{apr.requesterName}</strong>
-                      </div>
-                    </div>
-
-                    {apr.status === 'PENDING' && (
-                      <div style={{ display: 'flex', gap: 6, paddingTop: 8, borderTop: '1px solid #fed7aa' }}>
-                        <button
-                          type="button"
-                          onClick={() => void handleApprovalDecision(apr.id, 'APPROVED')}
-                          style={{
-                            padding: '6px 12px',
-                            borderRadius: 7,
-                            border: 'none',
-                            background: '#059669',
-                            color: '#ffffff',
-                            fontSize: 11.5,
-                            fontWeight: 800,
-                            cursor: 'pointer',
-                          }}
-                        >
-                          ✓ Approve Gate
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void handleApprovalDecision(apr.id, 'CHANGES_REQUESTED')}
-                          style={{
-                            padding: '6px 10px',
-                            borderRadius: 7,
-                            border: '1px solid #cbd5e1',
-                            background: '#ffffff',
-                            color: '#334155',
-                            fontSize: 11.5,
-                            fontWeight: 700,
-                            cursor: 'pointer',
-                          }}
-                        >
-                          Request Changes
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void handleApprovalDecision(apr.id, 'REJECTED')}
-                          style={{
-                            padding: '6px 10px',
-                            borderRadius: 7,
-                            border: '1px solid #fecaca',
-                            background: '#fef2f2',
-                            color: '#dc2626',
-                            fontSize: 11.5,
-                            fontWeight: 700,
-                            cursor: 'pointer',
-                          }}
-                        >
-                          Reject
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Risk Register & Decision Register Row */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: 16 }}>
-              {/* Product Risk, Privacy & Security Register */}
-              <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 16, padding: 18 }}>
-                <h3 style={{ margin: '0 0 10px', fontSize: 15, fontWeight: 900, color: '#0f172a' }}>
-                  Product Risk, Privacy &amp; Compliance Register (Section 29)
-                </h3>
-                {(data?.risks || []).map((rk: any) => (
-                  <div key={rk.id} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 11, padding: 12, marginBottom: 8 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontSize: 11, fontWeight: 900, color: '#dc2626' }}>
-                        {rk.riskCode} · {rk.category} (Impact: {rk.impact})
-                      </span>
-                      <span style={{ fontSize: 10.5, fontWeight: 800, padding: '2px 7px', borderRadius: 5, background: '#ffffff', border: '1px solid #cbd5e1' }}>
-                        {rk.status}
-                      </span>
-                    </div>
-                    <div style={{ fontSize: 13, fontWeight: 800, marginTop: 4 }}>{rk.title}</div>
-                    <div style={{ fontSize: 11.5, color: '#475569', marginTop: 2 }}>
-                      <strong>Mitigation:</strong> {rk.mitigationPlan}
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Canonical Decision Register */}
-              <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 16, padding: 18 }}>
-                <h3 style={{ margin: '0 0 10px', fontSize: 15, fontWeight: 900, color: '#0f172a' }}>
-                  Product Decision Register &amp; Audit Provenance (Section 31)
-                </h3>
-                {(data?.decisions || []).map((dc: any) => (
-                  <div key={dc.id} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 11, padding: 12, marginBottom: 8 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontSize: 11, fontWeight: 900, color: '#047857' }}>
-                        {dc.decisionCode} · {dc.targetRecordType} ({dc.targetRecordCode}) v{dc.recordVersion}
-                      </span>
-                      <span style={{ fontSize: 10.5, fontWeight: 800, color: '#64748b' }}>
-                        {new Date(dc.decidedAt).toLocaleDateString('en-GB')}
-                      </span>
-                    </div>
-                    <div style={{ fontSize: 13, fontWeight: 800, marginTop: 4 }}>{dc.title}</div>
-                    <div style={{ fontSize: 11.5, color: '#334155', marginTop: 2 }}>
-                      <strong>Rationale:</strong> {dc.rationale}
-                    </div>
-                    <div style={{ fontSize: 10.5, color: '#64748b', marginTop: 4 }}>
-                      Approved by <strong>{dc.decidedByName}</strong>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
+        {(activeTab === 'ideas_discovery' ||
+          activeTab === 'strategy_prds' ||
+          activeTab === 'delivery_releases' ||
+          activeTab === 'analytics_budget' ||
+          activeTab === 'governance_approvals') && (
+          <InnovationDeepPanels
+            activeTab={activeTab}
+            data={data}
+            products={products}
+            activeProduct={activeProduct}
+            selectedOrgId={selectedOrgId}
+            selectedProductId={selectedProductId}
+            brandColor={activeBrandColor}
+            actorName={actorName}
+            onRefresh={() => void fetchOverview()}
+            onNotice={showToast}
+            onOpenNewIdea={() => setShowNewIdeaModal(true)}
+            onOpenNewPrd={() => setShowNewPrdModal(true)}
+          />
         )}
       </main>
 
@@ -2450,7 +1727,7 @@ export default function InnovationWorkspaceClient({
               <button type="button" onClick={() => setShowNewProductModal(false)} style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid #cbd5e1', background: '#ffffff', fontWeight: 700, cursor: 'pointer' }}>
                 Cancel
               </button>
-              <button type="submit" style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: '#ea580c', color: '#ffffff', fontWeight: 800, cursor: 'pointer' }}>
+              <button type="submit" style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: activeBrandColor, color: '#ffffff', fontWeight: 800, cursor: 'pointer' }}>
                 Create Product
               </button>
             </div>
@@ -2533,7 +1810,7 @@ export default function InnovationWorkspaceClient({
               <button type="button" onClick={() => setShowNewFeatureModal(false)} style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid #cbd5e1', background: '#ffffff', fontWeight: 700, cursor: 'pointer' }}>
                 Cancel
               </button>
-              <button type="submit" style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: '#ea580c', color: '#ffffff', fontWeight: 800, cursor: 'pointer' }}>
+              <button type="submit" style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: activeBrandColor, color: '#ffffff', fontWeight: 800, cursor: 'pointer' }}>
                 Save Feature
               </button>
             </div>
@@ -2576,7 +1853,7 @@ export default function InnovationWorkspaceClient({
               <button type="button" onClick={() => setShowNewIdeaModal(false)} style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid #cbd5e1', background: '#ffffff', fontWeight: 700, cursor: 'pointer' }}>
                 Cancel
               </button>
-              <button type="submit" style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: '#ea580c', color: '#ffffff', fontWeight: 800, cursor: 'pointer' }}>
+              <button type="submit" style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: activeBrandColor, color: '#ffffff', fontWeight: 800, cursor: 'pointer' }}>
                 Submit Idea
               </button>
             </div>
@@ -2628,7 +1905,7 @@ export default function InnovationWorkspaceClient({
               <button type="button" onClick={() => setShowNewPrdModal(false)} style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid #cbd5e1', background: '#ffffff', fontWeight: 700, cursor: 'pointer' }}>
                 Cancel
               </button>
-              <button type="submit" style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: '#ea580c', color: '#ffffff', fontWeight: 800, cursor: 'pointer' }}>
+              <button type="submit" style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: activeBrandColor, color: '#ffffff', fontWeight: 800, cursor: 'pointer' }}>
                 Create PRD v1
               </button>
             </div>
