@@ -16,6 +16,7 @@ import {
   Briefcase,
   Pencil,
   Trash2,
+  Eye,
 } from 'lucide-react';
 import { HrLeaveRecord } from './hrTypes';
 import { DEFAULT_LEAVE_POLICIES, type HrLeavePolicyItem } from '@/lib/hr-leave-policies';
@@ -79,6 +80,8 @@ export default function HrLeavePanel({
   const [banner, setBanner] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [selectedLeave, setSelectedLeave] = useState<HrLeaveRecord | null>(null);
+  const [reviewNoteInput, setReviewNoteInput] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [form, setForm] = useState({
     employeeId: '',
@@ -132,7 +135,7 @@ export default function HrLeavePanel({
     loadData();
   }, [loadData]);
 
-  const handleLeaveDecision = async (leaveId: string, action: 'APPROVE' | 'REJECT') => {
+  const handleLeaveDecision = async (leaveId: string, action: 'APPROVE' | 'REJECT', customNote?: string) => {
     setBusyId(leaveId);
     setBanner(null);
     try {
@@ -142,14 +145,24 @@ export default function HrLeavePanel({
         body: JSON.stringify({
           action,
           leaveRequestId: leaveId,
-          reviewNote: action === 'APPROVE' ? 'Approved via HR Workspace' : 'Declined via HR Workspace',
+          reviewNote:
+            (customNote || '').trim() ||
+            (action === 'APPROVE' ? 'Approved via HR Workspace' : 'Declined via HR Workspace'),
         }),
       });
       const data = await res.json();
       if (!res.ok) {
         setBanner({ type: 'err', text: data.error || 'Failed to process leave decision.' });
       } else {
-        setBanner({ type: 'ok', text: `Leave request ${action.toLowerCase()}d.` });
+        setBanner({
+          type: 'ok',
+          text:
+            action === 'APPROVE'
+              ? 'Leave request approved and auto-synced to Attendance (ON_LEAVE, ₦0 deduction).'
+              : 'Leave request declined.',
+        });
+        setSelectedLeave(null);
+        setReviewNoteInput('');
         await loadData();
         onRefreshOverview();
       }
@@ -589,7 +602,14 @@ export default function HrLeavePanel({
                     const isPending = lv.status === 'PENDING';
                     const days = countDaysInclusive(lv.startDate, lv.endDate);
                     return (
-                      <tr key={lv.id} className="hover:bg-slate-50/70">
+                      <tr
+                        key={lv.id}
+                        onClick={() => {
+                          setSelectedLeave(lv);
+                          setReviewNoteInput(lv.reviewNote || '');
+                        }}
+                        className="hover:bg-slate-50/70 cursor-pointer"
+                      >
                         <td className="px-4 py-3.5">
                           <div className="font-semibold text-slate-900">{lv.employeeName}</div>
                           <div className="text-xs text-slate-500">
@@ -623,31 +643,43 @@ export default function HrLeavePanel({
                             {lv.status}
                           </span>
                         </td>
-                        <td className="px-4 py-3.5 text-right">
-                          {isPending ? (
-                            <div className="inline-flex items-center gap-1.5">
-                              <button
-                                type="button"
-                                disabled={busyId === lv.id}
-                                onClick={() => handleLeaveDecision(lv.id, 'APPROVE')}
-                                className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
-                              >
-                                <CheckCircle2 className="h-3.5 w-3.5" /> Approve
-                              </button>
-                              <button
-                                type="button"
-                                disabled={busyId === lv.id}
-                                onClick={() => handleLeaveDecision(lv.id, 'REJECT')}
-                                className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-50"
-                              >
-                                <XCircle className="h-3.5 w-3.5" /> Reject
-                              </button>
-                            </div>
-                          ) : (
-                            <span className="text-xs text-slate-500">
-                              {lv.reviewedByName ? `By ${lv.reviewedByName}` : 'Finalized'}
-                            </span>
-                          )}
+                        <td className="px-4 py-3.5 text-right" onClick={(e) => e.stopPropagation()}>
+                          <div className="inline-flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedLeave(lv);
+                                setReviewNoteInput(lv.reviewNote || '');
+                              }}
+                              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                            >
+                              <Eye className="h-3.5 w-3.5" /> Details
+                            </button>
+                            {isPending ? (
+                              <>
+                                <button
+                                  type="button"
+                                  disabled={busyId === lv.id}
+                                  onClick={() => handleLeaveDecision(lv.id, 'APPROVE')}
+                                  className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                                >
+                                  <CheckCircle2 className="h-3.5 w-3.5" /> Approve
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={busyId === lv.id}
+                                  onClick={() => handleLeaveDecision(lv.id, 'REJECT')}
+                                  className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-50"
+                                >
+                                  <XCircle className="h-3.5 w-3.5" /> Reject
+                                </button>
+                              </>
+                            ) : (
+                              <span className="text-xs text-slate-500">
+                                {lv.reviewedByName ? `By ${lv.reviewedByName}` : 'Finalized'}
+                              </span>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     );
@@ -895,6 +927,148 @@ export default function HrLeavePanel({
           </div>
         </div>
       )}
+
+      {/* Leave Request Dossier Modal */}
+      {selectedLeave && (() => {
+        const reqDays = countDaysInclusive(selectedLeave.startDate, selectedLeave.endDate);
+        const empBalance = staffBalances.find((s) => s.id === selectedLeave.employeeId);
+        const overlappingTeam = leaves.filter(
+          (other) =>
+            other.id !== selectedLeave.id &&
+            other.status === 'APPROVED' &&
+            other.startDate <= selectedLeave.endDate &&
+            other.endDate >= selectedLeave.startDate
+        );
+        return (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
+            onClick={() => setSelectedLeave(null)}
+          >
+            <div
+              className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white p-6 shadow-xl space-y-4 max-h-[90vh] overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-3">
+                <div>
+                  <div className="text-xs font-bold uppercase tracking-wider" style={{ color: activeBrandColor }}>
+                    Leave Request Dossier
+                  </div>
+                  <h3 className="text-lg font-bold text-slate-900 mt-0.5">{selectedLeave.employeeName}</h3>
+                  <p className="text-xs text-slate-500">
+                    {selectedLeave.employeeNumber} · {selectedLeave.jobTitle || 'Staff'} · {selectedLeave.department} ({selectedLeave.subsidiary})
+                  </p>
+                </div>
+                <button onClick={() => setSelectedLeave(null)} className="text-slate-400 hover:text-slate-600">
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <div className="text-[10px] font-bold uppercase text-slate-500">Leave Type</div>
+                  <div className="text-sm font-bold text-slate-900 mt-0.5">{selectedLeave.leaveType}</div>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <div className="text-[10px] font-bold uppercase text-slate-500">Duration</div>
+                  <div className="text-sm font-bold text-slate-900 mt-0.5">{reqDays} {reqDays === 1 ? 'day' : 'days'}</div>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <div className="text-[10px] font-bold uppercase text-slate-500">Annual Left</div>
+                  <div className="text-sm font-bold text-emerald-700 mt-0.5">
+                    {empBalance ? `${empBalance.remainingAnnual} / ${annualQuota}d` : `${annualQuota}d`}
+                  </div>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <div className="text-[10px] font-bold uppercase text-slate-500">Status</div>
+                  <div className="text-sm font-bold text-slate-900 mt-0.5">{selectedLeave.status}</div>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 bg-white p-3.5 text-xs space-y-2">
+                <div className="flex items-center justify-between text-slate-600">
+                  <span>Dates Requested</span>
+                  <strong className="text-slate-900">{selectedLeave.startDate} → {selectedLeave.endDate}</strong>
+                </div>
+                <div className="flex items-center justify-between text-slate-600">
+                  <span>Submitted On</span>
+                  <strong className="text-slate-900">
+                    {selectedLeave.createdAt ? new Date(selectedLeave.createdAt).toLocaleString('en-GB') : '—'}
+                  </strong>
+                </div>
+                <div className="flex items-center justify-between text-slate-600">
+                  <span>Attendance Sync</span>
+                  <strong className="text-emerald-700">Auto-marks ON_LEAVE (₦0 deduction) on approval</strong>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5">
+                  <div className="text-[11px] font-bold uppercase text-slate-500 mb-1">Full Reason for Leave</div>
+                  <p className="text-sm text-slate-800 whitespace-pre-wrap">{selectedLeave.reason || 'No reason provided.'}</p>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5">
+                  <div className="text-[11px] font-bold uppercase text-slate-500 mb-1">Handover Notes &amp; Relief Coverage</div>
+                  <p className="text-sm text-slate-800 whitespace-pre-wrap">
+                    {selectedLeave.handoverNotes || 'No handover notes recorded.'}
+                  </p>
+                </div>
+              </div>
+
+              {overlappingTeam.length > 0 && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                  <strong>Overlapping Approved Absences ({overlappingTeam.length}):</strong>{' '}
+                  {overlappingTeam.map((o) => `${o.employeeName} (${o.startDate}–${o.endDate})`).join(', ')}
+                </div>
+              )}
+
+              {selectedLeave.status === 'PENDING' ? (
+                <div className="space-y-3 pt-2 border-t border-slate-100">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Executive / HR Review Note (Optional)
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={reviewNoteInput}
+                      onChange={(e) => setReviewNoteInput(e.target.value)}
+                      placeholder="Add approval conditions, handover confirmation, or decline reason..."
+                      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900"
+                    />
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <button
+                      type="button"
+                      disabled={busyId === selectedLeave.id}
+                      onClick={() => void handleLeaveDecision(selectedLeave.id, 'REJECT', reviewNoteInput)}
+                      className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-50"
+                    >
+                      <XCircle className="h-3.5 w-3.5" /> Reject Request
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busyId === selectedLeave.id}
+                      onClick={() => void handleLeaveDecision(selectedLeave.id, 'APPROVE', reviewNoteInput)}
+                      className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                    >
+                      <CheckCircle2 className="h-3.5 w-3.5" /> Approve &amp; Sync Attendance
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
+                  <div>
+                    <strong>Decision:</strong> {selectedLeave.status} by <strong>{selectedLeave.reviewedByName || 'Executive'}</strong>
+                    {selectedLeave.reviewedAt ? ` on ${new Date(selectedLeave.reviewedAt).toLocaleString('en-GB')}` : ''}
+                  </div>
+                  {selectedLeave.reviewNote && (
+                    <div className="mt-1"><strong>Review Note:</strong> {selectedLeave.reviewNote}</div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Create / Edit Leave Policy Modal */}
       {showPolicyModal && (

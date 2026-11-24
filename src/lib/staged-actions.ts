@@ -4915,7 +4915,7 @@ export async function executeBusinessCommand(tx: Prisma.TransactionClient, input
         url = `/hr`;
         resultRecord = leave;
       } else {
-        const leaveId = materialPayload.leaveId || materialPayload.id;
+        const leaveId = materialPayload.leaveRequestId || materialPayload.leaveId || materialPayload.id;
         if (!leaveId) throw new Error('leaveId is required to approve or reject a leave request.');
         const existing = await tx.leaveRequest.findUnique({ where: { id: leaveId } });
         if (!existing || existing.status !== 'PENDING') throw new StaleTargetError('Only pending leave requests can be reviewed.');
@@ -4923,6 +4923,7 @@ export async function executeBusinessCommand(tx: Prisma.TransactionClient, input
         if (existing.employeeId === actor.id) throw new StagedPermissionError('A different authorized reviewer must decide your leave request.');
         if (!['APPROVE_LEAVE', 'REJECT_LEAVE'].includes(subAction)) throw new Error('Unsupported leave operation.');
         const decision = subAction.includes('REJECT') || materialPayload.decision === 'REJECTED' ? 'REJECTED' : 'APPROVED';
+        const customNote = String(materialPayload.reviewNote || materialPayload.rejectionReason || '').trim();
         const updated = await tx.leaveRequest.update({
           where: { id: leaveId },
           data: {
@@ -4930,18 +4931,69 @@ export async function executeBusinessCommand(tx: Prisma.TransactionClient, input
             reviewedById: actor.id,
             reviewedByName: actor.legalName,
             reviewNote:
-              decision === 'REJECTED'
-                ? materialPayload.rejectionReason || 'Declined by executive'
-                : 'Approved by executive',
+              customNote ||
+              (decision === 'REJECTED' ? 'Declined by executive' : 'Approved by executive'),
             reviewedAt: new Date(),
           },
         });
         const today = new Date().toISOString().slice(0, 10);
-        if (decision === 'APPROVED' && updated.startDate <= today && updated.endDate >= today) {
-          await tx.employee.update({
-            where: { id: updated.employeeId },
-            data: { status: 'ON_LEAVE' },
-          });
+        if (decision === 'APPROVED') {
+          if (updated.startDate <= today && updated.endDate >= today) {
+            await tx.employee.update({
+              where: { id: updated.employeeId },
+              data: { status: 'ON_LEAVE' },
+            });
+          }
+
+          // Auto-reflect approved leave on AttendanceRecord for every workday in [startDate, endDate]
+          const startDt = new Date(`${updated.startDate}T00:00:00Z`);
+          const endDt = new Date(`${updated.endDate}T00:00:00Z`);
+          if (!Number.isNaN(startDt.getTime()) && !Number.isNaN(endDt.getTime()) && startDt <= endDt) {
+            const cursor = new Date(startDt.getTime());
+            const workDates: string[] = [];
+            let safety = 0;
+            while (cursor <= endDt && safety < 120) {
+              const dow = cursor.getUTCDay();
+              if (dow !== 0 && dow !== 6) {
+                workDates.push(cursor.toISOString().slice(0, 10));
+              }
+              cursor.setUTCDate(cursor.getUTCDate() + 1);
+              safety += 1;
+            }
+            if (workDates.length === 0) {
+              workDates.push(updated.startDate);
+            }
+            const leaveLabel = updated.leaveType.replace(/_/g, ' ');
+            for (const workDate of workDates) {
+              await tx.attendanceRecord.upsert({
+                where: { employeeId_workDate: { employeeId: updated.employeeId, workDate } },
+                create: {
+                  employeeId: updated.employeeId,
+                  workDate,
+                  status: 'ON_LEAVE',
+                  isManualOverride: true,
+                  overrideReason: `Approved ${leaveLabel} leave (${updated.startDate} to ${updated.endDate})`,
+                  overrideById: actor.id,
+                  isDeductionApplied: false,
+                  deductionPercent: 0,
+                  deductionMinor: BigInt(0),
+                  excuseStatus: 'APPROVED',
+                  excuseRequestNote: `Approved ${leaveLabel} leave`,
+                  excuseRequestedByName: actor.legalName,
+                },
+                update: {
+                  status: 'ON_LEAVE',
+                  isManualOverride: true,
+                  overrideReason: `Approved ${leaveLabel} leave (${updated.startDate} to ${updated.endDate})`,
+                  overrideById: actor.id,
+                  isDeductionApplied: false,
+                  deductionPercent: 0,
+                  deductionMinor: BigInt(0),
+                  excuseStatus: 'APPROVED',
+                },
+              });
+            }
+          }
         }
         await tx.systemNotification.create({
           data: {

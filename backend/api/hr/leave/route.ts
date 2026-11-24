@@ -113,7 +113,13 @@ export async function POST(req: Request) {
       const denied = requireCustomAdminHrAction(actor, 'leave', 'approve_reject_leave');
       if (denied) return denied;
     }
-    const leave = await executeDashboardCommand(actor, 'leave_action', { ...body, sub_action, rejectionReason: body.reviewNote });
+    const leave = await executeDashboardCommand(actor, 'leave_action', {
+      ...body,
+      leaveId: body.leaveRequestId || body.leaveId || body.id,
+      sub_action,
+      reviewNote: body.reviewNote,
+      rejectionReason: body.reviewNote,
+    });
     void import('@/lib/notifications/policy-matrix').then(m => m.dispatchMatrixNotifications({
       eventKey: 'LEAVE_REQUEST',
       title: sub_action === 'CREATE_LEAVE' ? `Leave Requested: ${actor.legalName}` : `Leave ${sub_action === 'APPROVE_LEAVE' ? 'Approved' : 'Rejected'}`,
