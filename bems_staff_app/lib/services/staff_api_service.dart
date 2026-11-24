@@ -1874,4 +1874,174 @@ class StaffApiService {
     }
     throw Exception(data['error']?.toString() ?? 'Could not sync offline product drafts.');
   }
+
+  // =========================================================================
+  // PROJECT MANAGEMENT SYSTEM (STAFF PORTAL & MOBILE)
+  // =========================================================================
+
+  static Future<Map<String, dynamic>> fetchStaffProjects({
+    required String employeeId,
+    String? token,
+  }) async {
+    final res = await _executeWithFailover(
+      (host) => http.get(
+        Uri.parse('$host/api/projects?view=staff'),
+        headers: _headers(token: token, employeeId: employeeId),
+      ),
+      timeout: const Duration(seconds: 15),
+    );
+    final data = res.body.trim().isNotEmpty ? jsonDecode(res.body) : {};
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      return data is Map<String, dynamic> ? data : {};
+    }
+    throw Exception(data['error']?.toString() ?? 'Could not load your assigned projects.');
+  }
+
+  static Future<Map<String, dynamic>> createProjectWorkItem({
+    required String employeeId,
+    required String projectId,
+    required String title,
+    String description = '',
+    String priority = 'MEDIUM',
+    String? dueDate,
+    String? token,
+  }) async {
+    final res = await _executeWithFailover(
+      (host) => http.post(
+        Uri.parse('$host/api/projects/work-items?view=staff'),
+        headers: _headers(token: token, employeeId: employeeId),
+        body: jsonEncode({
+          'projectId': projectId,
+          'title': title,
+          'description': description,
+          'priority': priority,
+          'assigneeId': employeeId,
+          if (dueDate != null && dueDate.isNotEmpty) 'dueDate': dueDate,
+        }),
+      ),
+      timeout: const Duration(seconds: 12),
+    );
+    final data = res.body.trim().isNotEmpty ? jsonDecode(res.body) : {};
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      return data is Map<String, dynamic> ? data : {};
+    }
+    throw Exception(data['error']?.toString() ?? 'Could not create task.');
+  }
+
+  static Future<Map<String, dynamic>> updateProjectWorkItem({
+    required String employeeId,
+    required String id,
+    required Map<String, dynamic> patch,
+    String? token,
+  }) async {
+    final res = await _executeWithFailover(
+      (host) => http.patch(
+        Uri.parse('$host/api/projects/work-items?view=staff'),
+        headers: _headers(token: token, employeeId: employeeId),
+        body: jsonEncode({'id': id, ...patch}),
+      ),
+      timeout: const Duration(seconds: 12),
+    );
+    final data = res.body.trim().isNotEmpty ? jsonDecode(res.body) : {};
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      return data is Map<String, dynamic> ? data : {};
+    }
+    throw Exception(data['error']?.toString() ?? 'Could not update task.');
+  }
+
+  static Future<Map<String, dynamic>> markMyDeliverableCompleted({
+    required String employeeId,
+    required String memberId,
+    String? token,
+  }) async {
+    final res = await _executeWithFailover(
+      (host) => http.patch(
+        Uri.parse('$host/api/projects/staff-timelines?view=staff'),
+        headers: _headers(token: token, employeeId: employeeId),
+        body: jsonEncode({'memberId': memberId, 'action': 'MARK_COMPLETED'}),
+      ),
+      timeout: const Duration(seconds: 12),
+    );
+    final data = res.body.trim().isNotEmpty ? jsonDecode(res.body) : {};
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      return data is Map<String, dynamic> ? data : {};
+    }
+    throw Exception(data['error']?.toString() ?? 'Could not mark deliverable complete.');
+  }
+
+  static Future<List<dynamic>> fetchProjectChat({
+    required String employeeId,
+    required String projectId,
+    String? token,
+  }) async {
+    final res = await _executeWithFailover(
+      (host) => http.get(
+        Uri.parse('$host/api/projects/chat?projectId=${Uri.encodeComponent(projectId)}'),
+        headers: _headers(token: token, employeeId: employeeId),
+      ),
+      timeout: const Duration(seconds: 12),
+    );
+    final data = res.body.trim().isNotEmpty ? jsonDecode(res.body) : {};
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      if (data is Map<String, dynamic> && data['messages'] is List) {
+        return data['messages'] as List<dynamic>;
+      }
+      return [];
+    }
+    throw Exception(data['error']?.toString() ?? 'Could not load project chat.');
+  }
+
+  static Future<Map<String, dynamic>> sendProjectChatMessage({
+    required String employeeId,
+    required String projectId,
+    required String content,
+    String? token,
+  }) async {
+    final res = await _executeWithFailover(
+      (host) => http.post(
+        Uri.parse('$host/api/projects/chat'),
+        headers: _headers(token: token, employeeId: employeeId),
+        body: jsonEncode({'projectId': projectId, 'content': content}),
+      ),
+      timeout: const Duration(seconds: 12),
+    );
+    final data = res.body.trim().isNotEmpty ? jsonDecode(res.body) : {};
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      return data is Map<String, dynamic> ? data : {};
+    }
+    throw Exception(data['error']?.toString() ?? 'Could not send message.');
+  }
+
+  static Future<Map<String, dynamic>> submitProjectHandover({
+    required String employeeId,
+    required String projectId,
+    required String summary,
+    required String deliverables,
+    List<String> technologies = const [],
+    String? repoUrl,
+    String? documentationUrl,
+    String? token,
+  }) async {
+    final res = await _executeWithFailover(
+      (host) => http.post(
+        Uri.parse('$host/api/projects/handover'),
+        headers: _headers(token: token, employeeId: employeeId),
+        body: jsonEncode({
+          'action': 'SUBMIT_HANDOVER',
+          'projectId': projectId,
+          'summary': summary,
+          'deliverablesSummary': deliverables,
+          'technologies': technologies,
+          if (repoUrl != null && repoUrl.isNotEmpty) 'repositoryUrl': repoUrl,
+          if (documentationUrl != null && documentationUrl.isNotEmpty) 'documentationUrl': documentationUrl,
+        }),
+      ),
+      timeout: const Duration(seconds: 12),
+    );
+    final data = res.body.trim().isNotEmpty ? jsonDecode(res.body) : {};
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      return data is Map<String, dynamic> ? data : {};
+    }
+    throw Exception(data['error']?.toString() ?? 'Could not submit handover package.');
+  }
 }

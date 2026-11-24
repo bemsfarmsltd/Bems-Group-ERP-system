@@ -10,6 +10,7 @@ import 'staff_admin_chat_screen.dart';
 import 'modules/staff_module_workstation_screen.dart';
 import 'modules/staff_operations_screen.dart';
 import 'modules/staff_innovation_screen.dart';
+import 'modules/staff_projects_screen.dart';
 import 'modules/staff_hr_screen.dart';
 import 'modules/hr/digital_id_card_screen.dart';
 
@@ -593,41 +594,17 @@ class _StaffModuleGalleryScreenState extends State<StaffModuleGalleryScreen> wit
         id: 'projects',
         eyebrow: 'PROJECT EXECUTION',
         title: 'Project Management System',
-        description: 'Project tracking, milestone execution, deliverables, and capital expenditure oversight.',
-        badgeText: 'PIPELINE',
-        badgeColor: const Color(0xFF64748B),
+        description: 'Assigned projects, SLA timelines, tasks, team chat, and handover packages.',
+        badgeText: 'LIVE',
+        badgeColor: const Color(0xFF10B981),
         icon: Icons.assignment_turned_in_rounded,
         gradient: [const Color(0xFF0284C7), const Color(0xFF0369A1)],
-        onTap: (ctx) {
-          Navigator.push(
+        onTap: (ctx) async {
+          await Navigator.push(
             ctx,
-            MaterialPageRoute(
-              builder: (_) => StaffModuleWorkstationScreen(
-                user: user,
-                config: ModuleConfig(
-                  id: 'projects',
-                  eyebrow: 'PROJECT EXECUTION',
-                  title: 'Project Management System',
-                  subtitle: 'Milestones, Deliverables & Capital Oversight',
-                  description: 'Project tracking, milestone execution, deliverables, and capital expenditure oversight across ${widget.user.subsidiary.isNotEmpty ? widget.user.subsidiary : 'your organization'}.',
-                  icon: Icons.assignment_turned_in_rounded,
-                  gradientColors: const [Color(0xFF0284C7), Color(0xFF0369A1)],
-                  statusText: 'Pipeline (Phase 2)',
-                  quickActions: const [
-                    {'title': 'Milestone Deliverables', 'desc': 'Track milestone progress and deliverables', 'icon': Icons.task_alt_rounded, 'color': Color(0xFF0284C7)},
-                    {'title': 'Task Execution', 'desc': 'Monitor team work packages and deadlines', 'icon': Icons.checklist_rounded, 'color': Color(0xFF10B981)},
-                  ],
-                  metricCards: [
-                    {'label': 'STATUS', 'value': 'Pipeline', 'sub': 'Phase 2 Development'},
-                    {'label': 'SCOPE', 'value': 'Group-wide', 'sub': 'Capital Projects'},
-                  ],
-                  sampleTasks: [
-                    {'task': 'Project Milestone Framework', 'details': 'In active design', 'time': 'Phase 2'},
-                  ],
-                ),
-              ),
-            ),
+            MaterialPageRoute(builder: (_) => StaffProjectsScreen(user: user)),
           );
+          if (mounted) await _refreshAccess();
         },
       ),
 
