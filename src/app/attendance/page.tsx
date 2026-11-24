@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import KioskAccessControlPanel from '@/components/attendance/KioskAccessControlPanel';
 import {
   Clock,
   Users,
@@ -3491,6 +3492,9 @@ export default function AttendanceDeskPage() {
                 </div>
               </div>
             </div>
+
+            {/* 2b. Kiosk Access Password & Active Kiosk Screens */}
+            <KioskAccessControlPanel />
 
             {/* 3. Starlink Wi-Fi Network Security & Hardware Gate Card */}
             <div

@@ -1,6 +1,8 @@
 import { timingSafeEqual } from 'node:crypto';
 import { prisma } from '@/lib/prisma';
 import { getAuthenticatedEmployee, hasAnyRole } from '@/lib/auth';
+import { verifyAndTouchKioskSession } from '@/lib/attendance/kiosk-sessions';
+import { getClientIp } from '@/lib/rate-limiter';
 
 export const KIOSK_COOKIE_NAME = 'bems_kiosk_token';
 
@@ -25,9 +27,28 @@ function safeEqual(a: string, b: string): boolean {
   return timingSafeEqual(bufA, bufB);
 }
 
+async function resolveActiveStation(code?: string) {
+  const station = code
+    ? await prisma.attendanceStation.findFirst({
+        where: { status: 'ACTIVE', code },
+        include: { organization: { select: { legalName: true } } },
+      })
+    : await prisma.attendanceStation.findFirst({
+        where: { status: 'ACTIVE' },
+        orderBy: { createdAt: 'asc' },
+        include: { organization: { select: { legalName: true } } },
+      });
+  if (!station || !station.activeSecret || !station.activeSecret.trim()) return null;
+  return station;
+}
+
 /**
  * Authenticates a reception attendance kiosk tablet or an executive/HR viewer.
- * Never falls back to returning an unauthenticated station or leaking secrets.
+ * Supports:
+ * 1. Tracked HttpOnly Kiosk Session (`bems_kiosk_token=ks:<sessionId>`) — revocable anytime by HR Admin
+ * 2. Signed-in Executive / HR browser session
+ * 3. Legacy `x-station-code` + `x-station-secret` header match
+ * Never falls back to unauthenticated public access.
  */
 export async function getAuthenticatedStation(request: Request) {
   if (!prisma.attendanceStation) return null;
@@ -35,57 +56,43 @@ export async function getAuthenticatedStation(request: Request) {
   const url = new URL(request.url);
   const requestedCode = (request.headers.get('x-station-code') || url.searchParams.get('stationCode') || '').trim();
   const headerSecret = (request.headers.get('x-station-secret') || '').trim();
-
-  // 1. Check HttpOnly kiosk activation cookie (`<stationCode>:<activeSecret>`)
   const cookieHeader = request.headers.get('cookie') || '';
-  const kioskCookie = readCookieValue(cookieHeader, KIOSK_COOKIE_NAME);
-  let cookieCode = '';
-  let cookieSecret = '';
-  if (kioskCookie && kioskCookie.includes(':')) {
-    const sep = kioskCookie.indexOf(':');
-    cookieCode = kioskCookie.slice(0, sep).trim();
-    cookieSecret = kioskCookie.slice(sep + 1).trim();
+  const kioskCookie = readCookieValue(cookieHeader, KIOSK_COOKIE_NAME) || '';
+
+  // Path 1: Tracked Kiosk Device Session (`ks:<sessionId>`) — allows dropdown switching & remote revocation
+  if (kioskCookie.startsWith('ks:')) {
+    const sessionId = kioskCookie.slice(3).trim();
+    const validSession = await verifyAndTouchKioskSession(sessionId);
+    if (validSession) {
+      const targetCode = requestedCode || validSession.stationCode;
+      const station = await resolveActiveStation(targetCode);
+      if (station) {
+        // Record station switch or IP update onto the tracked kiosk session
+        await verifyAndTouchKioskSession(sessionId, {
+          stationCode: station.code,
+          stationName: station.name,
+          stateLocation: station.stateLocation,
+          ipAddress: getClientIp(request),
+        }).catch(() => {});
+        return station;
+      }
+    }
   }
 
-  // 2. Check authenticated Executive / HR session
+  // Path 2: Authenticated Executive / HR browser session
   const actor = await getAuthenticatedEmployee(request, { disallowServiceToken: true }).catch(() => null);
   const isExecutiveOrHr = actor ? hasAnyRole(actor, ['GMD', 'SUPER_ADMIN', 'SYSTEM_ADMIN', 'CUSTOM_ADMIN']) : false;
-
-  const targetCode = requestedCode || cookieCode;
-
-  // Path A: Executive/HR signed-in browser (e.g. launching Reception Kiosk from /attendance)
   if (isExecutiveOrHr) {
-    const station = targetCode
-      ? await prisma.attendanceStation.findFirst({
-          where: { status: 'ACTIVE', code: targetCode },
-          include: { organization: { select: { legalName: true } } },
-        })
-      : await prisma.attendanceStation.findFirst({
-          where: { status: 'ACTIVE' },
-          orderBy: { createdAt: 'asc' },
-          include: { organization: { select: { legalName: true } } },
-        });
-    if (station && station.activeSecret && station.activeSecret.trim()) {
+    return resolveActiveStation(requestedCode || undefined);
+  }
+
+  // Path 3: Explicit x-station-secret header match (for headless/automated kiosk launchers)
+  if (headerSecret && requestedCode) {
+    const station = await resolveActiveStation(requestedCode);
+    if (station && safeEqual(station.activeSecret, headerSecret)) {
       return station;
     }
-    return null;
   }
 
-  // Path B: Activated Kiosk Tablet via HttpOnly cookie or explicit x-station-secret header
-  const suppliedSecret = headerSecret || cookieSecret;
-  if (!suppliedSecret || !targetCode) {
-    return null;
-  }
-
-  const station = await prisma.attendanceStation.findFirst({
-    where: { status: 'ACTIVE', code: targetCode },
-    include: { organization: { select: { legalName: true } } },
-  });
-  if (!station || !station.activeSecret || !station.activeSecret.trim()) {
-    return null;
-  }
-  if (!safeEqual(station.activeSecret, suppliedSecret)) {
-    return null;
-  }
-  return station;
+  return null;
 }

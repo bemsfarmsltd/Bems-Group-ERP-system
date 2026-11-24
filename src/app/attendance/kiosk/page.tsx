@@ -393,13 +393,13 @@ export default function AttendanceKioskPage() {
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({
-          adminPassword: activationPassword.trim(),
+          kioskPassword: activationPassword.trim(),
           stationCode: selectedStationCode || undefined,
         }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
-        throw new Error(json?.error || 'Activation failed. Check your Executive password.');
+        throw new Error(json?.error || 'Invalid Kiosk Access Password.');
       }
       setActivationPassword('');
       setRequiresActivation(false);
@@ -1077,17 +1077,17 @@ export default function AttendanceKioskPage() {
                   <form onSubmit={handleActivateKiosk} style={{ textAlign: 'center', padding: '16px', width: '100%' }}>
                     <AlertCircle size={28} color="#ea580c" style={{ margin: '0 auto 8px' }} />
                     <div style={{ fontSize: '12.5px', fontWeight: 800, color: '#0f172a', marginBottom: '4px' }}>
-                      Activate Reception Kiosk
+                      Unlock Reception Kiosk
                     </div>
                     <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '10px' }}>
-                      Sign in once with an Executive password to bind this tablet.
+                      Enter the Kiosk Access Password set in HR Attendance Admin.
                     </div>
                     <input
                       type="password"
                       required
                       value={activationPassword}
                       onChange={(e) => setActivationPassword(e.target.value)}
-                      placeholder="Executive password..."
+                      placeholder="Kiosk access password..."
                       style={{
                         width: '100%',
                         padding: '8px 10px',
