@@ -7,6 +7,16 @@ import {
   getAuthenticatedEmployee,
   isReadOnlyEmployee,
 } from '@/lib/auth';
+import {
+  buildApiCacheKey,
+  resolveGetCachePolicy,
+  resolveInvalidationPrefixes,
+} from '@/lib/cache-policy';
+import {
+  getDistributedCache,
+  invalidateDistributedCache,
+  setDistributedCache,
+} from '@/lib/server-cache';
 
 export type NextRouteHandler = (
   request: NextRequest,
@@ -188,6 +198,32 @@ export function mountNextRoute(
           return;
         }
 
+        const cleanPath = req.url.split('?')[0];
+        const queryString = req.url.includes('?') ? req.url.slice(req.url.indexOf('?') + 1) : '';
+        const forceFresh = queryString.includes('fresh=1') || (nextReq.headers.get('cache-control') || '').toLowerCase().includes('no-cache');
+        const cachePolicy = method === 'GET' && !forceFresh ? resolveGetCachePolicy(cleanPath) : null;
+        let cacheKey: string | null = null;
+
+        if (cachePolicy) {
+          cacheKey = buildApiCacheKey(
+            cachePolicy.domain,
+            req.url,
+            nextReq.headers.get('cookie') || '',
+            nextReq.headers.get('authorization') || '',
+            nextReq.headers.get('x-employee-id') || ''
+          );
+          const cached = await getDistributedCache<{ body: string; contentType: string }>(cacheKey);
+          if (cached && typeof cached.body === 'string') {
+            reply
+              .code(200)
+              .header('content-type', cached.contentType || 'application/json; charset=utf-8')
+              .header('x-bems-cache', 'HIT')
+              .header('x-bems-cache-domain', cachePolicy.domain);
+            await reply.send(Buffer.from(cached.body, 'utf8'));
+            return;
+          }
+        }
+
         const rawParams = (req.params as Record<string, string>) || {};
         const params: Record<string, string> = {};
         for (const [k, v] of Object.entries(rawParams)) {
@@ -197,6 +233,39 @@ export function mountNextRoute(
         const webRes = await handler(nextReq, {
           params: Promise.resolve(params),
         });
+
+        // Auto-invalidate affected Redis cache domains after any successful write
+        if (MUTATING_METHODS.has(method) && webRes.status >= 200 && webRes.status < 300) {
+          const prefixes = resolveInvalidationPrefixes(cleanPath);
+          if (prefixes.length > 0) {
+            await Promise.all(prefixes.map((p) => invalidateDistributedCache(p)));
+          }
+        }
+
+        // Store clean 200 JSON responses in Redis for allowlisted GET routes
+        if (cachePolicy && cacheKey && webRes.status === 200) {
+          const contentType = webRes.headers.get('content-type') || '';
+          if (contentType.includes('application/json')) {
+            const arrayBuf = await webRes.arrayBuffer();
+            const bodyStr = Buffer.from(arrayBuf).toString('utf8');
+            await setDistributedCache(cacheKey, { body: bodyStr, contentType }, cachePolicy.ttlMs);
+
+            reply.code(200);
+            webRes.headers.forEach((value, key) => {
+              const lower = key.toLowerCase();
+              if (lower === 'set-cookie' || lower === 'content-length' || lower === 'transfer-encoding') return;
+              reply.header(key, value);
+            });
+            reply.header('x-bems-cache', 'MISS');
+            reply.header('x-bems-cache-domain', cachePolicy.domain);
+            await reply.send(Buffer.from(arrayBuf));
+            return;
+          }
+        }
+
+        if (method === 'GET') {
+          reply.header('x-bems-cache', 'BYPASS');
+        }
         await sendWebResponse(reply, webRes);
       },
     });
