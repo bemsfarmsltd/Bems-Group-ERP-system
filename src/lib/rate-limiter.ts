@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { prisma } from '@/lib/prisma';
+import { getRedisClient } from '@/lib/redis';
 
 export type RateLimitOptions = { windowMs: number; maxAttempts: number; blockDurationMs?: number };
 export type RateLimitResult = { allowed: boolean; remainingAttempts: number; retryAfterSeconds?: number };
@@ -68,12 +69,60 @@ async function queryRateLimitRow(key: string, windowMs: number, max: number, blo
   `;
 }
 
-/** A single database counter is shared by every worker, with auto-provisioning and in-memory fallback. */
+async function checkRedisRateLimit(
+  key: string,
+  windowMs: number,
+  max: number,
+  blockMs: number
+): Promise<RateLimitResult | null> {
+  const redis = getRedisClient();
+  if (!redis) return null;
+
+  const countKey = `bems:rl:cnt:${key}`;
+  const blockKey = `bems:rl:blk:${key}`;
+  try {
+    const blockTtlMs = await redis.pttl(blockKey);
+    if (blockTtlMs > 0) {
+      return {
+        allowed: false,
+        remainingAttempts: 0,
+        retryAfterSeconds: Math.max(1, Math.ceil(blockTtlMs / 1000)),
+      };
+    }
+
+    const attempts = await redis.incr(countKey);
+    if (attempts === 1) {
+      await redis.pexpire(countKey, windowMs);
+    }
+
+    if (attempts > max) {
+      await redis.set(blockKey, '1', 'PX', blockMs);
+      return {
+        allowed: false,
+        remainingAttempts: 0,
+        retryAfterSeconds: Math.max(1, Math.ceil(blockMs / 1000)),
+      };
+    }
+
+    return {
+      allowed: true,
+      remainingAttempts: Math.max(0, max - attempts),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Distributed rate limiter: Redis primary, PostgreSQL secondary, process memory fallback. */
 export async function checkRateLimit(identifier: string, options: RateLimitOptions): Promise<RateLimitResult> {
   const key = identifierHash(identifier);
   const windowMs = Math.max(1000, options.windowMs);
   const blockMs = Math.max(1000, options.blockDurationMs ?? windowMs);
   const max = Math.max(1, options.maxAttempts);
+
+  const redisResult = await checkRedisRateLimit(key, windowMs, max, blockMs);
+  if (redisResult) return redisResult;
+
   try {
     let rows: Array<{ attempts: number; blockedUntil: Date | null }>;
     try {
@@ -99,6 +148,12 @@ export async function checkRateLimit(identifier: string, options: RateLimitOptio
 export async function resetRateLimit(identifier: string): Promise<void> {
   const key = identifierHash(identifier);
   memoryRateLimits.delete(key);
+  const redis = getRedisClient();
+  if (redis) {
+    try {
+      await redis.del(`bems:rl:cnt:${key}`, `bems:rl:blk:${key}`);
+    } catch {}
+  }
   try {
     await prisma.$executeRaw`DELETE FROM "SecurityRateLimit" WHERE "key" = ${key}`;
   } catch {}

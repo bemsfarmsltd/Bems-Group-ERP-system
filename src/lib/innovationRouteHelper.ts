@@ -8,6 +8,8 @@ import {
 } from '@/lib/auth';
 import { getAllowedSubsidiariesForModule } from '@/lib/admin-permissions';
 import { hasStaffAppModuleAccess } from '@/lib/staff-modules';
+import { invalidateDistributedCache } from '@/lib/server-cache';
+import { publishRealtimeEvent } from '@/lib/realtime';
 
 export type FeatureWorkflowStage =
   | 'IDEA'
@@ -228,6 +230,13 @@ export async function logInnovationAudit(params: {
         correlationId: `pm-${params.targetId}-${Date.now()}`,
         metadata: params.metadata ? JSON.stringify(params.metadata) : null,
       },
+    });
+    await invalidateDistributedCache('innovation-overview:');
+    await publishRealtimeEvent('innovation', params.action, {
+      targetType: params.targetType,
+      targetId: params.targetId,
+      actorName: params.actor.legalName,
+      subsidiaryId: params.subsidiaryId || null,
     });
   } catch (err) {
     console.warn('Could not write product innovation audit event:', err);

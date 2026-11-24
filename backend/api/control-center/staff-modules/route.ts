@@ -3,7 +3,7 @@ import { getAllowedSubsidiariesForModule } from '@/lib/admin-permissions';
 import { getAuthenticatedEmployee, hasAnyRole, hasEmployeePermission, invalidateSessionCache, normalizeSystemRole } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { normalizeStaffAppModulesInput, resolveStaffAppModules, STAFF_APP_MODULE_CATALOG } from '@/lib/staff-modules';
-import { invalidateServerCache } from '@/lib/server-cache';
+import { invalidateDistributedCache } from '@/lib/server-cache';
 
 export const dynamic = 'force-dynamic';
 
@@ -72,7 +72,7 @@ export async function PATCH(request: Request) {
 
     if (result.ok) {
       invalidateSessionCache();
-      invalidateServerCache('control-center:');
+      await invalidateDistributedCache('control-center:');
     }
     return result;
   } catch (error) {

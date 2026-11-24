@@ -3,6 +3,7 @@ import { createRedisSubscriber, getRedisClient } from '@/lib/redis';
 import { logger } from '@/lib/logger';
 
 export interface RealtimeEvent {
+  id: string;
   channel: string;
   type: string;
   payload: Record<string, unknown>;
@@ -25,29 +26,44 @@ export async function publishRealtimeEvent(
   payload: Record<string, unknown>
 ): Promise<void> {
   const event: RealtimeEvent = {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
     channel,
     type,
     payload,
     timestamp: new Date().toISOString(),
   };
 
-  localBus.emit(channel, event);
-
   const redis = getRedisClient();
   if (redis) {
     try {
       await redis.publish(`${CHANNEL_PREFIX}${channel}`, JSON.stringify(event));
+      return;
     } catch (err) {
-      logger.warn({ err, channel, type }, 'Redis realtime publish failed; delivered locally');
+      logger.warn({ err, channel, type }, 'Redis realtime publish failed; delivering via localBus fallback');
     }
   }
+
+  localBus.emit(channel, event);
 }
 
 export function subscribeRealtimeChannel(
   channel: string,
   onEvent: (event: RealtimeEvent) => void
 ): () => void {
-  localBus.on(channel, onEvent);
+  const seenIds = new Set<string>();
+  const dispatch = (event: RealtimeEvent) => {
+    if (event.id) {
+      if (seenIds.has(event.id)) return;
+      seenIds.add(event.id);
+      if (seenIds.size > 200) {
+        const first = seenIds.values().next().value;
+        if (first) seenIds.delete(first);
+      }
+    }
+    onEvent(event);
+  };
+
+  localBus.on(channel, dispatch);
 
   const sub = createRedisSubscriber();
   const fullChannel = `${CHANNEL_PREFIX}${channel}`;
@@ -57,7 +73,7 @@ export function subscribeRealtimeChannel(
       .then(() => {
         sub.on('message', (_ch, raw) => {
           try {
-            onEvent(JSON.parse(raw) as RealtimeEvent);
+            dispatch(JSON.parse(raw) as RealtimeEvent);
           } catch {}
         });
       })
@@ -67,7 +83,7 @@ export function subscribeRealtimeChannel(
   }
 
   return () => {
-    localBus.off(channel, onEvent);
+    localBus.off(channel, dispatch);
     if (sub) {
       sub.unsubscribe(fullChannel).catch(() => {});
       sub.quit().catch(() => {});

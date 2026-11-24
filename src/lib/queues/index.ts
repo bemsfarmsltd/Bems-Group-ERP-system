@@ -60,13 +60,14 @@ export function startBackgroundWorkers(handlers: Partial<Record<BemsQueueName, (
   const workers: Worker[] = [];
   for (const [name, handler] of Object.entries(handlers)) {
     if (!handler) continue;
+    const workerConn = conn.duplicate({ maxRetriesPerRequest: null, enableReadyCheck: false });
     const worker = new Worker(
       name,
       async (job) => {
         logger.info({ queue: name, jobId: job.id, jobName: job.name }, 'Processing BullMQ job');
         await handler(job);
       },
-      { connection: conn as any, concurrency: 5 }
+      { connection: workerConn as any, concurrency: 5 }
     );
     worker.on('failed', (job, err) => {
       captureServerError(err, { queue: name, jobId: job?.id, jobName: job?.name });

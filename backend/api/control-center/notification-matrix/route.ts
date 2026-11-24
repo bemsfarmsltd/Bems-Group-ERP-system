@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getAuthenticatedEmployee, hasAnyRole, hasEmployeePermission } from '@/lib/auth';
-import { invalidateServerCache } from '@/lib/server-cache';
+import { invalidateDistributedCache } from '@/lib/server-cache';
 import {
   NOTIFICATION_CATEGORIES,
   NOTIFICATION_EVENT_CATALOG,
@@ -99,7 +99,7 @@ export async function POST(request: Request) {
       });
       const defaults = buildDefaultMatrix(profiles.map((p) => p.id));
       const saved = await saveNotificationPolicyMatrix(actor, defaults);
-      invalidateServerCache('control-center:');
+      await invalidateDistributedCache('control-center:');
       return NextResponse.json({ success: true, matrix: saved });
     }
 
@@ -108,7 +108,7 @@ export async function POST(request: Request) {
     }
 
     const saved = await saveNotificationPolicyMatrix(actor, body.matrix);
-    invalidateServerCache('control-center:');
+    await invalidateDistributedCache('control-center:');
     return NextResponse.json({ success: true, matrix: saved });
   } catch (error) {
     console.error('POST /api/control-center/notification-matrix error:', error);

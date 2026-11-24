@@ -1,5 +1,6 @@
 import { sendEmail } from '@/lib/email';
 import { resolveModuleEmailRecipients } from '@/lib/email-routing';
+import { acquireDistributedLock, releaseDistributedLock } from '@/lib/redis';
 
 export function computeNextDueDate(from: Date, interval?: string | null): Date {
   const next = new Date(from.getTime());
@@ -37,6 +38,18 @@ export function checkRecurringDisbursementEligibility(req: {
 }
 
 export async function evaluateRecurringReminders(prismaClient: any) {
+  const lockToken = await acquireDistributedLock('cron:recurring-reminders', 45_000);
+  if (!lockToken) {
+    return { notified: 0, skippedBecauseLocked: true };
+  }
+  try {
+    return await runEvaluateRecurringReminders(prismaClient);
+  } finally {
+    await releaseDistributedLock('cron:recurring-reminders', lockToken);
+  }
+}
+
+async function runEvaluateRecurringReminders(prismaClient: any) {
   const now = new Date();
   const sevenDaysAhead = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
   const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);

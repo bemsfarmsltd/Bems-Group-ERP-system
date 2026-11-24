@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getAuthenticatedEmployee } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import { getServerCache, invalidateServerCache, setServerCache } from '@/lib/server-cache';
+import { getDistributedCache, invalidateDistributedCache, setDistributedCache } from '@/lib/server-cache';
 import { getStaffNotificationPreferences, updateStaffNotificationPreferences } from '@/lib/notifications/service';
 
 export const dynamic = 'force-dynamic';
@@ -12,7 +12,7 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const cacheKey = `notifications:${actor.id}:${searchParams.toString()}`;
-  const cached = getServerCache<any>(cacheKey);
+  const cached = await getDistributedCache<any>(cacheKey);
   if (cached) {
     return NextResponse.json(cached, {
       headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0' },
@@ -108,7 +108,7 @@ export async function GET(request: Request) {
     totalPages,
     preferences,
   };
-  setServerCache(cacheKey, payload, 12_000);
+  await setDistributedCache(cacheKey, payload, 15_000);
 
   return NextResponse.json(payload, {
     headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0' },
@@ -118,7 +118,7 @@ export async function GET(request: Request) {
 export async function PATCH(request: Request) {
   const actor = await getAuthenticatedEmployee(request);
   if (!actor) return NextResponse.json({ error: 'Sign in to update notifications.' }, { status: 401 });
-  invalidateServerCache(`notifications:${actor.id}:`);
+  await invalidateDistributedCache(`notifications:${actor.id}:`);
   try {
     const body = await request.json();
     const notificationId = typeof body.notificationId === 'string' ? body.notificationId : '';

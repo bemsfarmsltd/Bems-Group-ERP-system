@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { ensureInnovationSchema } from '@/lib/innovation-ensure-schema';
 import { resolveInnovationContext } from '@/lib/innovationRouteHelper';
 import { resolveOrganizationBranding } from '@/lib/subsidiary-branding';
+import { getDistributedCache, setDistributedCache } from '@/lib/server-cache';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,6 +18,12 @@ export async function GET(request: Request) {
     const portfolioId = searchParams.get('portfolioId') || '';
     const productId = searchParams.get('productId') || '';
     const lifecycleStage = searchParams.get('lifecycleStage') || '';
+
+    const cacheKey = `innovation-overview:${ctx.actor.id}:${orgId}:${portfolioId}:${productId}:${lifecycleStage}`;
+    const cached = await getDistributedCache<any>(cacheKey);
+    if (cached) {
+      return NextResponse.json(cached);
+    }
 
     const orgWhere = orgId
       ? { organizationId: orgId }
@@ -247,7 +254,7 @@ export async function GET(request: Request) {
     const pendingApprovalsCount = approvals.filter((a) => a.status === 'PENDING').length;
     const blockersCount = risks.filter((r) => r.isLaunchBlocker && r.status !== 'CLOSED').length;
 
-    return NextResponse.json({
+    const responsePayload = {
       dataAsOf: new Date().toISOString(),
       kpis: {
         activeProductsCount,
@@ -370,7 +377,9 @@ export async function GET(request: Request) {
             amountMinor: ex.amountMinor.toString(),
           }))
         : [],
-    });
+    };
+    await setDistributedCache(cacheKey, responsePayload, 15_000);
+    return NextResponse.json(responsePayload);
   } catch (error: any) {
     console.error('[Innovation Overview API] Error:', error);
     return NextResponse.json(

@@ -5,7 +5,7 @@ import { getAuthenticatedEmployee, verifyPassword } from '@/lib/auth';
 import { canApproveWalletRelease, fundApprovalOrganization, getFundApprovalPolicy, setFundApprovalPolicy } from '@/lib/gmd-access';
 import { checkRateLimit } from '@/lib/rate-limiter';
 import { sessionBinding } from '@/lib/wallet/security';
-import { invalidateServerCache } from '@/lib/server-cache';
+import { invalidateDistributedCache } from '@/lib/server-cache';
 
 export const dynamic = 'force-dynamic';
 const roles = ['GMD', 'SUPER_ADMIN', 'SYSTEM_ADMIN'];
@@ -77,6 +77,6 @@ export async function POST(request: Request) {
     });
     return NextResponse.json({ success: true, delegateId: body.delegateId });
   });
-  if (result.ok) invalidateServerCache();
+  if (result.ok) await invalidateDistributedCache();
   return result;
 }

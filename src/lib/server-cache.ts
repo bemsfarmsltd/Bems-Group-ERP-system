@@ -62,8 +62,10 @@ export async function getDistributedCache<T>(key: string): Promise<T | null> {
   if (redis) {
     try {
       const raw = await redis.get(`bems:cache:${key}`);
-      if (!raw) return null;
-      return JSON.parse(raw) as T;
+      if (raw) {
+        return JSON.parse(raw) as T;
+      }
+      return null;
     } catch {
       return getServerCache<T>(key);
     }
@@ -74,7 +76,7 @@ export async function getDistributedCache<T>(key: string): Promise<T | null> {
 /**
  * Distributed cache write (uses Redis when REDIS_URL is configured, else local memory).
  */
-export async function setDistributedCache<T>(key: string, value: T, ttlMs = 12_000): Promise<void> {
+export async function setDistributedCache<T>(key: string, value: T, ttlMs = 15_000): Promise<void> {
   setServerCache(key, value, ttlMs);
   const redis = getRedisClient();
   if (redis) {
@@ -85,18 +87,37 @@ export async function setDistributedCache<T>(key: string, value: T, ttlMs = 12_0
 }
 
 /**
- * Distributed cache invalidation by prefix.
+ * Non-blocking distributed cache invalidation by prefix using Redis SCAN + UNLINK.
  */
 export async function invalidateDistributedCache(prefix?: string): Promise<void> {
   invalidateServerCache(prefix);
   const redis = getRedisClient();
-  if (redis) {
-    try {
-      const pattern = prefix ? `bems:cache:${prefix}*` : 'bems:cache:*';
-      const keys = await redis.keys(pattern);
+  if (!redis) return;
+
+  const pattern = prefix ? `bems:cache:${prefix}*` : 'bems:cache:*';
+  try {
+    let cursor = '0';
+    do {
+      const [nextCursor, keys] = await redis.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
+      cursor = nextCursor;
       if (keys.length > 0) {
-        await redis.del(...keys);
+        await redis.unlink(...keys);
       }
-    } catch {}
-  }
+    } while (cursor !== '0');
+  } catch {}
+}
+
+/**
+ * Read-through distributed cache helper.
+ */
+export async function withDistributedCache<T>(
+  key: string,
+  ttlMs: number,
+  loader: () => Promise<T>
+): Promise<T> {
+  const cached = await getDistributedCache<T>(key);
+  if (cached !== null) return cached;
+  const fresh = await loader();
+  await setDistributedCache(key, fresh, ttlMs);
+  return fresh;
 }

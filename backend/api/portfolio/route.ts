@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getServerCache, setServerCache } from '@/lib/server-cache';
+import { getDistributedCache, setDistributedCache } from '@/lib/server-cache';
 import { getAuthenticatedEmployee, hasAdminOrCustomPermission } from '@/lib/auth';
 import { toSystemRequestId } from '@/lib/request-id';
 
@@ -17,7 +17,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Executive access is required to view the group portfolio.' }, { status: 403 });
     }
     const cacheKey = `portfolio:${actor.id}`;
-    const cached = getServerCache<any>(cacheKey);
+    const cached = await getDistributedCache<any>(cacheKey);
     if (cached) {
       return NextResponse.json(cached);
     }
@@ -380,7 +380,7 @@ export async function GET(request: Request) {
       allGroupStaff,
       intercompanyNotes: serializedNotes,
     };
-    setServerCache(cacheKey, payload, 12_000);
+    await setDistributedCache(cacheKey, payload, 15_000);
     return NextResponse.json(payload);
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });

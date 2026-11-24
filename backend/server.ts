@@ -6,7 +6,11 @@ import { initTelemetry, logger, captureServerError } from '../src/lib/logger';
 import { ApiValidationError, IdCardVerifyBodySchema, parseWithSchema } from '../src/lib/validation/http';
 import { verifyIdCardToken } from '../src/lib/id-card-crypto';
 import { clampIdCardLevel, ID_CARD_LEVELS, resolveDefaultCardLevel } from '../src/lib/id-card-levels';
-import { subscribeRealtimeChannel } from '../src/lib/realtime';
+import { subscribeRealtimeChannel, publishRealtimeEvent } from '../src/lib/realtime';
+import { pingRedis } from '../src/lib/redis';
+import { checkRateLimit as checkDistributedRateLimit } from '../src/lib/rate-limit';
+import { QUEUE_NAMES, startBackgroundWorkers } from '../src/lib/queues';
+import { sendEmail } from '../src/lib/email';
 import { registerNextApiPlugin } from './next-route-adapter';
 import { registerAllNextApiRoutes } from './routes/register-api-routes';
 import { registerSsrAndFileRoutes } from './routes/ssr-bootstrap';
@@ -76,11 +80,16 @@ export async function buildBackendServer() {
 
   app.get('/health', async (_req, reply) => {
     try {
-      await prisma.$queryRaw`SELECT 1`;
+      const [, redisHealth] = await Promise.all([
+        prisma.$queryRaw`SELECT 1`,
+        pingRedis(),
+      ]);
       return reply.send({
         ok: true,
         service: 'bems-erp-backend',
         database: 'connected',
+        redis: redisHealth.status,
+        redisLatencyMs: redisHealth.latencyMs,
         redisConfigured: Boolean(process.env.REDIS_URL),
         objectStorageConfigured: Boolean(process.env.S3_BUCKET || process.env.R2_BUCKET),
         timestamp: new Date().toISOString(),
@@ -137,6 +146,13 @@ export async function buildBackendServer() {
   });
 
   app.post('/api/v1/hr/id-cards/verify', async (req, reply) => {
+    const rl = await checkDistributedRateLimit('id-card-verify', req.ip || 'unknown', 60, 60);
+    if (!rl.allowed) {
+      return reply
+        .status(429)
+        .header('Retry-After', String(rl.retryAfterSeconds))
+        .send({ verified: false, reason: 'Too many verification requests. Try again shortly.' });
+    }
     const body = parseWithSchema(IdCardVerifyBodySchema, req.body);
     let employeeId = '';
     let tokenLevel: number | null = null;
@@ -261,8 +277,27 @@ export async function buildBackendServer() {
       startWalletWorker();
       const { ensureMorningDigestSchedulerStarted } = await import('@/lib/notifications/scheduler');
       ensureMorningDigestSchedulerStarted();
+      startBackgroundWorkers({
+        [QUEUE_NAMES.OUTBOX_NOTIFICATIONS]: async (job) => {
+          const data = (job.data || {}) as Record<string, any>;
+          if (job.name === 'SEND_EMAIL' && data.to && data.subject && data.html) {
+            await sendEmail({
+              to: data.to,
+              subject: String(data.subject),
+              html: String(data.html),
+              text: data.text ? String(data.text) : undefined,
+              eventType: data.eventType ? String(data.eventType) : undefined,
+            });
+          } else if (job.name === 'REALTIME_BROADCAST' && data.channel && data.type) {
+            await publishRealtimeEvent(String(data.channel), String(data.type), (data.payload || {}) as Record<string, unknown>);
+          }
+        },
+        [QUEUE_NAMES.ID_CARD_AUDIT]: async (job) => {
+          logger.info({ jobId: job.id, data: job.data }, 'Processed ID card audit event');
+        },
+      });
     } catch (err) {
-      logger.warn({ err }, 'Could not start background wallet worker or scheduler at startup');
+      logger.warn({ err }, 'Could not start background wallet worker, BullMQ workers, or scheduler at startup');
     }
   }
 

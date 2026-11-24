@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getServerCache, invalidateServerCache, setServerCache } from '@/lib/server-cache';
+import { getDistributedCache, invalidateDistributedCache, setDistributedCache } from '@/lib/server-cache';
 import { getAuthenticatedEmployee, hasAnyRole, hasEmployeePermission } from '@/lib/auth';
 import { getAllowedSubsidiariesForModule } from '@/lib/admin-permissions';
 import { getMobileAppGate } from '@/lib/mobile-gate';
@@ -26,7 +26,7 @@ export async function GET(request: Request) {
 
     const scopedAdmin = actor.role === 'CUSTOM_ADMIN';
     const cacheKey = `control-center:${actor.id}`;
-    const cached = scopedAdmin ? null : getServerCache<any>(cacheKey);
+    const cached = scopedAdmin ? null : await getDistributedCache<any>(cacheKey);
     if (cached) return NextResponse.json(cached);
     const allowedSubIds = getAllowedSubsidiariesForModule(actor.role, actor.customAdminPermissions, 'control-center');
     const subsidiaryFilter = allowedSubIds === 'ALL' ? {} : { in: allowedSubIds };
@@ -139,7 +139,7 @@ export async function GET(request: Request) {
       globalPayoutControl,
       auditEvents,
     };
-    if (!scopedAdmin) setServerCache(cacheKey, payload, 12_000);
+    if (!scopedAdmin) await setDistributedCache(cacheKey, payload, 15_000);
     return NextResponse.json(payload);
   } catch (error) {
     console.error('GET /api/control-center error:', error);
@@ -153,7 +153,7 @@ export async function POST(request: Request) {
     if (!actor || !hasAnyRole(actor, EXEC_ROLES)) {
       return NextResponse.json({ error: 'Forbidden.' }, { status: 403 });
     }
-    invalidateServerCache('control-center:');
+    await invalidateDistributedCache('control-center:');
 
     const body = await request.json();
     const action = String(body.action || '');

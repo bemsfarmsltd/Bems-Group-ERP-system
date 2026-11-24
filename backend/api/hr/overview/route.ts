@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getAuthenticatedEmployee, getHrAuthorizationScope } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import { getServerCache, setServerCache } from '@/lib/server-cache';
+import { getDistributedCache, setDistributedCache } from '@/lib/server-cache';
 
 export async function GET(req: Request) {
   try {
@@ -18,7 +18,7 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
     const requestedSubId = searchParams.get('subsidiaryId') || '';
     const cacheKey = `hr-overview:${actor.id}:${requestedSubId}`;
-    const cached = getServerCache<any>(cacheKey);
+    const cached = await getDistributedCache<any>(cacheKey);
     if (cached) {
       return NextResponse.json(cached);
     }
@@ -391,7 +391,7 @@ export async function GET(req: Request) {
         staffCount: sub._count.employeeAssignments,
       })),
     };
-    setServerCache(cacheKey, payload, 12_000);
+    await setDistributedCache(cacheKey, payload, 15_000);
     return NextResponse.json(payload);
   } catch (error) {
     console.error('HR Overview API Error:', error);
