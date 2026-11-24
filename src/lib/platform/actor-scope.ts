@@ -23,7 +23,7 @@ export function normalizeCanonicalRole(rawRole: unknown): CanonicalRole | null {
   const upper = String(rawRole || '').trim().toUpperCase();
   if (upper === 'SUPER_ADMIN' || upper === 'SYSTEM_ADMIN') return 'SUPER_ADMIN';
   if (upper === 'GMD') return 'GMD';
-  if (upper === 'STAFF') return 'STAFF';
+  if (upper === 'STAFF' || upper === 'CUSTOM_ADMIN') return 'STAFF';
   return null;
 }
 
