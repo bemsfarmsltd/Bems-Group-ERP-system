@@ -626,7 +626,7 @@ title: "<Chart Title>"
       }
     }
 
-    if (!isExecutive) return NextResponse.json({ error: 'The staff assistant is temporarily unavailable. Please retry.' }, { status: 503 });
+    if (!isExecutive && actor.role !== 'CUSTOM_ADMIN') return NextResponse.json({ error: 'The staff assistant is temporarily unavailable. Please retry.' }, { status: 503 });
     const db = await getAiReadClient({ ...actor, canonicalRole: normalizeCanonicalRole(actor.role)!, isExecutive, authSource: 'HUMAN_SESSION', scopedOrganizationId: scopedOrgId, delegation: scopedOrgId ? { scopedOrganizationId: scopedOrgId } as any : null });
     // 1. Fetch live telemetry from DB via canonical financial calculator (with strict subsidiary scoping)
     let bankAccounts: Array<{ bankName: string; accountNumber: string; accountName: string; balance: number; currency?: string }> = [];
