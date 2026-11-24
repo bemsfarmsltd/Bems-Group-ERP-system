@@ -22,7 +22,12 @@ export async function GET(request: Request) {
     }
 
     const station = await getAuthenticatedStation(request);
-    if (!station) return NextResponse.json({ error: 'No active office attendance station configured.' }, { status: 404 });
+    if (!station) {
+      return NextResponse.json(
+        { error: 'Kiosk station activation or Executive sign-in is required to display live attendance QR codes.', requiresActivation: true },
+        { status: 401 }
+      );
+    }
 
     const { token, expiresInSeconds } = generateStationQrToken(station.code, station.activeSecret);
 
@@ -75,7 +80,6 @@ export async function GET(request: Request) {
     return NextResponse.json({
       stationId: station.id,
       stationCode: station.code,
-      stationSecret: station.activeSecret,
       stationName: station.name,
       stateLocation: station.stateLocation,
       organizationName: station.organization.legalName,

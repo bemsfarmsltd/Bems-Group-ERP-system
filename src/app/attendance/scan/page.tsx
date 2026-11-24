@@ -267,13 +267,9 @@ export default function MobileAttendanceScannerPage() {
     try {
       setIsPunching(true);
 
-      // Fetch dynamic active QR token from station if not already provided
       let tokenToSubmit = mockToken || detectedToken;
       if (!tokenToSubmit) {
-        const qrRes = await fetch('/api/attendance/station/qr');
-        if (!qrRes.ok) throw new Error('Unable to retrieve active station token');
-        const qrData = await qrRes.json();
-        tokenToSubmit = qrData.qrToken;
+        throw new Error('Please scan the live QR code displayed on the reception kiosk tablet first.');
       }
 
       // Check current session to get employeeId

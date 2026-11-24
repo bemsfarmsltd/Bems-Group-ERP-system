@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getAuthenticatedEmployee, hasAnyRole, verifyPassword } from '@/lib/auth';
+import { KIOSK_COOKIE_NAME } from '@/lib/attendance/station-auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -36,22 +37,41 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Executive session, activation password, or kiosk key required.' }, { status: 403 });
     }
 
-    const station = await prisma.attendanceStation.findFirst({
-      where: { status: 'ACTIVE' },
-      include: { organization: { select: { legalName: true } } },
-    });
+    const requestedCode = typeof body.stationCode === 'string' ? body.stationCode.trim() : '';
+    const station = requestedCode
+      ? await prisma.attendanceStation.findFirst({
+          where: { status: 'ACTIVE', code: requestedCode },
+          include: { organization: { select: { legalName: true } } },
+        })
+      : await prisma.attendanceStation.findFirst({
+          where: { status: 'ACTIVE' },
+          orderBy: { createdAt: 'asc' },
+          include: { organization: { select: { legalName: true } } },
+        });
 
     if (!station || !station.activeSecret) {
       return NextResponse.json({ error: 'No active attendance station found.' }, { status: 404 });
     }
 
-    return NextResponse.json({
+    const res = NextResponse.json({
       success: true,
       stationCode: station.code,
-      stationSecret: station.activeSecret,
       stationName: station.name,
       organizationName: station.organization.legalName,
     });
+
+    const isProd = process.env.NODE_ENV === 'production';
+    const cookieDomain = process.env.COOKIE_DOMAIN || (isProd ? '.bemserp.work' : undefined);
+    res.cookies.set(KIOSK_COOKIE_NAME, `${station.code}:${station.activeSecret}`, {
+      httpOnly: true,
+      secure: isProd,
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 60 * 60 * 24 * 365,
+      ...(cookieDomain ? { domain: cookieDomain } : {}),
+    });
+
+    return res;
   } catch (error: any) {
     return NextResponse.json({ error: error.message || 'Activation failed.' }, { status: 500 });
   }

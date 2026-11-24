@@ -65,6 +65,9 @@ export default function AttendanceKioskPage() {
   const [currentDate, setCurrentDate] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [requiresActivation, setRequiresActivation] = useState<boolean>(false);
+  const [activationPassword, setActivationPassword] = useState<string>('');
+  const [activatingStation, setActivatingStation] = useState<boolean>(false);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [isQrOnlyFullscreen, setIsQrOnlyFullscreen] = useState<boolean>(false);
   const [recentPunches, setRecentPunches] = useState<any[]>([]);
@@ -354,18 +357,22 @@ export default function AttendanceKioskPage() {
       const qrUrl = codeToFetch
         ? `/api/attendance/station/qr?stationCode=${encodeURIComponent(codeToFetch)}`
         : '/api/attendance/station/qr';
-      const res = await fetch(qrUrl, { cache: 'no-store' });
+      const res = await fetch(qrUrl, { cache: 'no-store', credentials: 'include' });
       if (!res.ok) {
         const errorData = await res.json().catch(() => null);
+        if (res.status === 401 || errorData?.requiresActivation) {
+          setRequiresActivation(true);
+        }
         throw new Error(errorData?.error || 'Unable to connect to station server');
       }
-      const data: StationData & { stationSecret?: string } = await res.json();
+      const data: StationData = await res.json();
+      setRequiresActivation(false);
       setStationData(data);
       if (data.stationCode) {
         setSelectedStationCode(data.stationCode);
         localStorage.setItem('bems_kiosk_station_code', data.stationCode);
       }
-      if (data.stationSecret) localStorage.setItem('bems_kiosk_station_secret', data.stationSecret);
+      localStorage.removeItem('bems_kiosk_station_secret');
       setSecondsRemaining(data.expiresInSeconds || 45);
       setIsLoading(false);
     } catch (err: any) {
@@ -374,6 +381,35 @@ export default function AttendanceKioskPage() {
       setIsLoading(false);
     }
   }, [selectedStationCode]);
+
+  const handleActivateKiosk = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activationPassword.trim() || activatingStation) return;
+    setActivatingStation(true);
+    setLoadError(null);
+    try {
+      const res = await fetch('/api/attendance/station/activate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          adminPassword: activationPassword.trim(),
+          stationCode: selectedStationCode || undefined,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(json?.error || 'Activation failed. Check your Executive password.');
+      }
+      setActivationPassword('');
+      setRequiresActivation(false);
+      await fetchToken(json.stationCode || selectedStationCode);
+    } catch (err: any) {
+      setLoadError(err?.message || 'Activation failed.');
+    } finally {
+      setActivatingStation(false);
+    }
+  };
 
   useEffect(() => {
     void fetchToken();
@@ -1037,6 +1073,54 @@ export default function AttendanceKioskPage() {
                       Generating secure QR...
                     </div>
                   </div>
+                ) : requiresActivation ? (
+                  <form onSubmit={handleActivateKiosk} style={{ textAlign: 'center', padding: '16px', width: '100%' }}>
+                    <AlertCircle size={28} color="#ea580c" style={{ margin: '0 auto 8px' }} />
+                    <div style={{ fontSize: '12.5px', fontWeight: 800, color: '#0f172a', marginBottom: '4px' }}>
+                      Activate Reception Kiosk
+                    </div>
+                    <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '10px' }}>
+                      Sign in once with an Executive password to bind this tablet.
+                    </div>
+                    <input
+                      type="password"
+                      required
+                      value={activationPassword}
+                      onChange={(e) => setActivationPassword(e.target.value)}
+                      placeholder="Executive password..."
+                      style={{
+                        width: '100%',
+                        padding: '8px 10px',
+                        borderRadius: '8px',
+                        border: '1px solid #cbd5e1',
+                        fontSize: '12px',
+                        marginBottom: '8px',
+                        color: '#0f172a',
+                      }}
+                    />
+                    <button
+                      type="submit"
+                      disabled={activatingStation}
+                      style={{
+                        width: '100%',
+                        padding: '8px 12px',
+                        borderRadius: '8px',
+                        border: 'none',
+                        background: '#ea580c',
+                        color: '#ffffff',
+                        fontSize: '12px',
+                        fontWeight: 800,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {activatingStation ? 'Activating...' : 'Bind & Unlock Kiosk'}
+                    </button>
+                    {loadError && (
+                      <div style={{ fontSize: '11px', color: '#b91c1c', marginTop: '6px', fontWeight: 600 }}>
+                        {loadError}
+                      </div>
+                    )}
+                  </form>
                 ) : loadError ? (
                   <div style={{ textAlign: 'center', padding: '16px', color: '#b91c1c' }}>
                     <AlertCircle size={32} style={{ margin: '0 auto 8px' }} />
