@@ -40,6 +40,7 @@ const READ_ONLY_AUTH_ALLOWLIST = new Set([
   '/api/auth/logout',
   '/api/auth/refresh',
   '/api/staff/onboard/complete',
+  '/api/ai/chat',
 ]);
 
 /**

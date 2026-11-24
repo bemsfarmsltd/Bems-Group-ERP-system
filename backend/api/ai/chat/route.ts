@@ -5,7 +5,7 @@ import { resolveAuthorizedOrganizationScope } from '@/lib/organizations';
 import { getAiReadClient } from '@/lib/platform/scoped-database';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getAuthenticatedEmployee, hasAnyRole } from '@/lib/auth';
+import { getAuthenticatedEmployee, hasAnyRole, isReadOnlyEmployee } from '@/lib/auth';
 import crypto from 'node:crypto';
 import { stageAction } from '@/lib/staged-actions';
 import { getConsolidatedTreasury } from '@/lib/financial-metrics';
@@ -60,7 +60,7 @@ export async function POST(req: NextRequest) {
     const userName = actor.legalName.split(' ')[0] || 'User';
     const normalized = message.toLowerCase();
     const isExecutive = hasAnyRole(actor, ['GMD', 'SYSTEM_ADMIN', 'SUPER_ADMIN']);
-    const isReadOnlyUser = !isExecutive;
+    const isReadOnlyUser = !isExecutive || isReadOnlyEmployee(actor);
 
     const rawBusinessId = normalizeOrganizationIdentifier((body.context?.active_business_id || '').trim());
 
