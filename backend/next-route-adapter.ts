@@ -41,6 +41,8 @@ const READ_ONLY_AUTH_ALLOWLIST = new Set([
   '/api/auth/refresh',
   '/api/staff/onboard/complete',
   '/api/ai/chat',
+  '/api/attendance/punch',
+  '/api/attendance/verify-geofence',
 ]);
 
 /**
