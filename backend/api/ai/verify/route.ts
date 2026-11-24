@@ -22,7 +22,7 @@ export async function GET(req: Request) {
     const recordId = searchParams.get('record_id');
     const stagedActionId = searchParams.get('staged_action_id');
 
-    const authorizedScope = await resolveAuthorizedOrganizationScope(actor, 'ALL');
+    const authorizedScope = await resolveAuthorizedOrganizationScope(actor, 'ALL', 'ai-copilot');
     const allowedOrgIds = new Set(authorizedScope.organizationIds);
 
     let exists = false;

@@ -80,7 +80,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (rawBusinessId && !['ALL', 'group_hq'].includes(rawBusinessId) && !targetOrg) return NextResponse.json({ error: 'The selected workspace was not found.' }, { status: 404 });
-    const authorizedScope = await resolveAuthorizedOrganizationScope(actor, targetOrg?.id || 'ALL');
+    const authorizedScope = await resolveAuthorizedOrganizationScope(actor, targetOrg?.id || 'ALL', 'ai-copilot');
     if (!authorizedScope.organizationIds.length) return NextResponse.json({ error: 'You cannot access this workspace.' }, { status: 403 });
     const isGroupScope = !targetOrg || targetOrg.type === 'GROUP' || targetOrg.code === 'BEMS-GROUP';
     const scopedOrgId = !isGroupScope ? targetOrg?.id : null;
@@ -505,7 +505,7 @@ title: "<Chart Title>"
 
             if (candidateStagedId && String(rawCandidate.type || '').toLowerCase() === 'wallet_release') {
               try {
-                const scope = await resolveAuthorizedOrganizationScope(actor as any, scopedOrgId || 'ALL');
+                const scope = await resolveAuthorizedOrganizationScope(actor as any, scopedOrgId || 'ALL', 'ai-copilot');
                 const proposal = await walletProposal(actor, String(candidateStagedId), {
                   conversationId: sessionId,
                   workspaceId: scopedOrgId || null,
