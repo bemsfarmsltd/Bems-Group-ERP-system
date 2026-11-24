@@ -14,8 +14,11 @@ import {
   ShieldCheck,
   X,
   Briefcase,
+  Pencil,
+  Trash2,
 } from 'lucide-react';
 import { HrLeaveRecord } from './hrTypes';
+import { DEFAULT_LEAVE_POLICIES, type HrLeavePolicyItem } from '@/lib/hr-leave-policies';
 
 interface HrLeavePanelProps {
   initialStatusFilter?: string;
@@ -35,16 +38,6 @@ interface StaffSummary {
   } | null;
 }
 
-const LEAVE_POLICIES = [
-  { type: 'ANNUAL', label: 'Annual Paid Leave', defaultDays: 20, paid: true, notice: '14 days prior notice', desc: 'Standard annual rest & vacation entitlement for confirmed staff.' },
-  { type: 'SICK', label: 'Medical / Sick Leave', defaultDays: 10, paid: true, notice: 'Same day + medical note if >2 days', desc: 'Paid medical recovery leave backed by clinical documentation.' },
-  { type: 'CASUAL', label: 'Casual / Personal Leave', defaultDays: 5, paid: true, notice: '48 hours prior notice', desc: 'Short-term personal or family errands deducted from casual pool.' },
-  { type: 'MATERNITY', label: 'Maternity Leave', defaultDays: 90, paid: true, notice: '30 days prior notice', desc: 'Statutory paid maternity entitlement (12+ weeks).' },
-  { type: 'PATERNITY', label: 'Paternity Leave', defaultDays: 14, paid: true, notice: '14 days prior notice', desc: 'Paid paternity support leave upon birth or adoption.' },
-  { type: 'COMPASSIONATE', label: 'Compassionate / Bereavement', defaultDays: 5, paid: true, notice: 'Immediate', desc: 'Emergency family bereavement or critical household event.' },
-  { type: 'STUDY', label: 'Study & Exam Leave', defaultDays: 7, paid: true, notice: '14 days prior notice', desc: 'Approved professional certification or academic examination leave.' },
-];
-
 function countDaysInclusive(start: string, end: string): number {
   const s = new Date(start);
   const e = new Date(end);
@@ -62,8 +55,21 @@ export default function HrLeavePanel({
   const [subTab, setSubTab] = useState<'desk' | 'balances' | 'policies'>('desk');
   const [leaves, setLeaves] = useState<HrLeaveRecord[]>([]);
   const [staffList, setStaffList] = useState<StaffSummary[]>([]);
+  const [leavePolicies, setLeavePolicies] = useState<HrLeavePolicyItem[]>(DEFAULT_LEAVE_POLICIES);
   const [annualQuota, setAnnualQuota] = useState(20);
   const [sickQuota, setSickQuota] = useState(10);
+
+  const [showPolicyModal, setShowPolicyModal] = useState(false);
+  const [editingPolicyType, setEditingPolicyType] = useState<string | null>(null);
+  const [savingPolicy, setSavingPolicy] = useState(false);
+  const [policyForm, setPolicyForm] = useState<HrLeavePolicyItem>({
+    type: '',
+    label: '',
+    defaultDays: 10,
+    paid: true,
+    notice: '7 days prior notice',
+    desc: '',
+  });
 
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState(initialStatusFilter);
@@ -112,6 +118,9 @@ export default function HrLeavePanel({
         setAnnualQuota(Number(cfgData.policy.annualLeaveDays ?? 20));
         setSickQuota(Number(cfgData.policy.sickLeaveDays ?? 10));
       }
+      if (cfgRes.ok && Array.isArray(cfgData.leavePolicies) && cfgData.leavePolicies.length > 0) {
+        setLeavePolicies(cfgData.leavePolicies);
+      }
     } catch {
       setBanner({ type: 'err', text: 'Network error loading leave management data.' });
     } finally {
@@ -149,6 +158,107 @@ export default function HrLeavePanel({
     } finally {
       setBusyId(null);
     }
+  };
+
+  const persistLeavePolicies = async (nextPolicies: HrLeavePolicyItem[], successMsg: string) => {
+    setSavingPolicy(true);
+    setBanner(null);
+    try {
+      const res = await fetch('/api/hr/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'SAVE_LEAVE_POLICIES',
+          leavePolicies: nextPolicies,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setBanner({ type: 'err', text: data.error || 'Failed to save leave policies.' });
+        return false;
+      }
+      if (Array.isArray(data.leavePolicies)) {
+        setLeavePolicies(data.leavePolicies);
+        const ann = data.leavePolicies.find((p: HrLeavePolicyItem) => p.type === 'ANNUAL');
+        const sck = data.leavePolicies.find((p: HrLeavePolicyItem) => p.type === 'SICK');
+        if (ann) setAnnualQuota(ann.defaultDays);
+        if (sck) setSickQuota(sck.defaultDays);
+      }
+      setBanner({ type: 'ok', text: successMsg });
+      onRefreshOverview();
+      return true;
+    } catch {
+      setBanner({ type: 'err', text: 'Network error saving leave policies.' });
+      return false;
+    } finally {
+      setSavingPolicy(false);
+    }
+  };
+
+  const openNewPolicyModal = () => {
+    setEditingPolicyType(null);
+    setPolicyForm({
+      type: '',
+      label: '',
+      defaultDays: 5,
+      paid: true,
+      notice: '7 days prior notice',
+      desc: '',
+    });
+    setShowPolicyModal(true);
+  };
+
+  const openEditPolicyModal = (p: HrLeavePolicyItem) => {
+    setEditingPolicyType(p.type);
+    setPolicyForm({
+      ...p,
+      defaultDays: p.type === 'ANNUAL' ? annualQuota : p.type === 'SICK' ? sickQuota : p.defaultDays,
+    });
+    setShowPolicyModal(true);
+  };
+
+  const handleSavePolicyForm = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const normalizedCode = (editingPolicyType || policyForm.type)
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z0-9_]+/g, '_')
+      .replace(/^_+|_+$/g, '');
+    if (!normalizedCode || !policyForm.label.trim()) {
+      setBanner({ type: 'err', text: 'Policy code and display name are required.' });
+      return;
+    }
+    const nextItem: HrLeavePolicyItem = {
+      type: normalizedCode,
+      label: policyForm.label.trim(),
+      defaultDays: Math.max(0, Math.min(365, Number(policyForm.defaultDays) || 0)),
+      paid: Boolean(policyForm.paid),
+      notice: policyForm.notice.trim() || 'Standard notice',
+      desc: policyForm.desc.trim(),
+    };
+    const nextList = editingPolicyType
+      ? leavePolicies.map((item) => (item.type === editingPolicyType ? nextItem : item))
+      : leavePolicies.some((item) => item.type === normalizedCode)
+        ? leavePolicies.map((item) => (item.type === normalizedCode ? nextItem : item))
+        : [...leavePolicies, nextItem];
+
+    const ok = await persistLeavePolicies(
+      nextList,
+      editingPolicyType ? `Updated leave policy "${nextItem.label}".` : `Created leave policy "${nextItem.label}".`
+    );
+    if (ok) setShowPolicyModal(false);
+  };
+
+  const handleDeletePolicy = async (policyType: string, label: string) => {
+    if (leavePolicies.length <= 1) {
+      setBanner({ type: 'err', text: 'At least one leave policy must remain active.' });
+      return;
+    }
+    if (!window.confirm(`Remove leave policy "${label}" (${policyType})? Existing historical requests will remain intact.`)) {
+      return;
+    }
+    const nextList = leavePolicies.filter((p) => p.type !== policyType);
+    await persistLeavePolicies(nextList, `Removed leave policy "${label}".`);
   };
 
   const handleCreateLeave = async (e: React.FormEvent) => {
@@ -339,7 +449,7 @@ export default function HrLeavePanel({
             {[
               { id: 'desk', label: 'Leave Approval Desk', count: leaves.length },
               { id: 'balances', label: 'Staff Leave Balances & Quotas', count: staffList.length },
-              { id: 'policies', label: 'Leave Policies & Types', count: LEAVE_POLICIES.length },
+              { id: 'policies', label: 'Leave Policies & Types', count: leavePolicies.length },
             ].map((t) => {
               const active = subTab === t.id;
               return (
@@ -362,6 +472,15 @@ export default function HrLeavePanel({
           </div>
 
           <div className="flex items-center gap-2 pb-2">
+            {subTab === 'policies' && (
+              <button
+                type="button"
+                onClick={openNewPolicyModal}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-semibold text-slate-800 shadow-sm hover:bg-slate-50"
+              >
+                <Plus className="h-3.5 w-3.5" style={{ color: activeBrandColor }} /> New Leave Policy
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setShowCreateModal(true)}
@@ -407,7 +526,7 @@ export default function HrLeavePanel({
                   className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700"
                 >
                   <option value="ALL">All Leave Types</option>
-                  {LEAVE_POLICIES.map((p) => (
+                  {leavePolicies.map((p) => (
                     <option key={p.type} value={p.type}>
                       {p.label}
                     </option>
@@ -601,35 +720,73 @@ export default function HrLeavePanel({
           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {LEAVE_POLICIES.map((p) => {
-            const quota =
-              p.type === 'ANNUAL' ? annualQuota : p.type === 'SICK' ? sickQuota : p.defaultDays;
-            return (
-              <div key={p.type} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm flex flex-col justify-between gap-3">
-                <div>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-700">
-                      {p.type}
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-slate-200 bg-white px-5 py-3.5 shadow-sm flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-bold text-slate-900">Configured Leave Policies &amp; Entitlements</div>
+              <p className="text-xs text-slate-500">
+                Create, edit, or remove leave categories. Changes automatically sync to Staff Balances and the BEMS Staff App.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={openNewPolicyModal}
+              className="inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-semibold text-white shadow-sm hover:opacity-95"
+              style={{ backgroundColor: activeBrandColor }}
+            >
+              <Plus className="h-3.5 w-3.5" /> New Leave Policy
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {leavePolicies.map((p) => {
+              const quota =
+                p.type === 'ANNUAL' ? annualQuota : p.type === 'SICK' ? sickQuota : p.defaultDays;
+              return (
+                <div key={p.type} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm flex flex-col justify-between gap-3">
+                  <div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-700">
+                        {p.type}
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="rounded-full bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">
+                          {quota} days / year
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => openEditPolicyModal(p)}
+                          title={`Edit ${p.label}`}
+                          className="rounded-lg border border-slate-200 bg-white p-1.5 text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          disabled={savingPolicy}
+                          onClick={() => void handleDeletePolicy(p.type, p.label)}
+                          title={`Delete ${p.label}`}
+                          className="rounded-lg border border-rose-200 bg-rose-50/60 p-1.5 text-rose-600 hover:bg-rose-100 disabled:opacity-50"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                    <h3 className="mt-3 text-base font-bold text-slate-900">{p.label}</h3>
+                    <p className="mt-1 text-xs text-slate-500">{p.desc || 'Organization leave policy.'}</p>
+                  </div>
+                  <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+                    <span className="inline-flex items-center gap-1">
+                      <ShieldCheck className={`h-3.5 w-3.5 ${p.paid ? 'text-emerald-500' : 'text-amber-500'}`} /> {p.paid ? 'Paid Leave' : 'Unpaid Leave'}
                     </span>
-                    <span className="rounded-full bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">
-                      {quota} days / year
+                    <span className="inline-flex items-center gap-1">
+                      <Briefcase className="h-3.5 w-3.5 text-slate-400" /> {p.notice}
                     </span>
                   </div>
-                  <h3 className="mt-3 text-base font-bold text-slate-900">{p.label}</h3>
-                  <p className="mt-1 text-xs text-slate-500">{p.desc}</p>
                 </div>
-                <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-                  <span className="inline-flex items-center gap-1">
-                    <ShieldCheck className="h-3.5 w-3.5 text-emerald-500" /> {p.paid ? 'Paid Leave' : 'Unpaid'}
-                  </span>
-                  <span className="inline-flex items-center gap-1">
-                    <Briefcase className="h-3.5 w-3.5 text-slate-400" /> {p.notice}
-                  </span>
-                </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
       )}
 
@@ -667,7 +824,7 @@ export default function HrLeavePanel({
                   onChange={(e) => setForm((p) => ({ ...p, leaveType: e.target.value }))}
                   className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900"
                 >
-                  {LEAVE_POLICIES.map((p) => (
+                  {leavePolicies.map((p) => (
                     <option key={p.type} value={p.type}>
                       {p.label}
                     </option>
@@ -732,6 +889,112 @@ export default function HrLeavePanel({
                   style={{ backgroundColor: activeBrandColor }}
                 >
                   {submitting ? 'Submitting...' : 'Submit Leave Request'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Create / Edit Leave Policy Modal */}
+      {showPolicyModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+          <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-xl">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-slate-900">
+                {editingPolicyType ? `Edit Leave Policy (${editingPolicyType})` : 'Create New Leave Policy'}
+              </h3>
+              <button onClick={() => setShowPolicyModal(false)} className="text-slate-400 hover:text-slate-600">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <form onSubmit={handleSavePolicyForm} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Policy Code</label>
+                  <input
+                    required
+                    disabled={Boolean(editingPolicyType)}
+                    type="text"
+                    value={policyForm.type}
+                    onChange={(e) => setPolicyForm((p) => ({ ...p, type: e.target.value.toUpperCase() }))}
+                    placeholder="e.g. SABBATICAL"
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900 disabled:bg-slate-100"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Days / Year Quota</label>
+                  <input
+                    required
+                    type="number"
+                    min={0}
+                    max={365}
+                    value={policyForm.defaultDays}
+                    onChange={(e) => setPolicyForm((p) => ({ ...p, defaultDays: Number(e.target.value) }))}
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Policy Display Name</label>
+                <input
+                  required
+                  type="text"
+                  value={policyForm.label}
+                  onChange={(e) => setPolicyForm((p) => ({ ...p, label: e.target.value }))}
+                  placeholder="e.g. Sabbatical / Research Leave"
+                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900"
+                />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Compensation Type</label>
+                  <select
+                    value={policyForm.paid ? 'PAID' : 'UNPAID'}
+                    onChange={(e) => setPolicyForm((p) => ({ ...p, paid: e.target.value === 'PAID' }))}
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900"
+                  >
+                    <option value="PAID">Paid Leave</option>
+                    <option value="UNPAID">Unpaid Leave</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Prior Notice Rule</label>
+                  <input
+                    required
+                    type="text"
+                    value={policyForm.notice}
+                    onChange={(e) => setPolicyForm((p) => ({ ...p, notice: e.target.value }))}
+                    placeholder="e.g. 14 days prior notice"
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Policy Description</label>
+                <textarea
+                  rows={2}
+                  value={policyForm.desc}
+                  onChange={(e) => setPolicyForm((p) => ({ ...p, desc: e.target.value }))}
+                  placeholder="Eligibility criteria, required documentation, or approval rules..."
+                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900"
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowPolicyModal(false)}
+                  className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingPolicy}
+                  className="rounded-xl px-4 py-2 text-xs font-semibold text-white disabled:opacity-50"
+                  style={{ backgroundColor: activeBrandColor }}
+                >
+                  {savingPolicy ? 'Saving...' : editingPolicyType ? 'Save Changes' : 'Create Policy'}
                 </button>
               </div>
             </form>

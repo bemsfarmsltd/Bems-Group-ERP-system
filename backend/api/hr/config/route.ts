@@ -1,6 +1,11 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireCustomAdminHrAction, resolveHrContext, logHrAudit } from '@/lib/hrRouteHelper';
+import {
+  DEFAULT_LEAVE_POLICIES,
+  LEAVE_POLICIES_SETTING_KEY,
+  sanitizeLeavePolicies,
+} from '@/lib/hr-leave-policies';
 
 const POLICY_KEY = 'HR_STATUTORY_POLICY';
 const GRANTS_KEY = 'HR_CAPABILITY_GRANTS';
@@ -23,12 +28,15 @@ export async function GET(req: Request) {
     if ('error' in ctx) return ctx.error;
     const { defaultOrgId } = ctx;
 
-    const [policyRow, grantsRow, adminStaff] = await Promise.all([
+    const [policyRow, grantsRow, leavePoliciesRow, adminStaff] = await Promise.all([
       prisma.workspaceSetting.findFirst({
         where: { key: POLICY_KEY, ...(defaultOrgId ? { organizationId: defaultOrgId } : {}) },
       }),
       prisma.workspaceSetting.findFirst({
         where: { key: GRANTS_KEY },
+      }),
+      prisma.workspaceSetting.findFirst({
+        where: { key: LEAVE_POLICIES_SETTING_KEY, ...(defaultOrgId ? { organizationId: defaultOrgId } : {}) },
       }),
       prisma.employee.findMany({
         where: { status: 'ACTIVE' },
@@ -42,11 +50,15 @@ export async function GET(req: Request) {
       ? { ...DEFAULT_STATUTORY_POLICY, ...JSON.parse(policyRow.value) }
       : DEFAULT_STATUTORY_POLICY;
     const capabilityGrants = grantsRow?.value ? JSON.parse(grantsRow.value) : {};
+    const leavePolicies = leavePoliciesRow?.value
+      ? sanitizeLeavePolicies(JSON.parse(leavePoliciesRow.value))
+      : DEFAULT_LEAVE_POLICIES;
 
     return NextResponse.json({
       success: true,
       policy,
       capabilityGrants,
+      leavePolicies,
       employees: adminStaff,
     });
   } catch (error) {
@@ -138,6 +150,72 @@ export async function POST(req: Request) {
       }
 
       return NextResponse.json({ success: true, capabilityGrants: currentMap });
+    }
+
+    if (action === 'SAVE_LEAVE_POLICIES') {
+      const nextPolicies = sanitizeLeavePolicies(body.leavePolicies);
+      const existing = await prisma.workspaceSetting.findFirst({
+        where: { organizationId: defaultOrgId, key: LEAVE_POLICIES_SETTING_KEY },
+      });
+
+      if (existing) {
+        await prisma.workspaceSetting.update({
+          where: { id: existing.id },
+          data: { value: JSON.stringify(nextPolicies), updatedById: actor.id },
+        });
+      } else {
+        await prisma.workspaceSetting.create({
+          data: {
+            organizationId: defaultOrgId,
+            key: LEAVE_POLICIES_SETTING_KEY,
+            value: JSON.stringify(nextPolicies),
+            updatedById: actor.id,
+          },
+        });
+      }
+
+      // Keep annualLeaveDays / sickLeaveDays in HR_STATUTORY_POLICY aligned if ANNUAL or SICK changed
+      const annualItem = nextPolicies.find((p) => p.type === 'ANNUAL');
+      const sickItem = nextPolicies.find((p) => p.type === 'SICK');
+      if (annualItem || sickItem) {
+        const policyRow = await prisma.workspaceSetting.findFirst({
+          where: { organizationId: defaultOrgId, key: POLICY_KEY },
+        });
+        const currentPolicy = policyRow?.value
+          ? { ...DEFAULT_STATUTORY_POLICY, ...JSON.parse(policyRow.value) }
+          : { ...DEFAULT_STATUTORY_POLICY };
+        if (annualItem) currentPolicy.annualLeaveDays = annualItem.defaultDays;
+        if (sickItem) currentPolicy.sickLeaveDays = sickItem.defaultDays;
+        if (policyRow) {
+          await prisma.workspaceSetting.update({
+            where: { id: policyRow.id },
+            data: { value: JSON.stringify(currentPolicy), updatedById: actor.id },
+          });
+        } else {
+          await prisma.workspaceSetting.create({
+            data: {
+              organizationId: defaultOrgId,
+              key: POLICY_KEY,
+              value: JSON.stringify(currentPolicy),
+              updatedById: actor.id,
+            },
+          });
+        }
+      }
+
+      await logHrAudit({
+        actorId: actor.id,
+        actorName: actor.legalName,
+        actorRole: actor.role,
+        groupId: defaultOrgId,
+        subsidiaryId: defaultOrgId,
+        targetType: 'LEAVE_POLICY',
+        targetId: LEAVE_POLICIES_SETTING_KEY,
+        action: 'UPDATED',
+        metadata: { count: nextPolicies.length, types: nextPolicies.map((p) => p.type) },
+      });
+
+      return NextResponse.json({ success: true, leavePolicies: nextPolicies });
     }
 
     return NextResponse.json({ error: 'Unsupported configuration action.' }, { status: 400 });

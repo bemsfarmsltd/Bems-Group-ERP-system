@@ -4,6 +4,11 @@ import { getAuthenticatedEmployee } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { signIdCardToken } from '@/lib/id-card-crypto';
 import {
+  DEFAULT_LEAVE_POLICIES,
+  LEAVE_POLICIES_SETTING_KEY,
+  sanitizeLeavePolicies,
+} from '@/lib/hr-leave-policies';
+import {
   clampIdCardLevel,
   ID_CARD_LEVELS,
   levelToTierCompat,
@@ -468,12 +473,22 @@ export async function GET(request: Request) {
         ...r,
         deductionMinor: Number(r.deductionMinor || 0),
       })),
-      leaveSummary: {
-        annualAllowanceDays: 20,
-        usedDays: approvedLeaveDays,
-        remainingDays: Math.max(0, 20 - approvedLeaveDays),
-        pendingCount: leaveRequests.filter((l) => l.status === 'PENDING').length,
-      },
+      leaveSummary: await (async () => {
+        const leavePolicyRow = await prisma.workspaceSetting
+          .findFirst({ where: { key: LEAVE_POLICIES_SETTING_KEY } })
+          .catch(() => null);
+        const configuredPolicies = leavePolicyRow?.value
+          ? sanitizeLeavePolicies(JSON.parse(leavePolicyRow.value))
+          : DEFAULT_LEAVE_POLICIES;
+        const annualAllowance = configuredPolicies.find((p) => p.type === 'ANNUAL')?.defaultDays ?? 20;
+        return {
+          annualAllowanceDays: annualAllowance,
+          usedDays: approvedLeaveDays,
+          remainingDays: Math.max(0, annualAllowance - approvedLeaveDays),
+          pendingCount: leaveRequests.filter((l) => l.status === 'PENDING').length,
+          policies: configuredPolicies,
+        };
+      })(),
       leaveRequests,
       payrollItems: payrollItems.map((p) => {
         const periodLabel = p.batch?.period
