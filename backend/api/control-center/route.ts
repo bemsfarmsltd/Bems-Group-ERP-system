@@ -28,7 +28,12 @@ export async function GET(request: Request) {
     const cacheKey = `control-center:${actor.id}`;
     const cached = scopedAdmin ? null : await getDistributedCache<any>(cacheKey);
     if (cached) return NextResponse.json(cached);
-    const allowedSubIds = getAllowedSubsidiariesForModule(actor.role, actor.customAdminPermissions, 'control-center');
+    const allowedSubIds = getAllowedSubsidiariesForModule(
+      actor.role,
+      actor.customAdminPermissions,
+      'control-center',
+      actor.subsidiaryId
+    );
     const subsidiaryFilter = allowedSubIds === 'ALL' ? {} : { in: allowedSubIds };
     const canView = (category: string, action: string) => !scopedAdmin || hasEmployeePermission(actor, 'control-center', category, action);
     const viewOverview = canView('overview', 'view_control_overview');

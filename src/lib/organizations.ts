@@ -115,7 +115,12 @@ export async function resolveAuthorizedOrganizationScope(
 
   if (actor.role === 'CUSTOM_ADMIN' && access !== 'staff') {
     if (!access) return new OrganizationScopeResult(false, []);
-    const allowed = getAllowedSubsidiariesForModule(actor.role, actor.customAdminPermissions, access);
+    const allowed = getAllowedSubsidiariesForModule(
+      actor.role,
+      actor.customAdminPermissions,
+      access,
+      actor.subsidiaryId
+    );
     if (allowed === 'ALL') return permittedScope;
     const allowedIds = new Set(allowed);
     return new OrganizationScopeResult(false, permittedScope.organizationIds.filter(id => allowedIds.has(id)));

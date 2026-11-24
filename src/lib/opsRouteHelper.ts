@@ -108,7 +108,12 @@ export async function resolveOperationsContext(
     };
   }
 
-  const subScope = getAllowedSubsidiariesForModule(actor.role, actor.customAdminPermissions, 'operations');
+  const subScope = getAllowedSubsidiariesForModule(
+    actor.role,
+    actor.customAdminPermissions,
+    'operations',
+    actor.subsidiaryId
+  );
   if (subScope === 'ALL') {
     return {
       actor,

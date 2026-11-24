@@ -52,7 +52,7 @@ export function CustomAdminBuilderModal({
     return (
       permissions[modKey] || {
         enabled: false,
-        subsidiaryScope: 'ALL',
+        subsidiaryScope: 'ONBOARDED',
         subsidiaryIds: [],
         categories: {},
       }
@@ -92,7 +92,7 @@ export function CustomAdminBuilderModal({
     }
     updateModuleGrant(modKey, {
       enabled: true,
-      subsidiaryScope: 'ALL',
+      subsidiaryScope: 'ONBOARDED',
       subsidiaryIds: [],
       categories: cats,
     });
@@ -110,7 +110,7 @@ export function CustomAdminBuilderModal({
     }
     updateModuleGrant(modKey, {
       enabled: true,
-      subsidiaryScope: 'ALL',
+      subsidiaryScope: 'ONBOARDED',
       subsidiaryIds: [],
       categories: cats,
     });
@@ -369,7 +369,25 @@ export function CustomAdminBuilderModal({
                   <Building2 className="h-4 w-4 text-orange-600" />
                   2. Subsidiary Access for {currentModDef.label}
                 </div>
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      updateModuleGrant(currentModDef.key, {
+                        ...grant,
+                        enabled: true,
+                        subsidiaryScope: 'ONBOARDED',
+                        subsidiaryIds: [],
+                      })
+                    }
+                    className={`rounded-lg px-2.5 py-1 text-[11px] font-bold ${
+                      grant.subsidiaryScope === 'ONBOARDED'
+                        ? 'bg-emerald-600 text-white'
+                        : 'border border-slate-200 bg-white text-slate-600'
+                    }`}
+                  >
+                    Onboarding Subsidiary
+                  </button>
                   <button
                     type="button"
                     onClick={() =>
@@ -406,6 +424,12 @@ export function CustomAdminBuilderModal({
                   </button>
                 </div>
               </div>
+
+              {grant.subsidiaryScope === 'ONBOARDED' && (
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 px-3 py-2 text-[11.5px] font-medium text-emerald-900">
+                  Automatically uses the <strong>subsidiary selected during onboarding</strong> for each admin assigned to this profile — no manual subsidiary selection needed.
+                </div>
+              )}
 
               {grant.subsidiaryScope === 'SELECTED' && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">

@@ -36,6 +36,7 @@ export type AuthenticatedEmployee = {
   customAdminTitle?: string | null;
   customAdminPermissions?: CustomAdminPermissionsMap | null;
   staffAppModules?: StaffAppModuleKey[];
+  subsidiaryId?: string | null;
 };
 
 export function normalizeSystemRole(
@@ -82,6 +83,7 @@ function buildAuthenticatedEmployee(employee: any): AuthenticatedEmployee {
     staffAppModules: Array.isArray(employee.staffAppModules)
       ? employee.staffAppModules
       : resolveStaffAppModules(employee.staffAppModulesJson),
+    subsidiaryId: employee.assignments?.[0]?.subsidiaryId || null,
   };
 }
 
@@ -261,7 +263,19 @@ export async function getAuthenticatedEmployee(
       try {
         session = await prisma.authSession.findUnique({
           where: { tokenHash: tHash },
-          include: { employee: { include: { customAdminProfile: true } } },
+          include: {
+            employee: {
+              include: {
+                customAdminProfile: true,
+                assignments: {
+                  where: { status: 'ACTIVE' },
+                  orderBy: [{ isPrimary: 'desc' }, { startsOn: 'desc' }],
+                  take: 1,
+                  select: { subsidiaryId: true },
+                },
+              },
+            },
+          },
         });
       } catch (poolErr) {
         // Retry once after 120ms on transient connection pool spike
@@ -269,7 +283,19 @@ export async function getAuthenticatedEmployee(
         try {
           session = await prisma.authSession.findUnique({
             where: { tokenHash: tHash },
-            include: { employee: { include: { customAdminProfile: true } } },
+            include: {
+              employee: {
+                include: {
+                  customAdminProfile: true,
+                  assignments: {
+                    where: { status: 'ACTIVE' },
+                    orderBy: [{ isPrimary: 'desc' }, { startsOn: 'desc' }],
+                    take: 1,
+                    select: { subsidiaryId: true },
+                  },
+                },
+              },
+            },
           });
         } catch {
           session = null;
@@ -339,6 +365,7 @@ export function publicEmployee(employee: AuthenticatedEmployee | any) {
     staffAppModules: Array.isArray(employee.staffAppModules)
       ? employee.staffAppModules
       : resolveStaffAppModules(employee.staffAppModulesJson),
+    subsidiaryId: employee.assignments?.[0]?.subsidiaryId || null,
   };
 }
 
@@ -465,7 +492,12 @@ export async function getHrAuthorizationScope(
       String(employee.role || '').toUpperCase() === 'CUSTOM_ADMIN' &&
       hasModuleAccess(employee.role, employee.customAdminPermissions, 'hr')
     ) {
-      const allowedSubs = getAllowedSubsidiariesForModule(employee.role, employee.customAdminPermissions, 'hr');
+      const allowedSubs = getAllowedSubsidiariesForModule(
+        employee.role,
+        employee.customAdminPermissions,
+        'hr',
+        employee.subsidiaryId
+      );
       if (allowedSubs === 'ALL') {
         const allActiveOrgs = await prisma.organization.findMany({
           where: { status: 'ACTIVE' },

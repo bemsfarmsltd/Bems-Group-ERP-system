@@ -126,7 +126,12 @@ export async function resolveInnovationContext(
     };
   }
 
-  const subScope = getAllowedSubsidiariesForModule(actor.role, actor.customAdminPermissions, 'innovation');
+  const subScope = getAllowedSubsidiariesForModule(
+    actor.role,
+    actor.customAdminPermissions,
+    'innovation',
+    actor.subsidiaryId
+  );
   if (subScope === 'ALL') {
     return {
       actor,

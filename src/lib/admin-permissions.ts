@@ -28,7 +28,7 @@ export interface PermissionModuleDef {
 
 export interface ModulePermissionGrant {
   enabled: boolean;
-  subsidiaryScope: 'ALL' | 'SELECTED';
+  subsidiaryScope: 'ONBOARDED' | 'ALL' | 'SELECTED';
   subsidiaryIds: string[];
   categories: Record<
     string,
@@ -571,7 +571,8 @@ export function hasActionPermission(
 export function getAllowedSubsidiariesForModule(
   role: string,
   permissions: CustomAdminPermissionsMap | null | undefined,
-  moduleKey: AdminModuleKey
+  moduleKey: AdminModuleKey,
+  onboardedSubsidiaryId?: string | null
 ): 'ALL' | string[] {
   const normalized = String(role || '').toUpperCase();
   if (normalized === 'GMD') {
@@ -583,6 +584,12 @@ export function getAllowedSubsidiariesForModule(
   const grant = permissions?.[moduleKey];
   if (!grant?.enabled) return [];
   if (grant.subsidiaryScope === 'ALL') return 'ALL';
+  if (grant.subsidiaryScope === 'ONBOARDED') {
+    return onboardedSubsidiaryId ? [onboardedSubsidiaryId] : [];
+  }
+  if ((grant.subsidiaryIds || []).length === 0 && onboardedSubsidiaryId) {
+    return [onboardedSubsidiaryId];
+  }
   return grant.subsidiaryIds || [];
 }
 
