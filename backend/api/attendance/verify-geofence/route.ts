@@ -51,7 +51,8 @@ export async function POST(request: Request) {
       });
     }
 
-    // If no specific station requested, first match any station whose active Kiosk shares the caller's Wi-Fi Router IP, then closest GPS
+    // If no specific station requested, ALWAYS match the closest active station by GPS first
+    // (never let a shared /16 Starlink or mobile-carrier IP pick a kiosk in another state).
     if (!station) {
       const [activeStations, kioskSessions] = await Promise.all([
         prisma.attendanceStation.findMany({ where: { status: 'ACTIVE' } }),
@@ -65,22 +66,31 @@ export async function POST(request: Request) {
         );
       }
 
-      if (clientIp && clientIp !== '127.0.0.1' && clientIp !== '::1') {
-        const matchingSession = kioskSessions.find(
-          (s) => s.status === 'ACTIVE' && s.ipAddress && isStarlinkIpAllowed(clientIp, s.ipAddress, false, true).allowed
-        );
-        if (matchingSession) {
-          station = activeStations.find((st) => st.code === matchingSession.stationCode) || null;
+      // 1. Closest active station by GPS distance (authoritative across states like Abia vs Edo)
+      let closestDist = Infinity;
+      for (const st of activeStations) {
+        const dist = calculateHaversineDistance(latNum, lngNum, st.latitude, st.longitude);
+        if (dist < closestDist) {
+          closestDist = dist;
+          station = st;
         }
       }
 
-      if (!station) {
-        let closestDist = Infinity;
-        for (const st of activeStations) {
-          const dist = calculateHaversineDistance(latNum, lngNum, st.latitude, st.longitude);
-          if (dist < closestDist) {
-            closestDist = dist;
-            station = st;
+      // 2. Only if two stations are within 2km of the caller (same campus/city), prefer one whose live kiosk matches the exact/subnet router IP
+      if (clientIp && clientIp !== '127.0.0.1' && clientIp !== '::1') {
+        const nearbyStations = activeStations.filter(
+          (st) => calculateHaversineDistance(latNum, lngNum, st.latitude, st.longitude) <= 2000
+        );
+        if (nearbyStations.length > 1) {
+          const matchingSession = kioskSessions.find(
+            (s) =>
+              s.status === 'ACTIVE' &&
+              s.ipAddress &&
+              nearbyStations.some((ns) => ns.code === s.stationCode) &&
+              isStarlinkIpAllowed(clientIp, s.ipAddress, false, true).allowed
+          );
+          if (matchingSession) {
+            station = nearbyStations.find((st) => st.code === matchingSession.stationCode) || station;
           }
         }
       }
