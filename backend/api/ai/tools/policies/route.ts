@@ -25,6 +25,12 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     ok: true,
+    count: policies.length,
+    empty: policies.length === 0 && settings.length === 0,
+    message:
+      policies.length === 0
+        ? `0 approval policies configured (${settings.length} workspace settings found).`
+        : `Found ${policies.length} approval policy rule(s) and ${settings.length} workspace setting(s).`,
     approvalPolicies: policies.map((p) => ({
       id: p.id,
       category: p.category,

@@ -66,6 +66,11 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     ok: true,
     count: staff.length,
+    empty: staff.length === 0,
+    message:
+      staff.length === 0
+        ? 'All fine — 0 staff records matched the current query and scope.'
+        : `Found ${staff.length} staff record(s).`,
     staff: staff.map((s) => {
       const latestComp = s.employmentAgreements?.[0]?.compensations?.[0];
       const baseSalaryNaira = latestComp

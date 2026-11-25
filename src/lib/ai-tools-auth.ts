@@ -1,6 +1,6 @@
 import { hasGmdFeatureAccess, superAdminGmdAccessEnabled } from '@/lib/gmd-access';
 import { NextRequest, NextResponse } from 'next/server';
-import { getAuthenticatedEmployee, hasAnyRole } from '@/lib/auth';
+import { getAuthenticatedEmployee, hasAnyRole, resolveEmployeeCustomPermissions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { timingSafeEqual } from 'node:crypto';
 import {
@@ -23,6 +23,7 @@ export interface AuthenticatedAiActor {
   workEmail: string;
   phone?: string | null;
   isExecutive: boolean;
+  customAdminPermissions?: any;
   authSource: 'SERVICE_TOKEN' | 'HUMAN_SESSION';
   conversationId?: string | null;
   scopedOrganizationId?: string | null;
@@ -146,6 +147,9 @@ export async function authenticateAiToolRequest(
         OR: [{ status: 'ACTIVE' }, { status: 'ON_LEAVE', role: 'STAFF' }],
         approvalStatus: 'APPROVED',
       },
+      include: {
+        customAdminProfile: { select: { permissionsJson: true } },
+      },
     });
     const canonicalRole = employee ? normalizeCanonicalRole(employee.role) : null;
     if (!employee) {
@@ -213,6 +217,7 @@ export async function authenticateAiToolRequest(
         workEmail: employee.workEmail,
         phone: employee.phone,
         isExecutive: hasAnyRole(employee, ['GMD', 'SYSTEM_ADMIN', 'SUPER_ADMIN']) || isAuthorizedCustomAdmin,
+        customAdminPermissions: resolveEmployeeCustomPermissions(employee),
         authSource: 'SERVICE_TOKEN',
         conversationId: del.conversationId,
         scopedOrganizationId: del.scopedOrganizationId,
@@ -270,6 +275,7 @@ export async function authenticateAiToolRequest(
       workEmail: standardUser.workEmail,
       phone: standardUser.phone,
       isExecutive,
+      customAdminPermissions: standardUser.customAdminPermissions,
       authSource: 'HUMAN_SESSION',
       conversationId: req.headers.get('x-conversation-id') || `conv_${standardUser.id}`,
       scopedOrganizationId: req.headers.get('x-subsidiary-id') || null,

@@ -337,6 +337,11 @@ export async function GET(request: NextRequest) {
         nextDueRequestId: nextDue?.id ?? null,
       },
       count: nonRejected.length,
+      empty: nonRejected.length === 0,
+      message:
+        nonRejected.length === 0
+          ? 'All fine — 0 recurring commitments found.'
+          : `Found ${nonRejected.length} recurring commitment(s).`,
       requests: nonRejected.map(enrichRequest),
     });
   }
@@ -344,6 +349,11 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     ok: true,
     count: requests.length,
+    empty: requests.length === 0,
+    message:
+      requests.length === 0
+        ? 'All fine — 0 expenditure requests found for the current query and scope.'
+        : `Found ${requests.length} expenditure request(s).`,
     requests: requests.map(enrichRequest),
   });
 }

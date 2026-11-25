@@ -76,6 +76,11 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     ok: true,
     count: activeCases.length,
+    empty: activeCases.length === 0,
+    message:
+      activeCases.length === 0
+        ? 'All fine — 0 active accountability cases found.'
+        : `Found ${activeCases.length} active accountability case(s).`,
     policyNote:
       'Accountability only begins AFTER a staff member has completely withdrawn the funds from their BEMS Wallet to their personal bank account.',
     cases: activeCases.map((c) => ({

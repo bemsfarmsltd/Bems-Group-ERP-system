@@ -588,9 +588,21 @@ export async function resolveAiAgentRouteSmart(
 ): Promise<RouteResolutionResult> {
   const parsedTag = extractAgentCommandTag(input.message || '');
   const cleanMessage = parsedTag.cleanMessage || input.message.trim();
+  const baseline = resolveAiAgentRoute(input);
+
+  // Explicit @tag locks, UI pill locks, 'both'/'master' mode, or Point & Ask DOM domain locks take precedence over module lock
+  if (
+    parsedTag.tag ||
+    (input.isTagLocked && input.explicitMode && input.explicitMode !== 'auto') ||
+    input.explicitMode === 'both' ||
+    input.explicitMode === 'master' ||
+    input.targetElement?.domain
+  ) {
+    return baseline;
+  }
 
   // Module-scoped AI Agent lock: when inside a specific module (Finance, HR, Projects, etc.),
-  // stay pinned to that module's dedicated AI Agent.
+  // stay pinned to that module's dedicated AI Agent unless explicitly overridden above.
   if (
     input.moduleDomain &&
     input.moduleDomain !== 'master' &&
@@ -603,19 +615,6 @@ export async function resolveAiAgentRouteSmart(
       reason: `Pinned to ${input.moduleDomain.toUpperCase()} module AI Agent`,
       cleanMessage,
     };
-  }
-
-  const baseline = resolveAiAgentRoute(input);
-
-  // Never override explicit @tag locks, explicit 'both'/'master' mode, or Point & Ask DOM domain locks
-  if (
-    parsedTag.tag ||
-    (input.isTagLocked && input.explicitMode && input.explicitMode !== 'auto') ||
-    input.explicitMode === 'both' ||
-    input.explicitMode === 'master' ||
-    input.targetElement?.domain
-  ) {
-    return baseline;
   }
 
   const apiKey = (process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY || '').trim();
@@ -653,7 +652,7 @@ export async function resolveAiAgentRouteSmart(
 
   try {
     const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent?key=${encodeURIComponent(apiKey)}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

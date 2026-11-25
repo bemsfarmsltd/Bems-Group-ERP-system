@@ -135,8 +135,11 @@ export async function POST(req: NextRequest) {
     const explicitTagLocked =
       body.context?.is_tag_locked === true ||
       body.is_tag_locked === true;
+    const hasExplicitUserOverride =
+      Boolean(explicitTagLocked && explicitAgentMode && explicitAgentMode !== 'auto') ||
+      /^[@/](finance|financial|hr|people|both|all|master|auto)\b/i.test(message.trim());
     const moduleDomain = (body.context?.module_domain || body.moduleDomain || null) as AiAgentDomain | null;
-    const isLockedModule = Boolean(moduleDomain && moduleDomain !== 'master');
+    const isLockedModule = Boolean(moduleDomain && moduleDomain !== 'master' && !hasExplicitUserOverride);
     const routeDecision = isLockedModule
       ? {
           domain: moduleDomain as AiAgentDomain,
@@ -459,13 +462,19 @@ title: "<Chart Title>"
           if (!n8nData && n8nRes) {
             n8nData = await n8nRes.json();
           }
-          const rawReply = n8nData.reply || n8nData.message || 'Workflow executed.';
+          const rawReplyCandidate = typeof n8nData.reply === 'string'
+            ? n8nData.reply.trim()
+            : typeof n8nData.message === 'string'
+            ? n8nData.message.trim()
+            : '';
+          const rawReply = rawReplyCandidate || 'Workflow executed.';
           const isN8nGenericFailure =
             !n8nData.staged_action &&
             !n8nData.actionCard &&
-            /i could not complete that just now|nothing was changed in bems|bems real-time intelligence synchronized|treasury records are intact|^workflow executed\.?$/i.test(
-              String(rawReply).trim()
-            );
+            (!rawReplyCandidate ||
+              /i could not complete that just now|nothing was changed in bems|bems real-time intelligence synchronized|treasury records are intact|^workflow executed\.?$/i.test(
+                rawReply
+              ));
           if (isN8nGenericFailure) {
             console.warn(
               `[AI Chat] n8n webhook (${activeAgentMode}) returned generic failure reply; falling back to built-in BEMS AI engine.`

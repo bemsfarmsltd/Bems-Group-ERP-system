@@ -52,7 +52,7 @@ export function normalizeSystemRole(
   return 'STAFF';
 }
 
-function resolveEmployeeCustomPermissions(employee: any): CustomAdminPermissionsMap | null {
+export function resolveEmployeeCustomPermissions(employee: any): CustomAdminPermissionsMap | null {
   const role = normalizeSystemRole(employee?.role, employee?.customAdminProfileId);
   if (role === 'GMD') return null;
 
@@ -455,6 +455,8 @@ export async function getHrAuthorizationScope(
         role: true,
         status: true,
         approvalStatus: true,
+        customAdminProfileId: true,
+        customAdminProfile: { select: { permissionsJson: true } },
         assignments: {
           where: {
             status: 'ACTIVE',
@@ -488,13 +490,14 @@ export async function getHrAuthorizationScope(
       };
     }
 
+    const effectivePermissions = employee.customAdminPermissions ?? resolveEmployeeCustomPermissions(empRecord);
     if (
       String(employee.role || '').toUpperCase() === 'CUSTOM_ADMIN' &&
-      hasModuleAccess(employee.role, employee.customAdminPermissions, 'hr')
+      hasModuleAccess(employee.role, effectivePermissions, 'hr')
     ) {
       const allowedSubs = getAllowedSubsidiariesForModule(
         employee.role,
-        employee.customAdminPermissions,
+        effectivePermissions,
         'hr',
         employee.subsidiaryId
       );

@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const { workDate: todayStr } = getLagosTime();
   const dateParam = url.searchParams.get('date') || todayStr;
-  const subsidiaryId = url.searchParams.get('subsidiaryId');
+  const subsidiaryId = url.searchParams.get('subsidiaryId') || actor.scopedOrganizationId || null;
 
   try {
     const data = await queryDailyAttendanceRoster(
@@ -34,7 +34,8 @@ export async function GET(req: NextRequest) {
         role: actor.role,
         legalName: actor.legalName,
         workEmail: actor.workEmail,
-      },
+        customAdminPermissions: actor.customAdminPermissions,
+      } as any,
       {
         date: dateParam,
         subsidiaryId,
@@ -42,12 +43,29 @@ export async function GET(req: NextRequest) {
       }
     );
 
+    const totalStaff = data?.counts?.total ?? data?.roster?.length ?? 0;
+    const punchedCount = (data?.roster || []).filter((r: any) => r.hasPunched).length;
+    const absentCount = data?.counts?.absent ?? 0;
+    const lateCount = data?.counts?.late ?? 0;
+    const onTimeCount = data?.counts?.onTime ?? 0;
+    const offDayCount = data?.counts?.offDay ?? 0;
+    const message =
+      totalStaff === 0
+        ? `All fine — 0 attendance records found for ${dateParam} (0 active staff in scope).`
+        : punchedCount === 0
+        ? `All fine — 0 attendance punches recorded yet for ${dateParam} across ${totalStaff} active staff (${absentCount} marked absent, ${offDayCount} on off-day).`
+        : `Attendance roster for ${dateParam}: ${punchedCount} of ${totalStaff} staff punched in (${onTimeCount} on-time, ${lateCount} late, ${absentCount} absent, ${offDayCount} off-day).`;
+
     return NextResponse.json(
       redactUntrustedAndSensitiveFields({
         ok: true,
         source: 'BEMS_READ_CATALOG',
         queryName: 'attendance.daily_roster',
         date: dateParam,
+        empty: punchedCount === 0 && totalStaff === 0,
+        recordCount: punchedCount,
+        absentCount,
+        message,
         ...data,
       })
     );

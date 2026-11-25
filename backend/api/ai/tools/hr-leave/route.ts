@@ -43,6 +43,11 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     ok: true,
     count: leaveRequests.length,
+    empty: leaveRequests.length === 0,
+    message:
+      leaveRequests.length === 0
+        ? `All fine — 0 leave requests found${status ? ` with status ${status.toUpperCase()}` : ''}.`
+        : `Found ${leaveRequests.length} leave request(s)${status ? ` with status ${status.toUpperCase()}` : ''}.`,
     leaveRequests,
   });
 }

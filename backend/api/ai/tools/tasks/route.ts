@@ -29,6 +29,11 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     ok: true,
     count: tasks.length,
+    empty: tasks.length === 0,
+    message:
+      tasks.length === 0
+        ? 'All fine — 0 follow-up tasks found.'
+        : `Found ${tasks.length} follow-up task(s).`,
     tasks,
   });
 }
