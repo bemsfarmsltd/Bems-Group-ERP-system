@@ -430,12 +430,26 @@ title: "<Chart Title>"
         }
 
         if (!n8nData) {
-          n8nRes = await fetch(n8nWebhookUrl, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify(n8nPayload),
-            signal: controller.signal,
-          });
+          try {
+            n8nRes = await fetch(n8nWebhookUrl, {
+              method: 'POST',
+              headers,
+              body: JSON.stringify(n8nPayload),
+              signal: controller.signal,
+            });
+          } catch (primaryFetchErr) {
+            if (n8nWebhookUrl.includes('n8n.srv2065537.hstgr.cloud')) {
+              const internalDockerUrl = n8nWebhookUrl.replace('https://n8n.srv2065537.hstgr.cloud', 'http://n8n:5678');
+              n8nRes = await fetch(internalDockerUrl, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify(n8nPayload),
+                signal: controller.signal,
+              });
+            } else {
+              throw primaryFetchErr;
+            }
+          }
         }
 
         clearTimeout(timeout);
@@ -2030,9 +2044,15 @@ title: "<Chart Title>"
       }
     }
 
-    // Layer Gemini API exclusively for Control Center (master) intelligent cross-module routing
+    // Layer Gemini API across ALL modules whenever the built-in engine falls back to a generic/welcome template
     const geminiKey = (process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY || '').trim();
-    if (!isLockedModule && geminiKey && (!reply || reply.includes('I noted your instruction:') || reply.includes('How would you like to direct financial oversight'))) {
+    const isGenericTemplateReply =
+      !reply ||
+      reply.includes('I noted your instruction:') ||
+      reply.includes('How would you like to direct financial oversight') ||
+      reply.includes('You can ask me:') ||
+      reply.includes('Strictly scoped to');
+    if (geminiKey && isGenericTemplateReply) {
       try {
         const domainGuide: Record<string, string> = {
           master: 'You are the BEMS Group Root AI in the Enterprise Control Center. You coordinate across Finance, HR, Projects, Operations, Media, Innovation, and governance.',
@@ -2048,36 +2068,47 @@ title: "<Chart Title>"
           .slice(-6)
           .map((h: any) => `${h.role === 'assistant' || h.sender === 'assistant' ? 'Assistant' : 'User'}: ${String(h.content || '').slice(0, 400)}`)
           .join('\n');
+        const liveTelemetrySummary = [
+          `Active Workspace: ${scopedOrgName} (${isGroupScope ? 'Consolidated Group HQ' : `Subsidiary Code ${scopedOrgCode}`})`,
+          `Active Subsidiaries (${orgs.length}): ${orgs.map((o) => `${o.legalName} (${o.code})`).join(', ')}`,
+          `Total Cash Across Active Bank Accounts: ${formatNaira(totalCash)}`,
+          `Pending Fund Requests: ${pendingCount}`,
+          `Open Accountability Cases: ${openCases.length}`,
+          `Active Staff Count: ${totalActiveStaff}`,
+        ].join('\n');
         const geminiPrompt = [
           domainGuide[activeAgentMode] || domainGuide.master,
-          `Active Workspace: ${scopedOrgId ? `Subsidiary ID ${scopedOrgId}` : 'BEMS Group (Consolidated)'}.`,
-          `User: ${actor.legalName} (${actor.role}).`,
-          'Be concise, executive-ready, and grounded. Never invent financial balances or records not provided in context.',
+          `User: ${actor.legalName} (Role: ${actor.role}, Mode: ${isReadOnlyUser ? 'READ_ONLY' : 'READ_AND_STAGE'}).`,
+          `Live Verified BEMS Database Telemetry:\n${liveTelemetrySummary}`,
+          'Respond naturally, concisely, and helpfully to the user. Use the verified database telemetry above when answering questions about BEMS Group, subsidiaries, cash, requests, or staff. Never invent numbers outside the provided telemetry.',
           recentHistory ? `Recent Conversation:\n${recentHistory}` : '',
-          `User Question: ${cleanUserMessage}`,
+          `User Message: ${cleanUserMessage}`,
         ]
           .filter(Boolean)
           .join('\n\n');
 
-        const gRes = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(geminiKey)}`,
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-goog-api-key': geminiKey,
-            },
-            body: JSON.stringify({
-              contents: [{ role: 'user', parts: [{ text: geminiPrompt }] }],
-              generationConfig: { temperature: 0.3, maxOutputTokens: 900 },
-            }),
-          }
-        );
-        if (gRes.ok) {
-          const gJson = await gRes.json();
-          const gText = gJson?.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (typeof gText === 'string' && gText.trim()) {
-            reply = normalizeMarkdownStructure(gText.trim());
+        for (const modelName of ['gemini-flash-lite-latest', 'gemini-flash-latest']) {
+          const gRes = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${encodeURIComponent(geminiKey)}`,
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'x-goog-api-key': geminiKey,
+              },
+              body: JSON.stringify({
+                contents: [{ role: 'user', parts: [{ text: geminiPrompt }] }],
+                generationConfig: { temperature: 0.3, maxOutputTokens: 900 },
+              }),
+            }
+          );
+          if (gRes.ok) {
+            const gJson = await gRes.json();
+            const gText = gJson?.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (typeof gText === 'string' && gText.trim()) {
+              reply = normalizeMarkdownStructure(gText.trim());
+              break;
+            }
           }
         }
       } catch (gemErr) {
