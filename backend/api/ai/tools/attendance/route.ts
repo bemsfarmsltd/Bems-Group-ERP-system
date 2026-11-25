@@ -7,6 +7,7 @@ import { stageAction } from '@/lib/staged-actions';
 import { checkAiScopeOrResponse } from '@/lib/ai-access-control';
 import { queryDailyAttendanceRoster } from '@/lib/services/attendance-roster';
 import { redactUntrustedAndSensitiveFields } from '@/lib/platform/read-catalog';
+import { resolveAuthorizedOrganizationScope } from '@/lib/organizations';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,19 +29,32 @@ export async function GET(req: NextRequest) {
   const subsidiaryId = url.searchParams.get('subsidiaryId') || actor.scopedOrganizationId || null;
 
   try {
+    const scopeActor = {
+      id: actor.id,
+      role: actor.role,
+      legalName: actor.legalName,
+      workEmail: actor.workEmail,
+      customAdminPermissions: actor.customAdminPermissions,
+      subsidiaryId: actor.subsidiaryId || actor.scopedOrganizationId || null,
+      scopedOrganizationId: actor.scopedOrganizationId || null,
+    } as any;
+
+    const authorizedScope = await resolveAuthorizedOrganizationScope(
+      scopeActor,
+      subsidiaryId || 'ALL',
+      ['hr', 'ai-copilot']
+    );
+
     const data = await queryDailyAttendanceRoster(
-      {
-        id: actor.id,
-        role: actor.role,
-        legalName: actor.legalName,
-        workEmail: actor.workEmail,
-        customAdminPermissions: actor.customAdminPermissions,
-        subsidiaryId: actor.subsidiaryId || actor.scopedOrganizationId || null,
-      } as any,
+      scopeActor,
       {
         date: dateParam,
         subsidiaryId,
         redactSensitivePins: true,
+        preauthorizedScope: {
+          isGlobal: authorizedScope.isGroup,
+          subsidiaryIds: authorizedScope.organizationIds,
+        },
       }
     );
 

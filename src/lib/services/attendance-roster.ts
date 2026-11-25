@@ -8,6 +8,7 @@ export interface QueryDailyAttendanceRosterParams {
   departmentId?: string | null;
   search?: string | null;
   redactSensitivePins?: boolean;
+  preauthorizedScope?: { isGlobal: boolean; subsidiaryIds: string[] } | null;
 }
 
 /**
@@ -20,7 +21,14 @@ export async function queryDailyAttendanceRoster(
   params?: QueryDailyAttendanceRosterParams
 ) {
   const isExecutive = hasAnyRole(actor as AuthenticatedEmployee, ['GMD', 'SYSTEM_ADMIN', 'SUPER_ADMIN']);
-  const hrScope = await getHrAuthorizationScope(actor as AuthenticatedEmployee);
+  const hrScope = params?.preauthorizedScope
+    ? {
+        authorized: params.preauthorizedScope.isGlobal || params.preauthorizedScope.subsidiaryIds.length > 0,
+        isExecutive: params.preauthorizedScope.isGlobal,
+        isGlobal: params.preauthorizedScope.isGlobal,
+        subsidiaryIds: params.preauthorizedScope.subsidiaryIds,
+      }
+    : await getHrAuthorizationScope(actor as AuthenticatedEmployee);
 
   if (!isExecutive && !hrScope.authorized) {
     throw new Error('FORBIDDEN: Executive or HR access required');
