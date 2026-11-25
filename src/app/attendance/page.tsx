@@ -98,7 +98,8 @@ export default function AttendanceDeskPage() {
   const isEmbedded = typeof window !== 'undefined' && window.location.pathname.startsWith('/hr');
   const [authStatus, setAuthStatus] = useState<'checking' | 'authorized' | 'unauthorized'>(isEmbedded ? 'authorized' : 'checking');
   const [authenticatedUser, setAuthenticatedUser] = useState<any>(null);
-  const [activeTab, setActiveTab] = useState<'daily' | 'calendar' | 'live' | 'roster' | 'policy' | 'payroll'>('daily');
+  const [activeTab, setActiveTab] = useState<'daily' | 'calendar' | 'live' | 'roster' | 'kiosks' | 'policy' | 'payroll'>('daily');
+  const [showAdvancedStationCoords, setShowAdvancedStationCoords] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [isTogglingPower, setIsTogglingPower] = useState<boolean>(false);
@@ -446,8 +447,8 @@ export default function AttendanceDeskPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to toggle Starlink lock');
-      if (data.policy) setPolicy(data.policy);
-      setNotice(data.message);
+      await loadPolicy();
+      setNotice(newValue ? 'Office Wi-Fi router lock enforced.' : 'Office Wi-Fi router lock bypassed across all networks.');
       setTimeout(() => setNotice(null), 5000);
     } catch (err: any) {
       alert(err.message);
@@ -471,8 +472,8 @@ export default function AttendanceDeskPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to toggle Geofence lock');
-      if (data.policy) setPolicy(data.policy);
-      setNotice(data.message);
+      await loadPolicy();
+      setNotice(newValue ? 'GPS geofence verification enforced.' : 'GPS geofence verification bypassed.');
       setTimeout(() => setNotice(null), 5000);
     } catch (err: any) {
       alert(err.message);
@@ -900,229 +901,161 @@ export default function AttendanceDeskPage() {
             : { maxWidth: '1280px', width: '100%', margin: '0 auto', padding: '24px 32px', flex: 1 }
         }
       >
-        {/* Starlink Wi-Fi & Power Outage Emergency Control Strip */}
+        {/* Compact Enterprise Security & Shift Status Bar */}
         <div
           style={{
-            marginBottom: '20px',
-            padding: '16px 20px',
-            borderRadius: '12px',
-            border: (!policy.requireStarlinkIp || policy.starlinkPowerOutageMode || !policy.requireGeofence) ? '1.5px solid #f59e0b' : '1px solid #cbd5e1',
-            background: (!policy.requireStarlinkIp || policy.starlinkPowerOutageMode || !policy.requireGeofence)
-              ? 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)'
-              : 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)',
+            marginBottom: '16px',
+            padding: '12px 18px',
+            borderRadius: '14px',
+            border: '1px solid #e2e8f0',
+            background: '#ffffff',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            gap: '16px',
+            gap: '12px',
             flexWrap: 'wrap',
-            boxShadow: (!policy.requireStarlinkIp || policy.starlinkPowerOutageMode || !policy.requireGeofence) ? '0 4px 14px rgba(245, 158, 11, 0.15)' : 'none',
+            boxShadow: '0 1px 2px rgba(15, 23, 42, 0.03)',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flex: 1, minWidth: '300px' }}>
-            <div
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            <span
               style={{
-                width: 44,
-                height: 44,
-                borderRadius: '10px',
-                display: 'flex',
+                display: 'inline-flex',
                 alignItems: 'center',
-                justifyContent: 'center',
-                background: (!policy.requireStarlinkIp || policy.starlinkPowerOutageMode) ? '#f59e0b' : '#059669',
-                color: '#ffffff',
-                boxShadow: (!policy.requireStarlinkIp || policy.starlinkPowerOutageMode)
-                  ? '0 2px 8px rgba(245, 158, 11, 0.4)'
-                  : '0 2px 8px rgba(5, 150, 105, 0.3)',
+                gap: '6px',
+                padding: '5px 10px',
+                borderRadius: '999px',
+                fontSize: '11.5px',
+                fontWeight: 800,
+                background: (!policy.requireStarlinkIp || policy.starlinkPowerOutageMode) ? '#fff7ed' : '#ecfdf5',
+                color: (!policy.requireStarlinkIp || policy.starlinkPowerOutageMode) ? '#c2410c' : '#047857',
+                border: `1px solid ${(!policy.requireStarlinkIp || policy.starlinkPowerOutageMode) ? '#fed7aa' : '#a7f3d0'}`,
               }}
             >
-              {(!policy.requireStarlinkIp || policy.starlinkPowerOutageMode) ? <Zap size={22} /> : <Wifi size={22} />}
-            </div>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                <span
-                  style={{
-                    fontSize: '11px',
-                    fontWeight: 900,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.05em',
-                    color: (!policy.requireStarlinkIp || policy.starlinkPowerOutageMode) ? '#b45309' : '#047857',
-                  }}
-                >
-                  {(!policy.requireStarlinkIp || policy.starlinkPowerOutageMode)
-                    ? '⚡ STARLINK REQUIREMENT BYPASSED (ALL NETWORKS ALLOWED)'
-                    : '🟢 STRICT STARLINK WI-FI ENFORCED'}
-                </span>
-                <span
-                  style={{
-                    fontSize: '10px',
-                    fontWeight: 800,
-                    padding: '2px 8px',
-                    borderRadius: '12px',
-                    background: policy.requireGeofence ? '#d1fae5' : '#fee2e2',
-                    color: policy.requireGeofence ? '#065f46' : '#991b1b',
-                  }}
-                >
-                  {policy.requireGeofence ? '📍 GPS Geofence Active' : '🌐 GPS Geofence Bypassed'}
-                </span>
-              </div>
-              <p style={{ margin: '3px 0 0', fontSize: '13px', color: '#334155', fontWeight: 600 }}>
+              {(!policy.requireStarlinkIp || policy.starlinkPowerOutageMode) ? <Zap size={13} /> : <Wifi size={13} />}
+              <span>
                 {(!policy.requireStarlinkIp || policy.starlinkPowerOutageMode)
-                  ? 'Starlink connection requirement is turned OFF. Staff can scan attendance using any mobile network, personal hotspot, or office Wi-Fi.'
-                  : 'Staff must be connected to company Starlink Wi-Fi router to scan attendance.'}
-              </p>
-              <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
-                Arrival Window: <strong>{policy.earliestCheckInTime || '07:00'} AM – {policy.resumptionTime || '08:00'} AM</strong> (Grace up to {(() => {
-                  const [rH, rM] = String(policy.resumptionTime || '08:00').split(':').map(Number);
-                  const tot = (Number.isFinite(rH) ? rH : 8) * 60 + (Number.isFinite(rM) ? rM : 0) + Number(policy.gracePeriodMinutes ?? 30);
-                  return `${String(Math.floor(tot / 60) % 24).padStart(2, '0')}:${String(tot % 60).padStart(2, '0')} AM`;
-                })()})
-              </div>
-            </div>
+                  ? 'Wi-Fi Lock: Bypassed (All Networks)'
+                  : 'Wi-Fi Lock: Enforced'}
+              </span>
+            </span>
+
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '5px',
+                padding: '5px 10px',
+                borderRadius: '999px',
+                fontSize: '11.5px',
+                fontWeight: 800,
+                background: policy.requireGeofence ? '#ecfdf5' : '#f8fafc',
+                color: policy.requireGeofence ? '#047857' : '#64748b',
+                border: `1px solid ${policy.requireGeofence ? '#a7f3d0' : '#e2e8f0'}`,
+              }}
+            >
+              <MapPin size={13} />
+              <span>{policy.requireGeofence ? 'GPS Geofence: Active' : 'GPS Geofence: Bypassed'}</span>
+            </span>
+
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '5px',
+                padding: '5px 10px',
+                borderRadius: '999px',
+                fontSize: '11.5px',
+                fontWeight: 700,
+                background: '#f8fafc',
+                color: '#475569',
+                border: '1px solid #e2e8f0',
+              }}
+            >
+              <Clock size={12} color="#64748b" />
+              <span>
+                Shift: <strong style={{ color: '#0f172a' }}>{policy.earliestCheckInTime || '07:00'} – {policy.closingTime || '17:00'}</strong> · Grace +{policy.gracePeriodMinutes ?? 30}m
+              </span>
+            </span>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-            {stationsList.length > 1 && (
-              <select
-                value={station.id || ''}
-                onChange={(e) => {
-                  const found = stationsList.find((s) => s.id === e.target.value);
-                  if (found) handleSelectExistingStation(found);
-                }}
-                style={{
-                  padding: '8px 10px',
-                  borderRadius: '8px',
-                  background: '#ffffff',
-                  border: '1px solid #cbd5e1',
-                  color: '#0f172a',
-                  fontSize: '12px',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                }}
-                title="Switch active kiosk location"
-              >
-                {stationsList.map((st) => (
-                  <option key={st.id} value={st.id}>
-                    📍 {st.name}{st.stateLocation ? ` (${st.stateLocation})` : ''}
-                  </option>
-                ))}
-              </select>
-            )}
+            <button
+              type="button"
+              onClick={() => handleToggleStarlinkLock()}
+              disabled={isTogglingStarlink}
+              style={{
+                padding: '7px 12px',
+                borderRadius: '8px',
+                background: (!policy.requireStarlinkIp || policy.starlinkPowerOutageMode) ? '#ecfdf5' : '#fff7ed',
+                color: (!policy.requireStarlinkIp || policy.starlinkPowerOutageMode) ? '#047857' : '#c2410c',
+                border: `1px solid ${(!policy.requireStarlinkIp || policy.starlinkPowerOutageMode) ? '#a7f3d0' : '#fed7aa'}`,
+                fontSize: '11.5px',
+                fontWeight: 800,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {isTogglingStarlink ? <RefreshCw size={12} className="animate-spin" /> : <Wifi size={12} />}
+              <span>
+                {(!policy.requireStarlinkIp || policy.starlinkPowerOutageMode)
+                  ? 'Enforce Wi-Fi Lock'
+                  : 'Bypass Wi-Fi Lock'}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleToggleGeofenceLock()}
+              disabled={isTogglingGeofence}
+              style={{
+                padding: '7px 12px',
+                borderRadius: '8px',
+                background: '#f8fafc',
+                color: '#334155',
+                border: '1px solid #cbd5e1',
+                fontSize: '11.5px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {isTogglingGeofence ? <RefreshCw size={12} className="animate-spin" /> : <MapPin size={12} color="#ea580c" />}
+              <span>{policy.requireGeofence ? 'Bypass Geofence' : 'Enforce Geofence'}</span>
+            </button>
+
             <Link
-              href={station.code ? `/attendance/kiosk?station=${encodeURIComponent(station.code)}` : '/attendance/kiosk'}
+              href="/attendance/kiosk"
               target="_blank"
               style={{
-                padding: '9px 14px',
+                padding: '7px 13px',
                 borderRadius: '8px',
-                background: '#ffffff',
-                border: '1px solid #cbd5e1',
-                color: '#0f172a',
-                fontSize: '12px',
+                background: '#ea580c',
+                border: '1px solid #ea580c',
+                color: '#ffffff',
+                fontSize: '11.5px',
                 fontWeight: 800,
                 textDecoration: 'none',
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: '6px',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
                 whiteSpace: 'nowrap',
               }}
             >
-              <QrCode size={14} color="#059669" />
-              <span>Reception Kiosk{stationsList.length > 1 ? ` (${station.stateLocation || station.code})` : ''}</span>
-              <ExternalLink size={12} color="#64748b" />
+              <QrCode size={13} />
+              <span>Open Kiosk</span>
+              <ExternalLink size={11} />
             </Link>
-            <button
-              type="button"
-              onClick={() => {
-                setActiveTab('policy');
-                handleStartNewStation();
-              }}
-              style={{
-                padding: '9px 13px',
-                borderRadius: '8px',
-                background: '#fff7ed',
-                border: '1px solid #fed7aa',
-                color: '#ea580c',
-                fontSize: '12px',
-                fontWeight: 800,
-                cursor: 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '5px',
-                whiteSpace: 'nowrap',
-              }}
-              title="Add or map a Kiosk Location (Abia, Edo, Imo, Lagos, etc.)"
-            >
-              <MapPin size={13} color="#ea580c" />
-              <span>+ Map Kiosk Location</span>
-            </button>
-
-            {/* Instant Starlink Toggle Button */}
-            <button
-              onClick={() => handleToggleStarlinkLock()}
-              disabled={isTogglingStarlink}
-              style={{
-                padding: '9px 16px',
-                borderRadius: '8px',
-                background: (!policy.requireStarlinkIp || policy.starlinkPowerOutageMode) ? '#059669' : '#ea580c',
-                color: '#ffffff',
-                fontSize: '12px',
-                fontWeight: 800,
-                border: 'none',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                whiteSpace: 'nowrap',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
-              }}
-            >
-              {isTogglingStarlink ? (
-                <RefreshCw size={13} className="animate-spin" />
-              ) : (!policy.requireStarlinkIp || policy.starlinkPowerOutageMode) ? (
-                <Wifi size={13} />
-              ) : (
-                <Zap size={13} />
-              )}
-              <span>
-                {(!policy.requireStarlinkIp || policy.starlinkPowerOutageMode)
-                  ? 'Enforce Starlink Lock'
-                  : 'Turn Off Starlink Requirement'}
-              </span>
-            </button>
-
-            {/* Instant Geofence Toggle Button */}
-            <button
-              onClick={() => handleToggleGeofenceLock()}
-              disabled={isTogglingGeofence}
-              style={{
-                padding: '9px 14px',
-                borderRadius: '8px',
-                background: policy.requireGeofence ? '#f1f5f9' : '#1e293b',
-                color: policy.requireGeofence ? '#334155' : '#ffffff',
-                border: '1px solid #cbd5e1',
-                fontSize: '12px',
-                fontWeight: 700,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {isTogglingGeofence ? (
-                <RefreshCw size={13} className="animate-spin" />
-              ) : (
-                <MapPin size={13} />
-              )}
-              <span>
-                {policy.requireGeofence ? 'Bypass GPS Geofence' : 'Enforce GPS Geofence'}
-              </span>
-            </button>
           </div>
         </div>
 
-
-
-        {/* Navigation Tabs */}
+        {/* Clean Enterprise Navigation Tabs */}
         <div
           style={{
             display: 'flex',
@@ -1130,16 +1063,19 @@ export default function AttendanceDeskPage() {
             justifyContent: 'space-between',
             borderBottom: '1px solid #e2e8f0',
             marginBottom: '20px',
+            gap: '12px',
+            overflowX: 'auto',
           }}
         >
-          <div style={{ display: 'flex', gap: '6px' }}>
+          <div style={{ display: 'flex', gap: '4px' }}>
             {[
-              { id: 'daily', label: 'Daily Attendance Master (AM/PM)', icon: Users },
-              { id: 'calendar', label: 'Staff Monthly Calendar', icon: CalendarDays },
-              { id: 'live', label: "Today's Live Presence Board", icon: Clock },
-              { id: 'roster', label: 'Staff Weekly Off-Day Roster', icon: Calendar },
-              { id: 'policy', label: 'Shift Hours & Lateness Deductions', icon: Settings },
-              { id: 'payroll', label: 'Payroll Impact & Penalties', icon: ShieldCheck },
+              { id: 'daily', label: 'Daily Master', icon: Users },
+              { id: 'calendar', label: 'Monthly Calendar', icon: CalendarDays },
+              { id: 'live', label: 'Live Presence', icon: Clock },
+              { id: 'roster', label: 'Weekly Off-Days', icon: Calendar },
+              { id: 'kiosks', label: 'Kiosk Stations & Access', icon: QrCode },
+              { id: 'policy', label: 'Shift & Deduction Rules', icon: Settings },
+              { id: 'payroll', label: 'Payroll Penalties', icon: ShieldCheck },
             ].map(tab => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
@@ -1148,21 +1084,22 @@ export default function AttendanceDeskPage() {
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id as any)}
                   style={{
-                    display: 'flex',
+                    display: 'inline-flex',
                     alignItems: 'center',
-                    gap: '8px',
-                    padding: '12px 18px',
+                    gap: '7px',
+                    padding: '11px 14px',
                     border: 'none',
                     background: 'transparent',
-                    borderBottom: isActive ? '2px solid var(--brand-primary, #0d8a70)' : '2px solid transparent',
-                    color: isActive ? 'var(--brand-primary, #0d8a70)' : '#64748b',
-                    fontSize: '13px',
-                    fontWeight: 700,
+                    borderBottom: isActive ? '2.5px solid #ea580c' : '2.5px solid transparent',
+                    color: isActive ? '#ea580c' : '#64748b',
+                    fontSize: '12.5px',
+                    fontWeight: isActive ? 800 : 700,
                     cursor: 'pointer',
+                    whiteSpace: 'nowrap',
                     transition: 'all 0.15s ease',
                   }}
                 >
-                  <Icon size={15} />
+                  <Icon size={14} />
                   <span>{tab.label}</span>
                 </button>
               );
@@ -2721,320 +2658,341 @@ export default function AttendanceDeskPage() {
           </div>
         )}
 
-        {/* Tab 3: Shift Hours & Lateness Deductions */}
-        {activeTab === 'policy' && (
-          <div style={{ display: 'grid', gap: '20px', width: '100%' }}>
-            {/* Header with Title and Quick Save Button */}
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'flex-end',
-                flexWrap: 'wrap',
-                gap: '14px',
-                paddingBottom: '4px',
-              }}
-            >
+        {/* Tab: Kiosk Stations, Passwords & On-Site Calibration */}
+        {activeTab === 'kiosks' && (
+          <div style={{ display: 'grid', gap: '16px', width: '100%' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
               <div>
-                <span style={{ fontSize: '11px', fontWeight: 900, color: '#ea580c', letterSpacing: '1px', textTransform: 'uppercase' }}>
-                  GOVERNANCE & PAYROLL INTEGRATION
+                <span style={{ fontSize: '10.5px', fontWeight: 800, color: '#ea580c', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                  KIOSK TERMINALS &amp; CALIBRATION
                 </span>
-                <h3 style={{ fontSize: '22px', fontWeight: 900, color: '#0f172a', margin: '4px 0 2px', letterSpacing: '-0.02em' }}>
-                  Shift Resumption, Grace Period & Deduction Policies
+                <h3 style={{ fontSize: '19px', fontWeight: 900, color: '#0f172a', margin: '2px 0 0' }}>
+                  Office Kiosk Stations &amp; Access Control
                 </h3>
-                <p style={{ fontSize: '13px', color: '#64748b', margin: 0 }}>
-                  Configure office geofencing coordinates, arrival lock times, and pro-rated lateness penalties feeding the monthly payroll.
-                </p>
               </div>
-
-              <div style={{ display: 'flex', gap: '10px' }}>
-                <button
-                  type="button"
-                  onClick={handleSavePolicy}
-                  disabled={isSaving}
-                  style={{
-                    padding: '9px 18px',
-                    borderRadius: '8px',
-                    background: 'var(--brand-gradient, var(--brand-primary, #0d8a70))',
-                    color: '#ffffff',
-                    fontSize: '12px',
-                    fontWeight: 800,
-                    border: '1px solid var(--brand-primary, #0d8a70)',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    boxShadow: '0 2px 8px var(--brand-shadow-color, rgba(0, 0, 0, 0.25))',
-                  }}
-                >
-                  <Save size={14} />
-                  <span>{isSaving ? 'Saving Policy...' : 'Save All Policies'}</span>
-                </button>
-              </div>
-            </div>
-
-            {/* 2-Column Responsive Command Grid */}
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(460px, 1fr))',
-                gap: '20px',
-              }}
-            >
-              {/* 1. Official Company Location & Geofence Station */}
-              <div
+              <button
+                type="button"
+                onClick={handleStartNewStation}
                 style={{
-                  padding: '22px',
-                  borderRadius: '14px',
-                  background: '#ffffff',
-                  border: '1px solid #e2e8f0',
-                  boxShadow: '0 1px 3px rgba(0,0,0,0.03)',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  justifyContent: 'space-between',
+                  padding: '8px 14px',
+                  borderRadius: '9px',
+                  background: isCreatingNewStation ? '#ea580c' : '#fff7ed',
+                  color: isCreatingNewStation ? '#ffffff' : '#ea580c',
+                  fontSize: '12px',
+                  fontWeight: 800,
+                  border: '1px solid #fed7aa',
+                  cursor: 'pointer',
                 }}
               >
+                + Add Kiosk Station
+              </button>
+            </div>
+
+            <KioskAccessControlPanel />
+
+            {/* Clean Office Kiosk Station Editor */}
+            <div
+              style={{
+                padding: '20px',
+                borderRadius: '14px',
+                background: '#ffffff',
+                border: '1px solid #e2e8f0',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.03)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '14px',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
                 <div>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <div
-                        style={{
-                          width: 38,
-                          height: 38,
-                          borderRadius: 10,
-                          background: '#ffedd5',
-                          color: '#ea580c',
-                          display: 'grid',
-                          placeItems: 'center',
-                        }}
-                      >
-                        <MapPin size={20} />
-                      </div>
-                      <div>
-                        <h4 style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: '#0f172a' }}>
-                          Multi-Location Kiosk &amp; Geofence Stations ({stationsList.length})
-                        </h4>
-                        <span style={{ fontSize: '11px', color: '#64748b' }}>
-                          Map physical GPS coordinates &amp; per-location Starlink overrides (Abia, Edo, Imo, Lagos, etc.)
-                        </span>
-                      </div>
-                    </div>
+                  <h4 style={{ margin: 0, fontSize: '14.5px', fontWeight: 800, color: '#0f172a' }}>
+                    {isCreatingNewStation ? 'Create New Office Kiosk Station' : `Edit Station — ${station.name}`}
+                  </h4>
+                  <span style={{ fontSize: '11.5px', color: '#64748b' }}>
+                    Select an office station below to adjust its name, allowed geofence radius, or per-branch rule.
+                  </span>
+                </div>
+              </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                      <button
-                        type="button"
-                        onClick={handleStartNewStation}
+              {/* Station Selector Pills */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  flexWrap: 'wrap',
+                  padding: '8px 10px',
+                  borderRadius: '10px',
+                  background: '#f8fafc',
+                  border: '1px solid #e2e8f0',
+                }}
+              >
+                {stationsList.map((st) => {
+                  const isSelected = !isCreatingNewStation && station.id === st.id;
+                  const effectiveBadge =
+                    !policy.requireStarlinkIp || policy.starlinkPowerOutageMode || st.starlinkOverrideMode === 'BYPASS'
+                      ? 'Wi-Fi Bypassed'
+                      : 'Wi-Fi Enforced';
+                  return (
+                    <button
+                      key={st.id}
+                      type="button"
+                      onClick={() => handleSelectExistingStation(st)}
+                      style={{
+                        padding: '7px 11px',
+                        borderRadius: '8px',
+                        border: isSelected ? '1.5px solid #ea580c' : '1px solid #cbd5e1',
+                        background: isSelected ? '#fff7ed' : '#ffffff',
+                        color: isSelected ? '#c2410c' : '#334155',
+                        fontSize: '11.5px',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                      }}
+                    >
+                      <MapPin size={12} color={isSelected ? '#ea580c' : '#64748b'} />
+                      <span>{st.name}</span>
+                      {st.stateLocation && <span style={{ fontSize: '10.5px', color: '#64748b' }}>({st.stateLocation})</span>}
+                      <span
                         style={{
-                          padding: '7px 11px',
-                          borderRadius: '8px',
-                          background: isCreatingNewStation ? '#ea580c' : '#fff7ed',
-                          color: isCreatingNewStation ? '#ffffff' : '#ea580c',
-                          fontSize: '11px',
-                          fontWeight: 800,
-                          border: '1px solid #fed7aa',
-                          cursor: 'pointer',
+                          fontSize: '10px',
+                          padding: '1px 6px',
+                          borderRadius: '999px',
+                          background: '#f1f5f9',
+                          color: '#475569',
                         }}
                       >
-                        + Add Kiosk Location
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleCaptureGps}
-                        disabled={isCapturingGps}
-                        style={{
-                          padding: '7px 12px',
-                          borderRadius: '8px',
-                          background: '#0f172a',
-                          color: '#ffffff',
-                          fontSize: '11px',
-                          fontWeight: 700,
-                          border: 'none',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '6px',
-                        }}
-                      >
-                        {isCapturingGps ? <RefreshCw size={13} className="animate-spin" /> : <MapPin size={13} color="#ea580c" />}
-                        <span>{isCapturingGps ? 'Calibrating...' : '📍 Capture Current GPS'}</span>
-                      </button>
-                    </div>
-                  </div>
+                        {effectiveBadge}
+                      </span>
+                    </button>
+                  );
+                })}
+                {isCreatingNewStation && (
+                  <span
+                    style={{
+                      padding: '6px 10px',
+                      borderRadius: '8px',
+                      border: '1.5px dashed #ea580c',
+                      background: '#fff7ed',
+                      color: '#ea580c',
+                      fontSize: '11px',
+                      fontWeight: 800,
+                    }}
+                  >
+                    New Station Draft
+                  </span>
+                )}
+              </div>
 
-                  {/* Kiosk Station Selector Pills */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '12px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '10.5px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
+                    STATION NAME
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Benin Operations Kiosk"
+                    value={station.name}
+                    onChange={e => setStation(prev => ({ ...prev, name: e.target.value }))}
+                    style={{
+                      width: '100%',
+                      padding: '9px 11px',
+                      borderRadius: '8px',
+                      border: '1px solid #cbd5e1',
+                      fontSize: '12.5px',
+                      fontWeight: 700,
+                      color: '#0f172a',
+                      background: '#ffffff',
+                    }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '10.5px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
+                    STATE / REGION
+                  </label>
+                  <input
+                    type="text"
+                    list="bems-kiosk-states"
+                    placeholder="e.g. Abia State, Edo State"
+                    value={station.stateLocation || ''}
+                    onChange={e => setStation(prev => ({ ...prev, stateLocation: e.target.value }))}
+                    style={{
+                      width: '100%',
+                      padding: '9px 11px',
+                      borderRadius: '8px',
+                      border: '1px solid #cbd5e1',
+                      fontSize: '12.5px',
+                      fontWeight: 700,
+                      color: '#0f172a',
+                      background: '#ffffff',
+                    }}
+                  />
+                  <datalist id="bems-kiosk-states">
+                    <option value="Abia State" />
+                    <option value="Edo State" />
+                    <option value="Imo State" />
+                    <option value="Lagos State" />
+                    <option value="Rivers State" />
+                    <option value="Enugu State" />
+                    <option value="Anambra State" />
+                    <option value="Delta State" />
+                    <option value="FCT Abuja" />
+                  </datalist>
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '10.5px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
+                    STATION CODE
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. BEMS-EDO-K1"
+                    value={station.code}
+                    onChange={e => setStation(prev => ({ ...prev, code: e.target.value.toUpperCase() }))}
+                    style={{
+                      width: '100%',
+                      padding: '9px 11px',
+                      borderRadius: '8px',
+                      border: '1px solid #cbd5e1',
+                      fontSize: '12px',
+                      fontFamily: 'monospace',
+                      fontWeight: 700,
+                      color: '#0f172a',
+                      background: '#ffffff',
+                    }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '10.5px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
+                    GEOFENCE RADIUS (M)
+                  </label>
+                  <input
+                    type="number"
+                    min="150"
+                    max="5000"
+                    step="25"
+                    value={station.radiusMeters}
+                    onChange={e => setStation(prev => ({ ...prev, radiusMeters: Number(e.target.value) }))}
+                    style={{
+                      width: '100%',
+                      padding: '9px 11px',
+                      borderRadius: '8px',
+                      border: '1px solid #cbd5e1',
+                      fontSize: '12.5px',
+                      fontWeight: 700,
+                      color: '#0f172a',
+                      background: '#ffffff',
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '10.5px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
+                    WI-FI ROUTER RULE
+                  </label>
+                  <select
+                    value={station.starlinkOverrideMode || 'INHERIT'}
+                    onChange={(e) =>
+                      setStation((prev) => ({
+                        ...prev,
+                        starlinkOverrideMode: e.target.value as 'INHERIT' | 'ENFORCE' | 'BYPASS',
+                      }))
+                    }
+                    style={{
+                      width: '100%',
+                      padding: '9px 10px',
+                      borderRadius: '8px',
+                      border: '1px solid #cbd5e1',
+                      fontSize: '12px',
+                      fontWeight: 700,
+                      color: '#0f172a',
+                      background: '#ffffff',
+                    }}
+                  >
+                    <option value="INHERIT">Inherit Global Policy ({policy.requireStarlinkIp ? 'Enforced' : 'Bypassed'})</option>
+                    <option value="ENFORCE">Enforce Office Wi-Fi Lock Here</option>
+                    <option value="BYPASS">Bypass Wi-Fi Lock Here (All Networks)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '10.5px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
+                    GPS GEOFENCE RULE
+                  </label>
+                  <select
+                    value={
+                      station.requireGeofenceOverride === true
+                        ? 'ENFORCE'
+                        : station.requireGeofenceOverride === false
+                        ? 'BYPASS'
+                        : 'INHERIT'
+                    }
+                    onChange={(e) =>
+                      setStation((prev) => ({
+                        ...prev,
+                        requireGeofenceOverride:
+                          e.target.value === 'ENFORCE'
+                            ? true
+                            : e.target.value === 'BYPASS'
+                            ? false
+                            : null,
+                      }))
+                    }
+                    style={{
+                      width: '100%',
+                      padding: '9px 10px',
+                      borderRadius: '8px',
+                      border: '1px solid #cbd5e1',
+                      fontSize: '12px',
+                      fontWeight: 700,
+                      color: '#0f172a',
+                      background: '#ffffff',
+                    }}
+                  >
+                    <option value="INHERIT">Inherit Global Policy ({policy.requireGeofence ? 'Active' : 'Bypassed'})</option>
+                    <option value="ENFORCE">Enforce GPS Perimeter Here</option>
+                    <option value="BYPASS">Bypass GPS Geofence Here</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Optional Collapsible Advanced Coordinates */}
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setShowAdvancedStationCoords(prev => !prev)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    padding: 0,
+                    fontSize: '11.5px',
+                    fontWeight: 700,
+                    color: '#64748b',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {showAdvancedStationCoords ? '▾ Hide Manual Coordinates & Subnet Override' : '▸ Show Manual Coordinates & Subnet Override (Optional)'}
+                </button>
+
+                {showAdvancedStationCoords && (
                   <div
                     style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      flexWrap: 'wrap',
-                      marginBottom: '14px',
-                      padding: '8px 10px',
+                      marginTop: '10px',
+                      padding: '12px',
                       borderRadius: '10px',
                       background: '#f8fafc',
                       border: '1px solid #e2e8f0',
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                      gap: '10px',
                     }}
                   >
-                    {stationsList.map((st) => {
-                      const isSelected = !isCreatingNewStation && station.id === st.id;
-                      const overrideBadge =
-                        st.starlinkOverrideMode === 'BYPASS'
-                          ? '⚡ Starlink Bypassed'
-                          : st.starlinkOverrideMode === 'ENFORCE'
-                          ? '🟢 Starlink Enforced'
-                          : 'Policy Default';
-                      return (
-                        <button
-                          key={st.id}
-                          type="button"
-                          onClick={() => handleSelectExistingStation(st)}
-                          style={{
-                            padding: '6px 10px',
-                            borderRadius: '8px',
-                            border: isSelected ? '1.5px solid #ea580c' : '1px solid #cbd5e1',
-                            background: isSelected ? '#fff7ed' : '#ffffff',
-                            color: isSelected ? '#c2410c' : '#334155',
-                            fontSize: '11px',
-                            fontWeight: 700,
-                            cursor: 'pointer',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '5px',
-                          }}
-                        >
-                          <span>📍 {st.name}</span>
-                          {st.stateLocation && (
-                            <span style={{ fontSize: '10px', color: '#64748b' }}>({st.stateLocation})</span>
-                          )}
-                          <span style={{ fontSize: '9.5px', padding: '1px 5px', borderRadius: '4px', background: '#f1f5f9', color: '#475569' }}>
-                            {overrideBadge}
-                          </span>
-                        </button>
-                      );
-                    })}
-                    {isCreatingNewStation && (
-                      <span
-                        style={{
-                          padding: '6px 10px',
-                          borderRadius: '8px',
-                          border: '1.5px dashed #ea580c',
-                          background: '#fff7ed',
-                          color: '#ea580c',
-                          fontSize: '11px',
-                          fontWeight: 800,
-                        }}
-                      >
-                        ✨ Mapping New Kiosk Location
-                      </span>
-                    )}
-                  </div>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr 1fr 0.8fr', gap: '10px', marginBottom: '12px' }}>
                     <div>
-                      <label style={{ display: 'block', fontSize: '10.5px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
-                        KIOSK LOCATION NAME
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="e.g. Umuahia Operations Kiosk"
-                        value={station.name}
-                        onChange={e => setStation(prev => ({ ...prev, name: e.target.value }))}
-                        style={{
-                          width: '100%',
-                          padding: '9px 11px',
-                          borderRadius: '8px',
-                          border: '1px solid #cbd5e1',
-                          fontSize: '12.5px',
-                          fontWeight: 700,
-                          color: '#0f172a',
-                          background: '#ffffff',
-                        }}
-                      />
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '10.5px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
-                        STATE / REGION
-                      </label>
-                      <input
-                        type="text"
-                        list="bems-kiosk-states"
-                        placeholder="e.g. Abia State, Edo State"
-                        value={station.stateLocation || ''}
-                        onChange={e => setStation(prev => ({ ...prev, stateLocation: e.target.value }))}
-                        style={{
-                          width: '100%',
-                          padding: '9px 11px',
-                          borderRadius: '8px',
-                          border: '1px solid #cbd5e1',
-                          fontSize: '12.5px',
-                          fontWeight: 700,
-                          color: '#0f172a',
-                          background: '#ffffff',
-                        }}
-                      />
-                      <datalist id="bems-kiosk-states">
-                        <option value="Abia State" />
-                        <option value="Edo State" />
-                        <option value="Imo State" />
-                        <option value="Lagos State" />
-                        <option value="Rivers State" />
-                        <option value="Enugu State" />
-                        <option value="Anambra State" />
-                        <option value="Delta State" />
-                        <option value="FCT Abuja" />
-                      </datalist>
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '10.5px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
-                        KIOSK CODE
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="e.g. BEMS-ABIA-K1"
-                        value={station.code}
-                        onChange={e => setStation(prev => ({ ...prev, code: e.target.value.toUpperCase() }))}
-                        style={{
-                          width: '100%',
-                          padding: '9px 11px',
-                          borderRadius: '8px',
-                          border: '1px solid #cbd5e1',
-                          fontSize: '12px',
-                          fontFamily: 'monospace',
-                          fontWeight: 700,
-                          color: '#0f172a',
-                          background: '#ffffff',
-                        }}
-                      />
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '10.5px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
-                        RADIUS (M)
-                      </label>
-                      <input
-                        type="number"
-                        min="20"
-                        max="5000"
-                        step="10"
-                        value={station.radiusMeters}
-                        onChange={e => setStation(prev => ({ ...prev, radiusMeters: Number(e.target.value) }))}
-                        style={{
-                          width: '100%',
-                          padding: '9px 11px',
-                          borderRadius: '8px',
-                          border: '1px solid #cbd5e1',
-                          fontSize: '12.5px',
-                          fontWeight: 700,
-                          color: '#0f172a',
-                          background: '#ffffff',
-                        }}
-                      />
-                    </div>
-                  </div>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '10.5px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
-                        LATITUDE (GPS)
+                      <label style={{ display: 'block', fontSize: '10px', fontWeight: 800, color: '#475569', marginBottom: '4px' }}>
+                        LATITUDE
                       </label>
                       <input
                         type="number"
@@ -3043,20 +3001,19 @@ export default function AttendanceDeskPage() {
                         onChange={e => setStation(prev => ({ ...prev, latitude: parseFloat(e.target.value) || 0 }))}
                         style={{
                           width: '100%',
-                          padding: '9px 11px',
+                          padding: '8px 10px',
                           borderRadius: '8px',
                           border: '1px solid #cbd5e1',
-                          fontSize: '12.5px',
+                          fontSize: '12px',
                           fontFamily: 'monospace',
-                          fontWeight: 700,
-                          color: '#0f172a',
                           background: '#ffffff',
+                          color: '#0f172a',
                         }}
                       />
                     </div>
                     <div>
-                      <label style={{ display: 'block', fontSize: '10.5px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
-                        LONGITUDE (GPS)
+                      <label style={{ display: 'block', fontSize: '10px', fontWeight: 800, color: '#475569', marginBottom: '4px' }}>
+                        LONGITUDE
                       </label>
                       <input
                         type="number"
@@ -3065,241 +3022,140 @@ export default function AttendanceDeskPage() {
                         onChange={e => setStation(prev => ({ ...prev, longitude: parseFloat(e.target.value) || 0 }))}
                         style={{
                           width: '100%',
-                          padding: '9px 11px',
+                          padding: '8px 10px',
                           borderRadius: '8px',
                           border: '1px solid #cbd5e1',
-                          fontSize: '12.5px',
+                          fontSize: '12px',
                           fontFamily: 'monospace',
-                          fontWeight: 700,
-                          color: '#0f172a',
                           background: '#ffffff',
+                          color: '#0f172a',
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '10px', fontWeight: 800, color: '#475569', marginBottom: '4px' }}>
+                        CUSTOM ROUTER IP / SUBNET
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Auto-bound on Kiosk setup"
+                        value={station.starlinkIpAddresses || ''}
+                        onChange={(e) => setStation((prev) => ({ ...prev, starlinkIpAddresses: e.target.value }))}
+                        style={{
+                          width: '100%',
+                          padding: '8px 10px',
+                          borderRadius: '8px',
+                          border: '1px solid #cbd5e1',
+                          fontSize: '12px',
+                          fontFamily: 'monospace',
+                          background: '#ffffff',
+                          color: '#0f172a',
                         }}
                       />
                     </div>
                   </div>
-
-                  {/* Per-Location Starlink & Geofence Overrides */}
-                  <div
-                    style={{
-                      padding: '12px',
-                      borderRadius: '10px',
-                      background: '#f8fafc',
-                      border: '1px solid #e2e8f0',
-                      marginBottom: '10px',
-                    }}
-                  >
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                      <div>
-                        <label style={{ display: 'block', fontSize: '10.5px', fontWeight: 800, color: '#0f172a', marginBottom: '4px' }}>
-                          THIS LOCATION&apos;S STARLINK WI-FI RULE
-                        </label>
-                        <select
-                          value={station.starlinkOverrideMode || 'INHERIT'}
-                          onChange={(e) =>
-                            setStation((prev) => ({
-                              ...prev,
-                              starlinkOverrideMode: e.target.value as 'INHERIT' | 'ENFORCE' | 'BYPASS',
-                            }))
-                          }
-                          style={{
-                            width: '100%',
-                            padding: '8px 10px',
-                            borderRadius: '8px',
-                            border: '1px solid #cbd5e1',
-                            fontSize: '12px',
-                            fontWeight: 700,
-                            color: '#0f172a',
-                            background: '#ffffff',
-                          }}
-                        >
-                          <option value="INHERIT">Inherit Global Company Policy ({policy.requireStarlinkIp ? 'Enforced' : 'Bypassed'})</option>
-                          <option value="ENFORCE">🟢 Enforce Starlink Lock at This Kiosk</option>
-                          <option value="BYPASS">⚡ Bypass Starlink at This Kiosk (All Networks Allowed)</option>
-                        </select>
-                      </div>
-
-                      <div>
-                        <label style={{ display: 'block', fontSize: '10.5px', fontWeight: 800, color: '#0f172a', marginBottom: '4px' }}>
-                          THIS LOCATION&apos;S GPS GEOFENCE RULE
-                        </label>
-                        <select
-                          value={
-                            station.requireGeofenceOverride === true
-                              ? 'ENFORCE'
-                              : station.requireGeofenceOverride === false
-                              ? 'BYPASS'
-                              : 'INHERIT'
-                          }
-                          onChange={(e) =>
-                            setStation((prev) => ({
-                              ...prev,
-                              requireGeofenceOverride:
-                                e.target.value === 'ENFORCE'
-                                  ? true
-                                  : e.target.value === 'BYPASS'
-                                  ? false
-                                  : null,
-                            }))
-                          }
-                          style={{
-                            width: '100%',
-                            padding: '8px 10px',
-                            borderRadius: '8px',
-                            border: '1px solid #cbd5e1',
-                            fontSize: '12px',
-                            fontWeight: 700,
-                            color: '#0f172a',
-                            background: '#ffffff',
-                          }}
-                        >
-                          <option value="INHERIT">Inherit Global Company Policy ({policy.requireGeofence ? 'Active' : 'Bypassed'})</option>
-                          <option value="ENFORCE">📍 Enforce GPS Perimeter ({station.radiusMeters}m) Here</option>
-                          <option value="BYPASS">🌐 Bypass GPS Geofence at This Kiosk</option>
-                        </select>
-                      </div>
-                    </div>
-
-                    {station.starlinkOverrideMode === 'ENFORCE' && (
-                      <div style={{ marginTop: '10px' }}>
-                        <label style={{ display: 'block', fontSize: '10.5px', fontWeight: 800, color: '#0284c7', marginBottom: '4px' }}>
-                          THIS LOCATION&apos;S STARLINK PUBLIC IP / SUBNET (ABIA / EDO / IMO ROUTER)
-                        </label>
-                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                          <input
-                            type="text"
-                            placeholder="e.g. 102.89.44.*, 98.97.* (leave blank to use global Starlink list)"
-                            value={station.starlinkIpAddresses || ''}
-                            onChange={(e) => setStation((prev) => ({ ...prev, starlinkIpAddresses: e.target.value }))}
-                            style={{
-                              flex: 1,
-                              padding: '8px 10px',
-                              borderRadius: '8px',
-                              border: '1px solid #cbd5e1',
-                              fontSize: '12px',
-                              fontFamily: 'monospace',
-                              color: '#0f172a',
-                              background: '#ffffff',
-                            }}
-                          />
-                          {callerIp && callerIp !== 'direct' && (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setStation((prev) => ({
-                                  ...prev,
-                                  starlinkIpAddresses: callerIp.includes('.')
-                                    ? `${callerIp.split('.').slice(0, 3).join('.')}.*, ${callerIp}`
-                                    : callerIp,
-                                }))
-                              }
-                              style={{
-                                padding: '8px 10px',
-                                borderRadius: '8px',
-                                background: '#0284c7',
-                                color: '#ffffff',
-                                fontSize: '11px',
-                                fontWeight: 700,
-                                border: 'none',
-                                cursor: 'pointer',
-                                whiteSpace: 'nowrap',
-                              }}
-                            >
-                              Use Current IP ({callerIp})
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    flexWrap: 'wrap',
-                    gap: '8px',
-                    paddingTop: '12px',
-                    borderTop: '1px solid #f1f5f9',
-                    marginTop: '8px',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: '11px', color: '#64748b' }}>
-                      Perimeter: <strong style={{ color: '#0f172a' }}>{station.radiusMeters}m</strong> around {station.name}
-                    </span>
-                    {!isCreatingNewStation && station.code && (
-                      <Link
-                        href={`/attendance/kiosk?station=${encodeURIComponent(station.code)}`}
-                        target="_blank"
-                        style={{
-                          fontSize: '11px',
-                          fontWeight: 800,
-                          color: '#059669',
-                          textDecoration: 'none',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '4px',
-                        }}
-                      >
-                        <span>Open Kiosk Screen ({station.code})</span>
-                        <ExternalLink size={11} />
-                      </Link>
-                    )}
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    {!isCreatingNewStation && station.id && stationsList.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => handleDeactivateStation(station.id)}
-                        disabled={isSavingStation}
-                        style={{
-                          padding: '8px 12px',
-                          borderRadius: '8px',
-                          background: '#fef2f2',
-                          color: '#dc2626',
-                          fontSize: '11px',
-                          fontWeight: 700,
-                          border: '1px solid #fecaca',
-                          cursor: 'pointer',
-                        }}
-                      >
-                        Deactivate
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={handleSaveStation}
-                      disabled={isSavingStation}
-                      style={{
-                        padding: '8px 14px',
-                        borderRadius: '8px',
-                        background: '#ea580c',
-                        color: '#ffffff',
-                        fontSize: '11px',
-                        fontWeight: 800,
-                        border: 'none',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                      }}
-                    >
-                      <Save size={13} />
-                      <span>
-                        {isSavingStation
-                          ? 'Saving...'
-                          : isCreatingNewStation
-                          ? 'Create & Map Kiosk Location'
-                          : 'Save Kiosk Location'}
-                      </span>
-                    </button>
-                  </div>
-                </div>
+                )}
               </div>
 
-              {/* 2. Shift Resumption, Timetable & Lateness Rules */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: '8px',
+                  paddingTop: '12px',
+                  borderTop: '1px solid #f1f5f9',
+                }}
+              >
+                <span style={{ fontSize: '11.5px', color: '#64748b' }}>
+                  Effective indoor perimeter: <strong style={{ color: '#0f172a' }}>{Math.max(150, station.radiusMeters || 150)}m</strong> around {station.name}
+                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  {!isCreatingNewStation && station.id && stationsList.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => handleDeactivateStation(station.id)}
+                      disabled={isSavingStation}
+                      style={{
+                        padding: '8px 12px',
+                        borderRadius: '8px',
+                        background: '#fef2f2',
+                        color: '#dc2626',
+                        fontSize: '11.5px',
+                        fontWeight: 700,
+                        border: '1px solid #fecaca',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Deactivate
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleSaveStation}
+                    disabled={isSavingStation}
+                    style={{
+                      padding: '8px 15px',
+                      borderRadius: '8px',
+                      background: '#ea580c',
+                      color: '#ffffff',
+                      fontSize: '12px',
+                      fontWeight: 800,
+                      border: 'none',
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                    }}
+                  >
+                    <Save size={13} />
+                    <span>{isSavingStation ? 'Saving...' : isCreatingNewStation ? 'Create Kiosk Station' : 'Save Station Changes'}</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Tab: Shift Hours & Deduction Rules */}
+        {activeTab === 'policy' && (
+          <div style={{ display: 'grid', gap: '18px', width: '100%' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+              <div>
+                <span style={{ fontSize: '10.5px', fontWeight: 800, color: '#ea580c', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                  GOVERNANCE &amp; PAYROLL INTEGRATION
+                </span>
+                <h3 style={{ fontSize: '19px', fontWeight: 900, color: '#0f172a', margin: '2px 0 0' }}>
+                  Shift Hours, Grace Window &amp; Deduction Rules
+                </h3>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleSavePolicy}
+                disabled={isSaving}
+                style={{
+                  padding: '9px 18px',
+                  borderRadius: '9px',
+                  background: '#ea580c',
+                  color: '#ffffff',
+                  fontSize: '12.5px',
+                  fontWeight: 800,
+                  border: 'none',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                }}
+              >
+                <Save size={14} />
+                <span>{isSaving ? 'Saving Policy...' : 'Save Policy Rules'}</span>
+              </button>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: '18px' }}>
+              {/* Left Card: Shift Hours & Lateness Penalty */}
               <div
                 style={{
                   padding: '22px',
@@ -3319,25 +3175,24 @@ export default function AttendanceDeskPage() {
                         width: 38,
                         height: 38,
                         borderRadius: 10,
-                        background: '#eff6ff',
-                        color: '#2563eb',
+                        background: '#fff7ed',
+                        color: '#ea580c',
                         display: 'grid',
                         placeItems: 'center',
                       }}
                     >
-                      <Clock size={20} />
+                      <Clock size={19} />
                     </div>
                     <div>
                       <h4 style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: '#0f172a' }}>
-                        Shift Hours &amp; Lateness Penalty
+                        Shift Schedule &amp; Lateness Cut-off
                       </h4>
-                      <span style={{ fontSize: '11px', color: '#64748b' }}>
-                        Standard operational window, grace period, and pro-rated salary penalty
+                      <span style={{ fontSize: '11.5px', color: '#64748b' }}>
+                        Daily check-in window, resumption grace period, and sign-out lock
                       </span>
                     </div>
                   </div>
 
-                  {/* Visual Timeline Bar */}
                   <div
                     style={{
                       padding: '10px 14px',
@@ -3364,9 +3219,7 @@ export default function AttendanceDeskPage() {
                     </div>
                     <span style={{ color: '#cbd5e1' }}>➔</span>
                     <div>
-                      <strong style={{ display: 'block', color: '#ea580c' }}>
-                        + {policy.gracePeriodMinutes}m Grace
-                      </strong>
+                      <strong style={{ display: 'block', color: '#ea580c' }}>+{policy.gracePeriodMinutes}m Grace</strong>
                       <span style={{ fontSize: '10px', color: '#ea580c' }}>Lateness Cut-off</span>
                     </div>
                     <span style={{ color: '#cbd5e1' }}>➔</span>
@@ -3376,7 +3229,6 @@ export default function AttendanceDeskPage() {
                     </div>
                   </div>
 
-                  {/* 3 Times Inputs */}
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginBottom: '14px' }}>
                     <div>
                       <label style={{ display: 'block', fontSize: '10px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
@@ -3437,10 +3289,9 @@ export default function AttendanceDeskPage() {
                     </div>
                   </div>
 
-                  {/* Grace and Lateness Percentage */}
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                     <div>
-                      <label style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
+                      <label style={{ display: 'block', fontSize: '10.5px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
                         GRACE PERIOD (MINUTES)
                       </label>
                       <input
@@ -3462,7 +3313,7 @@ export default function AttendanceDeskPage() {
                     </div>
 
                     <div>
-                      <label style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#ea580c', marginBottom: '4px' }}>
+                      <label style={{ display: 'block', fontSize: '10.5px', fontWeight: 800, color: '#ea580c', marginBottom: '4px' }}>
                         LATENESS DEDUCTION (%)
                       </label>
                       <input
@@ -3476,7 +3327,7 @@ export default function AttendanceDeskPage() {
                           width: '100%',
                           padding: '9px 12px',
                           borderRadius: '8px',
-                          border: '1.5px solid #ea580c',
+                          border: '1.5px solid #fed7aa',
                           fontSize: '13px',
                           fontWeight: 800,
                           color: '#ea580c',
@@ -3487,181 +3338,93 @@ export default function AttendanceDeskPage() {
                   </div>
                 </div>
 
-                <div style={{ fontSize: '11px', color: '#64748b', paddingTop: '10px', borderTop: '1px solid #f1f5f9', marginTop: '10px' }}>
-                  Penalty applies: Punches after resumption + grace period deduct <strong>{policy.latenessDeductionPercent}%</strong> of monthly salary (unexcused absences deduct <strong>{policy.absenceDeductionPercent}%</strong> of monthly salary).
+                <div style={{ fontSize: '11px', color: '#64748b', paddingTop: '10px', borderTop: '1px solid #f1f5f9', marginTop: '12px' }}>
+                  Punches after resumption + grace deduct <strong>{policy.latenessDeductionPercent}%</strong> of monthly salary; unexcused absences deduct <strong>{policy.absenceDeductionPercent}%</strong>.
                 </div>
               </div>
-            </div>
 
-            {/* 2b. Kiosk Access Password & Active Kiosk Screens */}
-            <KioskAccessControlPanel />
-
-            {/* 3. Starlink Wi-Fi Network Security & Hardware Gate Card */}
-            <div
-              style={{
-                padding: '22px',
-                borderRadius: '14px',
-                background: '#ffffff',
-                border: '1px solid #e2e8f0',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.03)',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', marginBottom: '14px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              {/* Right Card: Global Verification & Network Defaults */}
+              <div
+                style={{
+                  padding: '22px',
+                  borderRadius: '14px',
+                  background: '#ffffff',
+                  border: '1px solid #e2e8f0',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.03)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '12px',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '2px' }}>
                   <div
                     style={{
-                      width: 40,
-                      height: 40,
+                      width: 38,
+                      height: 38,
                       borderRadius: 10,
-                      background: '#e0f2fe',
+                      background: '#eff6ff',
                       color: '#0284c7',
                       display: 'grid',
                       placeItems: 'center',
                     }}
                   >
-                    <Wifi size={20} />
+                    <ShieldCheck size={19} />
                   </div>
                   <div>
                     <h4 style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: '#0f172a' }}>
-                      Starlink Corporate Wi-Fi Network Lock
+                      Global Verification Defaults
                     </h4>
-                    <span style={{ fontSize: '11px', color: '#64748b' }}>
-                      Restricts check-in scan exclusively to employees connected to the authorized Starlink router
+                    <span style={{ fontSize: '11.5px', color: '#64748b' }}>
+                      Company-wide security checks inherited by all Kiosk locations
                     </span>
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <span
-                    style={{
-                      fontSize: '11px',
-                      fontWeight: 700,
-                      padding: '4px 10px',
-                      borderRadius: '6px',
-                      background: policy.requireStarlinkIp ? '#ecfdf5' : '#f1f5f9',
-                      color: policy.requireStarlinkIp ? '#059669' : '#64748b',
-                      border: `1px solid ${policy.requireStarlinkIp ? '#a7f3d0' : '#e2e8f0'}`,
-                    }}
-                  >
-                    {policy.requireStarlinkIp ? '🟢 Starlink Lock Active' : '⚪ Network Lock Optional'}
-                  </span>
-                  <input
-                    type="checkbox"
-                    checked={policy.requireStarlinkIp}
-                    onChange={e => handleToggleStarlinkLock(e.target.checked)}
-                    disabled={isTogglingStarlink}
-                    style={{ width: 20, height: 20, accentColor: '#ea580c', cursor: 'pointer' }}
-                  />
-                </div>
-              </div>
-
-              {policy.requireStarlinkIp && (
-                <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: '1px solid #f1f5f9' }}>
-                  <label style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#334155', marginBottom: '6px' }}>
-                    AUTHORIZED STARLINK PUBLIC IP SUBNETS OR PREFIXES
-                  </label>
-                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-                    <input
-                      type="text"
-                      placeholder="e.g. 2605:59c1:*, 98.97.*, 102.89.44.12"
-                      value={policy.starlinkIpAddresses}
-                      onChange={e => setPolicy(prev => ({ ...prev, starlinkIpAddresses: e.target.value }))}
-                      style={{
-                        flex: 1,
-                        minWidth: '280px',
-                        padding: '10px 14px',
-                        borderRadius: '8px',
-                        border: '1px solid #cbd5e1',
-                        fontSize: '13px',
-                        fontFamily: 'monospace',
-                        color: '#0f172a',
-                        background: '#ffffff',
-                      }}
-                    />
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        let ipToUse = callerIp;
-                        if (!ipToUse || ipToUse === 'direct' || ipToUse === '127.0.0.1' || ipToUse === 'localhost' || ipToUse === '::1') {
-                          try {
-                            const res = await fetch('https://api.ipify.org?format=json', { signal: AbortSignal.timeout(3000) });
-                            if (res.ok) {
-                              const json = await res.json();
-                              if (json.ip) {
-                                ipToUse = json.ip;
-                                setCallerIp(json.ip);
-                              }
-                            }
-                          } catch (_) {}
-                        }
-                        if (!ipToUse || ipToUse === 'direct') return;
-
-                        let formatted = ipToUse;
-                        if (ipToUse.includes(':')) {
-                          const parts = ipToUse.split(':').filter(Boolean);
-                          const prefix = parts.slice(0, 4).join(':');
-                          formatted = `${prefix}:*, ${ipToUse}`;
-                        } else {
-                          const octets = ipToUse.split('.');
-                          if (octets.length === 4) {
-                            formatted = `${octets.slice(0, 3).join('.')}.*, ${ipToUse}`;
-                          }
-                        }
-                        setPolicy(prev => ({ ...prev, starlinkIpAddresses: formatted }));
-                      }}
-                      style={{
-                        padding: '10px 14px',
-                        borderRadius: '8px',
-                        background: '#0284c7',
-                        color: '#ffffff',
-                        fontSize: '11px',
-                        fontWeight: 800,
-                        border: 'none',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      <Globe size={13} />
-                      <span>Detect &amp; Use Current IP {callerIp && callerIp !== 'direct' ? `(${callerIp})` : ''}</span>
-                    </button>
-                  </div>
-                  <span style={{ fontSize: '11px', color: '#64748b', marginTop: '6px', display: 'block' }}>
-                    Detected Gateway IP: <strong style={{ color: '#0f172a' }}>{callerIp && callerIp !== 'direct' ? callerIp : '127.0.0.1'}</strong>. Multiple subnets can be comma-separated with wildcard asterisks (*).
-                  </span>
-                </div>
-              )}
-
-              {/* Hardware & Verification Toggles */}
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-                  gap: '12px',
-                  marginTop: '16px',
-                  paddingTop: '16px',
-                  borderTop: '1px solid #f1f5f9',
-                }}
-              >
                 <div
                   style={{
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
                     padding: '12px 14px',
-                    borderRadius: '8px',
+                    borderRadius: '10px',
                     background: '#f8fafc',
                     border: '1px solid #e2e8f0',
                   }}
                 >
                   <div>
-                    <strong style={{ display: 'block', fontSize: '12px', color: '#0f172a' }}>
-                      Require Device Geofence Verification
+                    <strong style={{ display: 'block', fontSize: '12.5px', color: '#0f172a' }}>
+                      Require Office Wi-Fi / Starlink Router Match
                     </strong>
-                    <span style={{ fontSize: '10px', color: '#64748b' }}>
-                      Employee GPS must be within office radius
+                    <span style={{ fontSize: '11px', color: '#64748b' }}>
+                      Staff phones must share the Kiosk&apos;s office Wi-Fi router IP
+                    </span>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={policy.requireStarlinkIp}
+                    onChange={e => handleToggleStarlinkLock(e.target.checked)}
+                    disabled={isTogglingStarlink}
+                    style={{ width: 18, height: 18, accentColor: '#ea580c', cursor: 'pointer' }}
+                  />
+                </div>
+
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '12px 14px',
+                    borderRadius: '10px',
+                    background: '#f8fafc',
+                    border: '1px solid #e2e8f0',
+                  }}
+                >
+                  <div>
+                    <strong style={{ display: 'block', fontSize: '12.5px', color: '#0f172a' }}>
+                      Require GPS Geofence Perimeter
+                    </strong>
+                    <span style={{ fontSize: '11px', color: '#64748b' }}>
+                      Staff GPS must be within the station&apos;s radius (min 150m indoor tolerance)
                     </span>
                   </div>
                   <input
@@ -3679,17 +3442,17 @@ export default function AttendanceDeskPage() {
                     alignItems: 'center',
                     justifyContent: 'space-between',
                     padding: '12px 14px',
-                    borderRadius: '8px',
+                    borderRadius: '10px',
                     background: '#f8fafc',
                     border: '1px solid #e2e8f0',
                   }}
                 >
                   <div>
-                    <strong style={{ display: 'block', fontSize: '12px', color: '#0f172a' }}>
-                      Require Dynamic Kiosk QR Scan
+                    <strong style={{ display: 'block', fontSize: '12.5px', color: '#0f172a' }}>
+                      Require Live Dynamic Kiosk QR Scan
                     </strong>
-                    <span style={{ fontSize: '10px', color: '#64748b' }}>
-                      Rotating cryptographic QR prevents remote punching
+                    <span style={{ fontSize: '11px', color: '#64748b' }}>
+                      45-second rotating cryptographic QR code prevents remote punching
                     </span>
                   </div>
                   <input
@@ -3699,6 +3462,30 @@ export default function AttendanceDeskPage() {
                     style={{ width: 18, height: 18, accentColor: '#ea580c', cursor: 'pointer' }}
                   />
                 </div>
+
+                {policy.requireStarlinkIp && (
+                  <div style={{ paddingTop: '6px' }}>
+                    <label style={{ display: 'block', fontSize: '10.5px', fontWeight: 800, color: '#475569', marginBottom: '4px' }}>
+                      ADDITIONAL GLOBAL ALLOWED IP SUBNETS (OPTIONAL)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. 98.97.*, 105.112.* (Kiosk router IPs are already matched automatically)"
+                      value={policy.starlinkIpAddresses}
+                      onChange={e => setPolicy(prev => ({ ...prev, starlinkIpAddresses: e.target.value }))}
+                      style={{
+                        width: '100%',
+                        padding: '9px 11px',
+                        borderRadius: '8px',
+                        border: '1px solid #cbd5e1',
+                        fontSize: '12px',
+                        fontFamily: 'monospace',
+                        color: '#0f172a',
+                        background: '#ffffff',
+                      }}
+                    />
+                  </div>
+                )}
               </div>
             </div>
           </div>

@@ -242,15 +242,14 @@ export function isStarlinkIpAllowed(
       }
     }
 
-    // IPv4 /24 subnet match (first 3 octets match, e.g. 98.97.76.x)
+    // IPv4 /16 CGNAT & /24 subnet match (handles Nigerian ISP CGNAT routers like Airtel 105.112.x.x / MTN 102.89.x.x where phone & laptop share the same router)
     if (!cleanIp.includes(':') && !target.includes(':')) {
       const clientOctets = cleanIp.split('.');
       const targetOctets = target.split('.');
       if (clientOctets.length === 4 && targetOctets.length === 4) {
         if (
           clientOctets[0] === targetOctets[0] &&
-          clientOctets[1] === targetOctets[1] &&
-          clientOctets[2] === targetOctets[2]
+          clientOctets[1] === targetOctets[1]
         ) {
           return true;
         }

@@ -35,7 +35,12 @@ export async function POST(request: Request) {
         resolvedScope = org?.type === 'GROUP' ? 'GROUP' : 'ENTITY';
       }
     }
-    const result = await executeDashboardCommand(actor, 'attendance_override', { ...body, action_type, scope: resolvedScope });
-    return NextResponse.json({ success: true, policy: result });
+    await executeDashboardCommand(actor, 'attendance_override', { ...body, action_type, scope: resolvedScope });
+    const group = await prisma.organization.findFirst({ where: { type: 'GROUP', status: 'ACTIVE' }, select: { id: true } });
+    const lookupOrgId = organizationId || group?.id;
+    const updatedPolicy = lookupOrgId
+      ? await prisma.attendancePolicy.findUnique({ where: { organizationId: lookupOrgId } })
+      : await prisma.attendancePolicy.findFirst();
+    return NextResponse.json({ success: true, policy: updatedPolicy });
   } catch (error: any) { return NextResponse.json({ error: error.message }, { status: 400 }); }
 }

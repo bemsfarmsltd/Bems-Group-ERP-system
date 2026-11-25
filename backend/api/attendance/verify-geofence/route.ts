@@ -119,7 +119,7 @@ export async function POST(request: Request) {
 
     const effectiveRadius = powerOutageMode || !requireStarlink
       ? Math.max(station.radiusMeters, 250)
-      : station.radiusMeters;
+      : Math.max(station.radiusMeters, 150);
     const isInsideGeofence = !requireGeofence || awaitingPhoneGpsPin || distanceMeters <= effectiveRadius;
 
     const { currentTimeStr } = getLagosTime();
@@ -140,7 +140,7 @@ export async function POST(request: Request) {
     } else if (!starlinkCheck.allowed) {
       message = starlinkCheck.reason || 'Please connect to company Starlink Wi-Fi.';
     } else if (!isInsideGeofence) {
-      message = `You are outside ${station.name}. You are ${distanceMeters}m away (maximum allowed: ${station.radiusMeters}m).`;
+      message = `You are outside ${station.name}. You are ${distanceMeters}m away (maximum allowed: ${effectiveRadius}m).`;
     } else {
       message = powerOutageMode
         ? `Location verified (${distanceMeters}m away). Power Outage Mode is active (Starlink check bypassed). Camera scanner unlocked!`
@@ -156,7 +156,7 @@ export async function POST(request: Request) {
       requireStarlinkIp: requireStarlink,
       powerOutageMode,
       distanceMeters,
-      allowedRadiusMeters: station.radiusMeters,
+      allowedRadiusMeters: effectiveRadius,
       stationCode: station.code,
       stationName: station.name,
       earliestCheckInTime,

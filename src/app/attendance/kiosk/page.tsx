@@ -81,7 +81,7 @@ export default function AttendanceKioskPage() {
   const [calCoords, setCalCoords] = useState<{ lat: number; lng: number; accuracy: number | null } | null>(null);
   const [deferGpsToFirstPhone, setDeferGpsToFirstPhone] = useState<boolean>(false);
   const [manualLatLng, setManualLatLng] = useState<string>('');
-  const [calRadius, setCalRadius] = useState<number>(100);
+  const [calRadius, setCalRadius] = useState<number>(150);
   const [calibratingGps, setCalibratingGps] = useState<boolean>(false);
   const [savingCalibration, setSavingCalibration] = useState<boolean>(false);
   const [calError, setCalError] = useState<string | null>(null);
@@ -495,7 +495,7 @@ export default function AttendanceKioskPage() {
 
   useEffect(() => {
     if (stationData?.requiresCalibration) {
-      setCalRadius(stationData.radiusMeters || 100);
+      setCalRadius(Math.max(150, stationData.radiusMeters || 150));
       if (!calCoords && !calibratingGps) {
         captureKioskGps();
       }
@@ -1048,10 +1048,9 @@ export default function AttendanceKioskPage() {
                     color: '#0f172a',
                   }}
                 >
-                  <option value={50}>50 meters (Tight Building)</option>
-                  <option value={100}>100 meters (Standard Office)</option>
-                  <option value={150}>150 meters (Compound)</option>
-                  <option value={250}>250 meters (Large Facility)</option>
+                  <option value={150}>150 meters (Standard Office)</option>
+                  <option value={200}>200 meters (Compound)</option>
+                  <option value={300}>300 meters (Large Facility)</option>
                 </select>
               </div>
             </div>

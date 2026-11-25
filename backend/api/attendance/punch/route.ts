@@ -158,11 +158,11 @@ export async function POST(request: Request) {
       effectiveStationLng = lngNum;
     }
 
-    // Dual-Factor Check 2: Geofence Verification (Honors policy bypass & outage buffer)
+    // Dual-Factor Check 2: Geofence Verification (150m indoor GPS bounce floor; 250m when power/network bypass is active)
     const distanceMeters = calculateHaversineDistance(latNum, lngNum, effectiveStationLat, effectiveStationLng);
     const effectiveMaxRadius = powerOutageMode || !requireStarlink
-      ? Math.max(station.radiusMeters, 250) // generous buffer for GPS drift when emergency/power mode is active
-      : station.radiusMeters;
+      ? Math.max(station.radiusMeters, 250)
+      : Math.max(station.radiusMeters, 150);
 
     if (requireGeofence && distanceMeters > effectiveMaxRadius) {
       return NextResponse.json(

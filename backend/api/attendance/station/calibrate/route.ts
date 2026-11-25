@@ -66,10 +66,10 @@ export async function POST(request: Request) {
 
     const accuracyNum =
       body.accuracyMeters !== undefined && body.accuracyMeters !== null ? Number(body.accuracyMeters) : null;
-    const requestedRadius = body.radiusMeters !== undefined ? Number(body.radiusMeters) : station.radiusMeters || 100;
+    const requestedRadius = body.radiusMeters !== undefined ? Number(body.radiusMeters) : station.radiusMeters || 150;
     const radiusMeters = Number.isFinite(requestedRadius)
-      ? Math.min(1000, Math.max(30, Math.round(requestedRadius)))
-      : station.radiusMeters || 100;
+      ? Math.min(1000, Math.max(150, Math.round(requestedRadius)))
+      : Math.max(150, station.radiusMeters || 150);
 
     const detectedRouterIp = (extractClientIp(request) || '').trim();
     const isUsablePublicIp =
