@@ -2688,8 +2688,6 @@ export default function AttendanceDeskPage() {
               </button>
             </div>
 
-            <KioskAccessControlPanel />
-
             {/* Clean Office Kiosk Station Editor */}
             <div
               style={{
@@ -3115,6 +3113,8 @@ export default function AttendanceDeskPage() {
                 </div>
               </div>
             </div>
+
+            <KioskAccessControlPanel />
           </div>
         )}
 
