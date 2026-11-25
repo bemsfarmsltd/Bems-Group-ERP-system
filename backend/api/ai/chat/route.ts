@@ -61,6 +61,10 @@ export async function POST(req: NextRequest) {
     const normalized = message.toLowerCase();
     const accountAiPolicy = await getAccountAiPolicy(actor.id, actor.role);
     const isExecutive = hasAnyRole(actor, ['GMD', 'SYSTEM_ADMIN', 'SUPER_ADMIN']);
+    const hasAiExecutiveRead = isExecutive || (actor.role === 'CUSTOM_ADMIN' && accountAiPolicy.aiEnabled);
+    const hasAiExecutiveWrite =
+      (isExecutive && !isReadOnlyEmployee(actor)) ||
+      (actor.role === 'CUSTOM_ADMIN' && accountAiPolicy.masterWrite && !isReadOnlyEmployee(actor));
     const canStageAiActions =
       (isExecutive && !isReadOnlyEmployee(actor)) ||
       (actor.role === 'CUSTOM_ADMIN' && accountAiPolicy.masterWrite && !isReadOnlyEmployee(actor));
@@ -655,7 +659,7 @@ title: "<Chart Title>"
     }
 
     if (!isExecutive && actor.role !== 'CUSTOM_ADMIN') return NextResponse.json({ error: 'The staff assistant is temporarily unavailable. Please retry.' }, { status: 503 });
-    const db = await getAiReadClient({ ...actor, canonicalRole: normalizeCanonicalRole(actor.role)!, isExecutive, authSource: 'HUMAN_SESSION', scopedOrganizationId: scopedOrgId, delegation: scopedOrgId ? { scopedOrganizationId: scopedOrgId } as any : null });
+    const db = await getAiReadClient({ ...actor, canonicalRole: normalizeCanonicalRole(actor.role)!, isExecutive: hasAiExecutiveRead, authSource: 'HUMAN_SESSION', scopedOrganizationId: scopedOrgId, delegation: scopedOrgId ? { scopedOrganizationId: scopedOrgId } as any : null });
     // 1. Fetch live telemetry from DB via canonical financial calculator (with strict subsidiary scoping)
     let bankAccounts: Array<{ bankName: string; accountNumber: string; accountName: string; balance: number; currency?: string }> = [];
     let totalCash = 0;
@@ -1056,7 +1060,7 @@ title: "<Chart Title>"
       normalized.includes('liquidity') ||
       normalized.includes('reserve')
     ) {
-      if (!isExecutive) {
+      if (!hasAiExecutiveRead) {
         reply = `🔒 **Executive Confidentiality:** ${scopedOrgName} liquid treasury reserves, bank account balances, and banking institution records are confidential executive data accessible only to the Group Managing Director and System Administrator.`;
         actionCard = null;
       } else if (bankAccounts.length === 0) {
@@ -1462,7 +1466,7 @@ title: "<Chart Title>"
       normalized.includes('deduction') ||
       normalized.includes('salary')
     ) {
-      if (!isExecutive) {
+      if (!hasAiExecutiveRead) {
         reply = `🔒 **Executive Confidentiality:** Group payroll, salary registers, and staff deduction details are strictly restricted to Executive Leadership.`;
       } else {
         const latestPeriod = await db.payrollPeriod.findFirst({
@@ -1670,7 +1674,7 @@ title: "<Chart Title>"
       normalized.includes('update bank') ||
       normalized.includes('register bank')
     ) {
-      if (!isExecutive) {
+      if (!hasAiExecutiveWrite) {
         reply = `🔒 **Executive Authority Required:** Banking details can only be registered by Executive Leadership.`;
       } else {
         reply = `🏦 **Bank Account Registration Specification**\n\n` +

@@ -45,6 +45,7 @@ async function handleAnalytics(req: NextRequest) {
       phone: actor.phone || null,
       avatarUrl: null,
       customAdminPermissions: actor.customAdminPermissions,
+      subsidiaryId: actor.subsidiaryId || null,
     };
 
     const scope = await resolveAuthorizedOrganizationScope(authEmp, orgId, 'ai-copilot');

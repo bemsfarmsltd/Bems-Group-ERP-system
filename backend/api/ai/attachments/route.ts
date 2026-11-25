@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { NextResponse } from 'next/server';
 import { getAuthenticatedEmployee, hasAnyRole } from '@/lib/auth';
+import { getAccountAiPolicy } from '@/lib/ai-access-control';
 import { prisma } from '@/lib/prisma';
 import { computeBufferSha256 } from '@/lib/platform/staged-attachments';
 
@@ -9,7 +10,9 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: Request) {
   try {
     const actor = await getAuthenticatedEmployee(request);
-    if (!actor || !hasAnyRole(actor, ['SYSTEM_ADMIN', 'SUPER_ADMIN', 'GMD'])) {
+    const isCustomAdminWithAi =
+      actor?.role === 'CUSTOM_ADMIN' && (await getAccountAiPolicy(actor.id, actor.role)).aiEnabled;
+    if (!actor || (!hasAnyRole(actor, ['SYSTEM_ADMIN', 'SUPER_ADMIN', 'GMD']) && !isCustomAdminWithAi)) {
       return NextResponse.json({ error: 'Executive access is required to upload AI attachments.' }, { status: 403 });
     }
 
