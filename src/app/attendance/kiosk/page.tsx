@@ -79,6 +79,8 @@ export default function AttendanceKioskPage() {
 
   // One-Time Location & Router Calibration Modal State
   const [calCoords, setCalCoords] = useState<{ lat: number; lng: number; accuracy: number | null } | null>(null);
+  const [deferGpsToFirstPhone, setDeferGpsToFirstPhone] = useState<boolean>(false);
+  const [manualLatLng, setManualLatLng] = useState<string>('');
   const [calRadius, setCalRadius] = useState<number>(100);
   const [calibratingGps, setCalibratingGps] = useState<boolean>(false);
   const [savingCalibration, setSavingCalibration] = useState<boolean>(false);
@@ -471,22 +473,23 @@ export default function AttendanceKioskPage() {
     setCalError(null);
     navigator.geolocation.getCurrentPosition(
       (pos) => {
+        const acc = Number.isFinite(pos.coords.accuracy) ? Math.round(pos.coords.accuracy) : null;
         setCalCoords({
           lat: Number(pos.coords.latitude.toFixed(6)),
           lng: Number(pos.coords.longitude.toFixed(6)),
-          accuracy: Number.isFinite(pos.coords.accuracy) ? Math.round(pos.coords.accuracy) : null,
+          accuracy: acc,
         });
+        // Laptops without a hardware GPS chip return coarse ISP IP location (>120m error); default to Phone GPS Auto-Pin
+        if (acc !== null && acc > 120) {
+          setDeferGpsToFirstPhone(true);
+        }
         setCalibratingGps(false);
       },
-      (err) => {
+      () => {
         setCalibratingGps(false);
-        setCalError(
-          err.code === 1
-            ? 'Location permission was denied. Please allow Location access in your browser bar and click Re-capture GPS.'
-            : 'Could not acquire high-accuracy GPS yet. Click Re-capture GPS to try again.'
-        );
+        setDeferGpsToFirstPhone(true);
       },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
     );
   }, []);
 
@@ -501,7 +504,27 @@ export default function AttendanceKioskPage() {
 
   const handleSaveCalibration = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!calCoords || savingCalibration) return;
+    if (savingCalibration) return;
+
+    let finalLat = calCoords?.lat;
+    let finalLng = calCoords?.lng;
+    if (manualLatLng.trim()) {
+      const parts = manualLatLng.split(',').map((p) => Number(p.trim()));
+      if (parts.length === 2 && Number.isFinite(parts[0]) && Number.isFinite(parts[1])) {
+        finalLat = parts[0];
+        finalLng = parts[1];
+      } else {
+        setCalError('Manual coordinates must be formatted as Latitude, Longitude (e.g. 6.3350, 5.6037).');
+        return;
+      }
+    }
+
+    const useDefer = deferGpsToFirstPhone && !manualLatLng.trim();
+    if (!useDefer && (finalLat === undefined || finalLng === undefined)) {
+      setCalError('Capture GPS, enter coordinates, or check Auto-Pin GPS from First Staff Phone Scan.');
+      return;
+    }
+
     setSavingCalibration(true);
     setCalError(null);
     try {
@@ -511,10 +534,11 @@ export default function AttendanceKioskPage() {
         credentials: 'include',
         body: JSON.stringify({
           stationCode: stationData?.stationCode,
-          latitude: calCoords.lat,
-          longitude: calCoords.lng,
-          accuracyMeters: calCoords.accuracy,
+          latitude: finalLat,
+          longitude: finalLng,
+          accuracyMeters: calCoords?.accuracy ?? null,
           radiusMeters: calRadius,
+          deferGpsToFirstPhoneScan: useDefer,
         }),
       });
       const json = await res.json().catch(() => ({}));
@@ -942,7 +966,7 @@ export default function AttendanceKioskPage() {
 
               {calCoords ? (
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
-                  <div style={{ fontSize: '12.5px', fontWeight: 700, color: '#047857' }}>
+                  <div style={{ fontSize: '12.5px', fontWeight: 700, color: calCoords.accuracy && calCoords.accuracy > 120 ? '#b45309' : '#047857' }}>
                     Lat: {calCoords.lat}, Lng: {calCoords.lng}
                   </div>
                   {calCoords.accuracy !== null && (
@@ -952,22 +976,62 @@ export default function AttendanceKioskPage() {
                         fontWeight: 700,
                         padding: '2px 8px',
                         borderRadius: '999px',
-                        background: '#ecfdf5',
-                        color: '#047857',
-                        border: '1px solid #a7f3d0',
+                        background: calCoords.accuracy > 120 ? '#fffbeb' : '#ecfdf5',
+                        color: calCoords.accuracy > 120 ? '#b45309' : '#047857',
+                        border: `1px solid ${calCoords.accuracy > 120 ? '#fde68a' : '#a7f3d0'}`,
                       }}
                     >
-                      Accuracy ±{calCoords.accuracy}m
+                      {calCoords.accuracy > 120 ? `Laptop Approx ±${calCoords.accuracy}m` : `Exact GPS ±${calCoords.accuracy}m`}
                     </span>
                   )}
                 </div>
               ) : (
                 <div style={{ fontSize: '12px', color: '#64748b' }}>
                   {calibratingGps
-                    ? 'Acquiring high-precision GPS from this device...'
-                    : 'Allow browser Location access and click Re-capture GPS.'}
+                    ? 'Checking device GPS...'
+                    : 'No hardware GPS chip detected on this computer.'}
                 </div>
               )}
+
+              <label
+                style={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '8px',
+                  padding: '10px 12px',
+                  borderRadius: '10px',
+                  background: deferGpsToFirstPhone ? '#ecfdf5' : '#ffffff',
+                  border: `1px solid ${deferGpsToFirstPhone ? '#6ee7b7' : '#cbd5e1'}`,
+                  cursor: 'pointer',
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={deferGpsToFirstPhone}
+                  onChange={(e) => setDeferGpsToFirstPhone(e.target.checked)}
+                  style={{ marginTop: '2px' }}
+                />
+                <div style={{ fontSize: '11.5px', color: '#0f172a', lineHeight: 1.45 }}>
+                  <strong>Laptop / PC Mode (Recommended):</strong> Lock Router IP now &amp; automatically pin exact GPS from the <strong>first staff smartphone</strong> that scans this Kiosk QR on the office Wi-Fi.
+                </div>
+              </label>
+
+              <input
+                type="text"
+                value={manualLatLng}
+                onChange={(e) => setManualLatLng(e.target.value)}
+                placeholder="Optional: Paste exact Google Maps Lat, Lng (e.g. 6.3350, 5.6037)"
+                style={{
+                  width: '100%',
+                  padding: '8px 10px',
+                  borderRadius: '8px',
+                  border: '1px solid #cbd5e1',
+                  background: '#ffffff',
+                  fontSize: '12px',
+                  color: '#0f172a',
+                  boxSizing: 'border-box',
+                }}
+              />
 
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', paddingTop: '6px', borderTop: '1px solid #e2e8f0' }}>
                 <span style={{ fontSize: '11.5px', fontWeight: 700, color: '#334155' }}>Allowed Geofence Radius:</span>
@@ -1049,20 +1113,24 @@ export default function AttendanceKioskPage() {
 
             <button
               type="submit"
-              disabled={!calCoords || savingCalibration}
+              disabled={(!calCoords && !deferGpsToFirstPhone && !manualLatLng.trim()) || savingCalibration}
               style={{
                 width: '100%',
                 padding: '12px 16px',
                 borderRadius: '11px',
                 border: 'none',
-                background: !calCoords ? '#cbd5e1' : '#ea580c',
+                background: !calCoords && !deferGpsToFirstPhone && !manualLatLng.trim() ? '#cbd5e1' : '#ea580c',
                 color: '#ffffff',
                 fontSize: '13.5px',
                 fontWeight: 800,
-                cursor: !calCoords ? 'not-allowed' : savingCalibration ? 'wait' : 'pointer',
+                cursor: !calCoords && !deferGpsToFirstPhone && !manualLatLng.trim() ? 'not-allowed' : savingCalibration ? 'wait' : 'pointer',
               }}
             >
-              {savingCalibration ? 'Locking Location & Router...' : 'Confirm & Lock Location & Router IP'}
+              {savingCalibration
+                ? 'Locking Location & Router...'
+                : deferGpsToFirstPhone && !manualLatLng.trim()
+                  ? 'Confirm Router IP & Auto-Pin GPS on First Scan'
+                  : 'Confirm & Lock Location & Router IP'}
             </button>
           </form>
         </div>

@@ -13,6 +13,10 @@ import {
   isStarlinkIpAllowed,
   validateCheckInTimeWindow,
 } from '@/lib/attendance/token';
+import {
+  pinStationGpsFromPhoneScan,
+  resolveEffectiveStationGates,
+} from '@/lib/attendance/kiosk-sessions';
 import { notifyGmdStaffClockIn } from '@/lib/notifications/attendance';
 import { notifyAttendancePunch } from '@/lib/notifications/events';
 
@@ -93,63 +97,23 @@ export async function POST(request: Request) {
       );
     }
 
-    // 3. Load Organization & System Attendance Policy
+    // 3. Load Unified Group + Subsidiary Attendance Policy & Live Kiosk Router IP Gates
     const orgId = employee.assignments[0]?.subsidiaryId;
-    let policy = null;
-    if (orgId) {
-      policy = await prisma.attendancePolicy.findUnique({
-        where: { organizationId: orgId },
-      });
-    }
-    if (!policy) {
-      policy = await prisma.attendancePolicy.findFirst();
-    }
+    const gates = await resolveEffectiveStationGates(station, orgId);
+    const {
+      requireGeofence,
+      requireStarlink,
+      powerOutageMode,
+      awaitingPhoneGpsPin,
+      starlinkIps,
+      earliestCheckInTime,
+      resumptionTime,
+      closingTime,
+      graceMinutes,
+      latenessDeductionPercent,
+    } = gates;
 
-    const requireGeofence =
-      station.requireGeofenceOverride !== null && station.requireGeofenceOverride !== undefined
-        ? station.requireGeofenceOverride
-        : policy?.requireGeofence ?? true;
-    const requireStarlink =
-      station.starlinkOverrideMode === 'ENFORCE'
-        ? true
-        : station.starlinkOverrideMode === 'BYPASS'
-        ? false
-        : policy?.requireStarlinkIp ?? true;
-    const powerOutageMode =
-      station.starlinkOverrideMode === 'ENFORCE'
-        ? false
-        : station.starlinkOverrideMode === 'BYPASS'
-        ? true
-        : !requireStarlink
-        ? true
-        : false;
-    const starlinkIps = [station.starlinkIpAddresses, policy?.starlinkIpAddresses]
-      .filter((s) => Boolean(s && s.trim()))
-      .join(', ');
-    const earliestCheckInTime = policy?.earliestCheckInTime || '07:00';
-    const resumptionTime = policy?.resumptionTime || '08:00';
-    const closingTime = policy?.closingTime || '17:00';
-    const graceMinutes = policy?.gracePeriodMinutes ?? 30;
-    const latenessDeductionPercent = policy?.latenessDeductionPercent ?? 2.0;
-
-    // Dual-Factor Check 1: Geofence Verification (Honors policy bypass & outage buffer)
-    const distanceMeters = calculateHaversineDistance(latNum, lngNum, station.latitude, station.longitude);
-    const effectiveMaxRadius = powerOutageMode || !requireStarlink
-      ? Math.max(station.radiusMeters, 250) // generous buffer for GPS drift when emergency/power mode is active
-      : station.radiusMeters;
-
-    if (requireGeofence && distanceMeters > effectiveMaxRadius) {
-      return NextResponse.json(
-        {
-          error: `Geofence check failed: You are ${distanceMeters}m away from ${station.name}. You must be physically within ${effectiveMaxRadius}m to clock in.`,
-          distanceMeters,
-          allowedRadiusMeters: effectiveMaxRadius,
-        },
-        { status: 403 }
-      );
-    }
-
-    // 4. Dual-Factor Check 2: Dynamic QR Cryptographic HMAC & Timestamp Verification
+    // 4. Dual-Factor Check 1: Dynamic QR Cryptographic HMAC & Timestamp Verification
     const isQrValid = verifyStationQrToken(qrToken, station.code, station.activeSecret);
     if (!isQrValid) {
       return NextResponse.json(
@@ -164,7 +128,7 @@ export async function POST(request: Request) {
     const now = new Date();
     const { workDate, currentTimeStr, dayOfWeek, hours, minutes } = getLagosTime(now);
 
-    // Gate 1: Starlink Wi-Fi Connection (or Power Outage Bypassed)
+    // Gate 1: Starlink / Office Router Wi-Fi Connection (honors Group/Entity OFF & Power Outage switches + Live Kiosk IP)
     const clientIp = extractClientIp(request);
     const starlinkCheck = isStarlinkIpAllowed(
       clientIp,
@@ -176,6 +140,37 @@ export async function POST(request: Request) {
     if (!starlinkCheck.allowed) {
       return NextResponse.json(
         { error: starlinkCheck.reason },
+        { status: 403 }
+      );
+    }
+
+    // Auto-pin exact smartphone hardware GPS onto station when Kiosk is a Laptop awaiting first verified phone scan
+    let effectiveStationLat = station.latitude;
+    let effectiveStationLng = station.longitude;
+    if (awaitingPhoneGpsPin) {
+      await pinStationGpsFromPhoneScan({
+        stationId: station.id,
+        stationCode: station.code,
+        latitude: latNum,
+        longitude: lngNum,
+      });
+      effectiveStationLat = latNum;
+      effectiveStationLng = lngNum;
+    }
+
+    // Dual-Factor Check 2: Geofence Verification (Honors policy bypass & outage buffer)
+    const distanceMeters = calculateHaversineDistance(latNum, lngNum, effectiveStationLat, effectiveStationLng);
+    const effectiveMaxRadius = powerOutageMode || !requireStarlink
+      ? Math.max(station.radiusMeters, 250) // generous buffer for GPS drift when emergency/power mode is active
+      : station.radiusMeters;
+
+    if (requireGeofence && distanceMeters > effectiveMaxRadius) {
+      return NextResponse.json(
+        {
+          error: `Geofence check failed: You are ${distanceMeters}m away from ${station.name}. You must be physically within ${effectiveMaxRadius}m to clock in.`,
+          distanceMeters,
+          allowedRadiusMeters: effectiveMaxRadius,
+        },
         { status: 403 }
       );
     }

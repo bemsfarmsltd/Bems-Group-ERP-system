@@ -48,6 +48,7 @@ async function listStationsWithCalibration() {
     return {
       ...st,
       calibrated: Boolean(meta?.calibrated),
+      awaitingPhoneGpsPin: Boolean(meta?.awaitingPhoneGpsPin),
       calibratedAt: meta?.calibratedAt || null,
       calibratedRouterIp: meta?.routerIp || st.starlinkIpAddresses || null,
       deviceLabel: meta?.deviceLabel || null,
@@ -136,6 +137,11 @@ export async function POST(request: Request) {
     if (action === 'RESET_STATION_CALIBRATION') {
       const stationCode = String(body.stationCode || '').trim() || 'ALL';
       await resetStationCalibration(stationCode, actor.id, actor.legalName);
+      // Clear any hard station-level ENFORCE locks so HR policy switches always apply cleanly
+      await prisma.attendanceStation.updateMany({
+        where: stationCode === 'ALL' ? { status: 'ACTIVE' } : { code: stationCode },
+        data: { starlinkOverrideMode: 'INHERIT', requireGeofenceOverride: null },
+      });
       const stations = await listStationsWithCalibration();
       return NextResponse.json({
         success: true,

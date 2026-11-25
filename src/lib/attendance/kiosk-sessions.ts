@@ -7,6 +7,7 @@ export const KIOSK_CALIBRATION_KEY = 'ATTENDANCE_KIOSK_CALIBRATION';
 
 export interface StationCalibrationMeta {
   calibrated: boolean;
+  awaitingPhoneGpsPin?: boolean;
   calibratedAt?: string | null;
   latitude?: number | null;
   longitude?: number | null;
@@ -339,27 +340,152 @@ export async function isStationCalibrated(stationCode: string): Promise<boolean>
 
 export async function markStationCalibrated(params: {
   stationCode: string;
-  latitude: number;
-  longitude: number;
+  latitude?: number | null;
+  longitude?: number | null;
   accuracyMeters?: number | null;
   routerIp?: string | null;
   deviceLabel?: string | null;
+  awaitingPhoneGpsPin?: boolean;
 }): Promise<StationCalibrationMeta> {
   const map = await getStationCalibrationMap();
   const prev = map[params.stationCode] || { calibrated: false };
   const next: StationCalibrationMeta = {
     ...prev,
     calibrated: true,
+    awaitingPhoneGpsPin: Boolean(params.awaitingPhoneGpsPin),
     calibratedAt: new Date().toISOString(),
-    latitude: params.latitude,
-    longitude: params.longitude,
+    latitude: params.latitude ?? prev.latitude ?? null,
+    longitude: params.longitude ?? prev.longitude ?? null,
     accuracyMeters: params.accuracyMeters ?? null,
-    routerIp: params.routerIp || null,
-    deviceLabel: params.deviceLabel || null,
+    routerIp: params.routerIp || prev.routerIp || null,
+    deviceLabel: params.deviceLabel || prev.deviceLabel || null,
   };
   map[params.stationCode] = next;
   await saveStationCalibrationMap(map);
   return next;
+}
+
+export async function pinStationGpsFromPhoneScan(params: {
+  stationId: string;
+  stationCode: string;
+  latitude: number;
+  longitude: number;
+}): Promise<void> {
+  const map = await getStationCalibrationMap();
+  const meta = map[params.stationCode];
+  if (!meta?.awaitingPhoneGpsPin) return;
+
+  await prisma.attendanceStation.update({
+    where: { id: params.stationId },
+    data: {
+      latitude: params.latitude,
+      longitude: params.longitude,
+    },
+  });
+
+  map[params.stationCode] = {
+    ...meta,
+    calibrated: true,
+    awaitingPhoneGpsPin: false,
+    latitude: params.latitude,
+    longitude: params.longitude,
+    calibratedAt: new Date().toISOString(),
+  };
+  await saveStationCalibrationMap(map);
+}
+
+export async function getActiveStationSessionIps(stationCode: string): Promise<string[]> {
+  const sessions = await listKioskSessions();
+  const ips = new Set<string>();
+  for (const s of sessions) {
+    if (s.status === 'ACTIVE' && s.stationCode === stationCode && s.ipAddress) {
+      const clean = s.ipAddress.trim();
+      if (clean && clean !== 'unknown' && clean !== '127.0.0.1' && clean !== '::1') {
+        ips.add(clean);
+      }
+    }
+  }
+  return Array.from(ips);
+}
+
+export async function resolveEffectiveStationGates(
+  station: {
+    id: string;
+    code: string;
+    organizationId: string;
+    radiusMeters: number;
+    starlinkOverrideMode?: string | null;
+    starlinkIpAddresses?: string | null;
+    requireGeofenceOverride?: boolean | null;
+  },
+  employeeSubsidiaryId?: string | null
+) {
+  const [groupOrg, calMap, liveKioskIps] = await Promise.all([
+    prisma.organization.findFirst({
+      where: { type: 'GROUP', status: 'ACTIVE' },
+      select: { id: true },
+    }),
+    getStationCalibrationMap(),
+    getActiveStationSessionIps(station.code),
+  ]);
+
+  const targetOrgId = employeeSubsidiaryId || station.organizationId;
+  const [groupPolicy, localPolicy] = await Promise.all([
+    groupOrg ? prisma.attendancePolicy.findUnique({ where: { organizationId: groupOrg.id } }) : Promise.resolve(null),
+    targetOrgId
+      ? prisma.attendancePolicy.findUnique({ where: { organizationId: targetOrgId } })
+      : prisma.attendancePolicy.findFirst(),
+  ]);
+
+  const effectivePolicy = localPolicy || groupPolicy || (await prisma.attendancePolicy.findFirst());
+  const calMeta = calMap[station.code];
+  const awaitingPhoneGpsPin = Boolean(calMeta?.awaitingPhoneGpsPin);
+
+  // Group-level or local-level OFF / Power Outage switches ALWAYS act as master overrides so HR Admin never gets stuck
+  const anyPowerOutage = Boolean(groupPolicy?.starlinkPowerOutageMode || localPolicy?.starlinkPowerOutageMode);
+  const anyStarlinkOff = groupPolicy?.requireStarlinkIp === false || localPolicy?.requireStarlinkIp === false;
+  const anyGeofenceOff = groupPolicy?.requireGeofence === false || localPolicy?.requireGeofence === false;
+
+  const requireStarlink =
+    anyPowerOutage || anyStarlinkOff || station.starlinkOverrideMode === 'BYPASS'
+      ? false
+      : station.starlinkOverrideMode === 'ENFORCE'
+      ? true
+      : effectivePolicy?.requireStarlinkIp ?? true;
+
+  const powerOutageMode = anyPowerOutage || station.starlinkOverrideMode === 'BYPASS' || !requireStarlink;
+
+  const requireGeofence =
+    anyGeofenceOff || station.requireGeofenceOverride === false || awaitingPhoneGpsPin
+      ? false
+      : station.requireGeofenceOverride === true
+      ? true
+      : effectivePolicy?.requireGeofence ?? true;
+
+  const starlinkIps = [
+    ...liveKioskIps,
+    calMeta?.routerIp,
+    station.starlinkIpAddresses,
+    localPolicy?.starlinkIpAddresses,
+    groupPolicy?.starlinkIpAddresses,
+  ]
+    .filter((s): s is string => Boolean(s && s.trim()))
+    .join(', ');
+
+  return {
+    policy: effectivePolicy,
+    requireStarlink,
+    powerOutageMode,
+    requireGeofence,
+    awaitingPhoneGpsPin,
+    starlinkIps,
+    liveKioskIps,
+    earliestCheckInTime: effectivePolicy?.earliestCheckInTime || '07:00',
+    resumptionTime: effectivePolicy?.resumptionTime || '08:00',
+    closingTime: effectivePolicy?.closingTime || '17:00',
+    graceMinutes: effectivePolicy?.gracePeriodMinutes ?? 30,
+    latenessDeductionPercent: effectivePolicy?.latenessDeductionPercent ?? 2.0,
+  };
 }
 
 export async function resetStationCalibration(

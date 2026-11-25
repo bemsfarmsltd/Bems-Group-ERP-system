@@ -13,6 +13,7 @@ interface StationCalibrationItem {
   radiusMeters: number;
   starlinkIpAddresses?: string | null;
   calibrated: boolean;
+  awaitingPhoneGpsPin?: boolean;
   calibratedAt?: string | null;
   calibratedRouterIp?: string | null;
   deviceLabel?: string | null;
@@ -439,7 +440,11 @@ export default function KioskAccessControlPanel() {
                         border: `1px solid ${st.calibrated ? '#a7f3d0' : '#fde68a'}`,
                       }}
                     >
-                      {st.calibrated ? 'Locked' : 'Awaiting Kiosk Setup'}
+                      {st.calibrated
+                        ? st.awaitingPhoneGpsPin
+                          ? 'Router Locked · Auto-Pinning GPS on Next Scan'
+                          : 'Locked'
+                        : 'Awaiting Kiosk Setup'}
                     </span>
                   </div>
                   <div style={{ fontSize: '11px', color: '#334155', marginTop: '4px', fontWeight: 600 }}>

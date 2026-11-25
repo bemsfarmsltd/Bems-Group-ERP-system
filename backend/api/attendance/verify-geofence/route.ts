@@ -2,6 +2,10 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { checkRateLimit, getClientIp } from '@/lib/rate-limiter';
 import {
+  listKioskSessions,
+  resolveEffectiveStationGates,
+} from '@/lib/attendance/kiosk-sessions';
+import {
   calculateHaversineDistance,
   extractClientIp,
   isStarlinkIpAllowed,
@@ -37,6 +41,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Coordinates must be valid numbers' }, { status: 400 });
     }
 
+    const clientIp = extractClientIp(request);
+
     // Find stations
     let station = null;
     if (stationCode) {
@@ -45,11 +51,12 @@ export async function POST(request: Request) {
       });
     }
 
-    // If no specific station requested, find the closest active station
+    // If no specific station requested, first match any station whose active Kiosk shares the caller's Wi-Fi Router IP, then closest GPS
     if (!station) {
-      const activeStations = await prisma.attendanceStation.findMany({
-        where: { status: 'ACTIVE' },
-      });
+      const [activeStations, kioskSessions] = await Promise.all([
+        prisma.attendanceStation.findMany({ where: { status: 'ACTIVE' } }),
+        listKioskSessions(),
+      ]);
 
       if (activeStations.length === 0) {
         return NextResponse.json(
@@ -58,12 +65,23 @@ export async function POST(request: Request) {
         );
       }
 
-      let closestDist = Infinity;
-      for (const st of activeStations) {
-        const dist = calculateHaversineDistance(latNum, lngNum, st.latitude, st.longitude);
-        if (dist < closestDist) {
-          closestDist = dist;
-          station = st;
+      if (clientIp && clientIp !== '127.0.0.1' && clientIp !== '::1') {
+        const matchingSession = kioskSessions.find(
+          (s) => s.status === 'ACTIVE' && s.ipAddress && isStarlinkIpAllowed(clientIp, s.ipAddress, false, true).allowed
+        );
+        if (matchingSession) {
+          station = activeStations.find((st) => st.code === matchingSession.stationCode) || null;
+        }
+      }
+
+      if (!station) {
+        let closestDist = Infinity;
+        for (const st of activeStations) {
+          const dist = calculateHaversineDistance(latNum, lngNum, st.latitude, st.longitude);
+          if (dist < closestDist) {
+            closestDist = dist;
+            station = st;
+          }
         }
       }
     }
@@ -79,40 +97,30 @@ export async function POST(request: Request) {
       station.longitude
     );
 
-    // Check Starlink IP & Policy Gates
-    const policy = await prisma.attendancePolicy.findFirst({
-      where: { organizationId: station.organizationId },
-    }) || await prisma.attendancePolicy.findFirst();
+    // Check Unified Group + Subsidiary Policy & Live Kiosk Router IP Gates
+    let empSubsidiaryId: string | null = null;
+    if (employeeId) {
+      const asgn = await prisma.employeeAssignment.findFirst({
+        where: { employeeId: String(employeeId), status: 'ACTIVE' },
+        select: { subsidiaryId: true },
+      });
+      empSubsidiaryId = asgn?.subsidiaryId || null;
+    }
 
-    const requireGeofence =
-      station.requireGeofenceOverride !== null && station.requireGeofenceOverride !== undefined
-        ? station.requireGeofenceOverride
-        : policy?.requireGeofence ?? true;
-    const requireStarlink =
-      station.starlinkOverrideMode === 'ENFORCE'
-        ? true
-        : station.starlinkOverrideMode === 'BYPASS'
-        ? false
-        : policy?.requireStarlinkIp ?? true;
-    const powerOutageMode =
-      station.starlinkOverrideMode === 'ENFORCE'
-        ? false
-        : station.starlinkOverrideMode === 'BYPASS'
-        ? true
-        : !requireStarlink
-        ? true
-        : false;
-    const starlinkIps = [station.starlinkIpAddresses, policy?.starlinkIpAddresses]
-      .filter((s) => Boolean(s && s.trim()))
-      .join(', ');
-    const earliestCheckInTime = policy?.earliestCheckInTime ?? '07:00';
+    const gates = await resolveEffectiveStationGates(station, empSubsidiaryId);
+    const {
+      requireGeofence,
+      requireStarlink,
+      powerOutageMode,
+      awaitingPhoneGpsPin,
+      starlinkIps,
+      earliestCheckInTime,
+    } = gates;
 
-    const effectiveRadius = (powerOutageMode || !requireStarlink)
+    const effectiveRadius = powerOutageMode || !requireStarlink
       ? Math.max(station.radiusMeters, 250)
       : station.radiusMeters;
-    const isInsideGeofence = !requireGeofence || distanceMeters <= effectiveRadius;
-
-    const clientIp = extractClientIp(request);
+    const isInsideGeofence = !requireGeofence || awaitingPhoneGpsPin || distanceMeters <= effectiveRadius;
 
     const { currentTimeStr } = getLagosTime();
     const timeWindowCheck = validateCheckInTimeWindow(currentTimeStr, earliestCheckInTime);

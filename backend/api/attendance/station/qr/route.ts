@@ -1,5 +1,5 @@
 import { getAuthenticatedStation } from '@/lib/attendance/station-auth';
-import { isStationCalibrated } from '@/lib/attendance/kiosk-sessions';
+import { isStationCalibrated, resolveEffectiveStationGates } from '@/lib/attendance/kiosk-sessions';
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { extractClientIp, generateStationQrToken } from '@/lib/attendance/token';
@@ -44,10 +44,8 @@ export async function GET(request: Request) {
 
     const { token, expiresInSeconds } = generateStationQrToken(station.code, station.activeSecret);
 
-    const [policy, allStations] = await Promise.all([
-      prisma.attendancePolicy.findFirst({
-        where: { organizationId: station.organizationId },
-      }),
+    const [gates, allStations] = await Promise.all([
+      resolveEffectiveStationGates(station),
       prisma.attendanceStation.findMany({
         where: { status: 'ACTIVE' },
         select: {
@@ -64,16 +62,9 @@ export async function GET(request: Request) {
       }),
     ]);
 
-    const effectiveRequireStarlink =
-      station.starlinkOverrideMode === 'ENFORCE'
-        ? true
-        : station.starlinkOverrideMode === 'BYPASS'
-        ? false
-        : policy?.requireStarlinkIp ?? true;
-    const effectiveRequireGeofence =
-      station.requireGeofenceOverride !== null && station.requireGeofenceOverride !== undefined
-        ? station.requireGeofenceOverride
-        : policy?.requireGeofence ?? true;
+    const policy = gates.policy;
+    const effectiveRequireStarlink = gates.requireStarlink;
+    const effectiveRequireGeofence = gates.requireGeofence;
 
     // Pre-generate both DataURL and vector SVG on the server
     const [qrDataUrl, qrSvg] = await Promise.all([
@@ -107,7 +98,7 @@ export async function GET(request: Request) {
       qrDataUrl,
       qrSvg,
       expiresInSeconds,
-      powerOutageMode: policy?.starlinkPowerOutageMode ?? false,
+      powerOutageMode: gates.powerOutageMode,
       requireStarlinkIp: effectiveRequireStarlink,
       requireGeofence: effectiveRequireGeofence,
       earliestCheckInTime: policy?.earliestCheckInTime || '07:00',

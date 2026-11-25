@@ -51,18 +51,22 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json().catch(() => ({}));
-    const latNum = Number(body.latitude);
-    const lngNum = Number(body.longitude);
-    const accuracyNum = body.accuracyMeters !== undefined && body.accuracyMeters !== null ? Number(body.accuracyMeters) : null;
-    const requestedRadius = body.radiusMeters !== undefined ? Number(body.radiusMeters) : station.radiusMeters || 100;
+    const deferGpsToFirstPhoneScan = body.deferGpsToFirstPhoneScan === true;
+    const latNum = body.latitude !== undefined && body.latitude !== null ? Number(body.latitude) : NaN;
+    const lngNum = body.longitude !== undefined && body.longitude !== null ? Number(body.longitude) : NaN;
+    const hasValidCoords =
+      Number.isFinite(latNum) && latNum >= -90 && latNum <= 90 && Number.isFinite(lngNum) && lngNum >= -180 && lngNum <= 180;
 
-    if (!Number.isFinite(latNum) || latNum < -90 || latNum > 90 || !Number.isFinite(lngNum) || lngNum < -180 || lngNum > 180) {
+    if (!deferGpsToFirstPhoneScan && !hasValidCoords) {
       return NextResponse.json(
-        { error: 'Valid GPS coordinates (latitude & longitude) are required from this kiosk device.' },
+        { error: 'Valid GPS coordinates are required, or enable Auto-Pin GPS from First Staff Phone Scan.' },
         { status: 400 }
       );
     }
 
+    const accuracyNum =
+      body.accuracyMeters !== undefined && body.accuracyMeters !== null ? Number(body.accuracyMeters) : null;
+    const requestedRadius = body.radiusMeters !== undefined ? Number(body.radiusMeters) : station.radiusMeters || 100;
     const radiusMeters = Number.isFinite(requestedRadius)
       ? Math.min(1000, Math.max(30, Math.round(requestedRadius)))
       : station.radiusMeters || 100;
@@ -74,30 +78,32 @@ export async function POST(request: Request) {
       detectedRouterIp !== '127.0.0.1' &&
       detectedRouterIp !== '::1';
 
+    // Keep starlinkOverrideMode = 'INHERIT' and requireGeofenceOverride = null so HR master OFF / Power Outage toggles ALWAYS work
     const updatedStation = await prisma.attendanceStation.update({
       where: { id: station.id },
       data: {
-        latitude: latNum,
-        longitude: lngNum,
-        radiusMeters,
-        requireGeofenceOverride: true,
-        ...(isUsablePublicIp
+        ...(hasValidCoords && !deferGpsToFirstPhoneScan
           ? {
-              starlinkIpAddresses: detectedRouterIp,
-              starlinkOverrideMode: 'ENFORCE',
+              latitude: latNum,
+              longitude: lngNum,
             }
           : {}),
+        radiusMeters,
+        starlinkOverrideMode: 'INHERIT',
+        requireGeofenceOverride: null,
+        ...(isUsablePublicIp ? { starlinkIpAddresses: detectedRouterIp } : {}),
       },
     });
 
     const deviceLabel = parseDeviceLabel(request.headers.get('user-agent') || '');
     const calibration = await markStationCalibrated({
       stationCode: station.code,
-      latitude: latNum,
-      longitude: lngNum,
+      latitude: hasValidCoords && !deferGpsToFirstPhoneScan ? latNum : updatedStation.latitude,
+      longitude: hasValidCoords && !deferGpsToFirstPhoneScan ? lngNum : updatedStation.longitude,
       accuracyMeters: Number.isFinite(accuracyNum as number) ? accuracyNum : null,
       routerIp: isUsablePublicIp ? detectedRouterIp : station.starlinkIpAddresses || detectedRouterIp || null,
       deviceLabel,
+      awaitingPhoneGpsPin: deferGpsToFirstPhoneScan,
     });
 
     return NextResponse.json({
@@ -108,6 +114,7 @@ export async function POST(request: Request) {
       longitude: updatedStation.longitude,
       radiusMeters: updatedStation.radiusMeters,
       routerIp: calibration.routerIp,
+      awaitingPhoneGpsPin: calibration.awaitingPhoneGpsPin,
       calibratedAt: calibration.calibratedAt,
     });
   } catch (error: any) {
