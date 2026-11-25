@@ -1989,6 +1989,50 @@ title: "<Chart Title>"
         (offDay.length > 0 ? `**On Scheduled Day Off (${offDay.length}):**\n${formatList(offDay)}\n\n` : '') +
         (absent.length > 0 ? `**Absent / Not Clocked In (${absent.length}):**\n${formatList(absent)}\n\n` : '') +
         `💬 *You can ask me to message any staff member (e.g., "Message <Name> to explain their absence").*`;
+    } else if (
+      normalized.includes('headcount') ||
+      normalized.includes('staff count') ||
+      normalized.includes('how many staff') ||
+      normalized.includes('total staff') ||
+      normalized.includes('total employees') ||
+      normalized.includes('number of staff') ||
+      normalized.includes('number of employees')
+    ) {
+      const orgFilter = scopedOrgId ? [scopedOrgId] : authorizedScope.organizationIds;
+      const activeEmployees = await prisma.employee.findMany({
+        where: {
+          status: 'ACTIVE',
+          approvalStatus: 'APPROVED',
+          assignments: { some: { subsidiaryId: { in: orgFilter }, status: 'ACTIVE', endsOn: null } },
+        },
+        select: {
+          id: true,
+          role: true,
+          isAttendanceExempt: true,
+          assignments: {
+            where: { status: 'ACTIVE', endsOn: null },
+            orderBy: { isPrimary: 'desc' },
+            take: 1,
+            select: { subsidiary: { select: { legalName: true } } },
+          },
+        },
+      });
+      const bySub = new Map<string, number>();
+      let attendanceRequired = 0;
+      for (const emp of activeEmployees) {
+        const subName = emp.assignments[0]?.subsidiary?.legalName || scopedOrgName || 'BEMS Group';
+        bySub.set(subName, (bySub.get(subName) || 0) + 1);
+        if (emp.role === 'STAFF' && !emp.isAttendanceExempt) attendanceRequired++;
+      }
+      const breakdown = Array.from(bySub.entries())
+        .sort((a, b) => b[1] - a[1])
+        .map(([name, count]) => `• **${name}:** ${count} active staff`)
+        .join('\n');
+      reply =
+        `**Active Headcount (${scopedOrgName}):**\n\n` +
+        `• **Total Active Approved Staff:** ${activeEmployees.length}\n` +
+        `• **Subject to Daily Attendance:** ${attendanceRequired}\n\n` +
+        (breakdown ? `**Breakdown by Entity:**\n${breakdown}` : '');
     } else {
       // General mode-aware intelligence fallback
       const hasSpecificQuery = message.length > 15 && !normalized.includes('hello') && !normalized.includes('hi');
