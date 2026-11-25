@@ -1130,40 +1130,6 @@ export default function AttendanceKioskPage() {
                   {stationData?.stationName || 'BEMS Office Station'}
                   {stationData?.stateLocation ? ` (${stationData.stateLocation})` : ''} · {stationData?.organizationName || 'BEMS Group'}
                 </span>
-                {stationData?.stations && stationData.stations.length > 1 && (
-                  <select
-                    value={stationData.stationCode}
-                    onChange={(e) => {
-                      const nextCode = e.target.value;
-                      setSelectedStationCode(nextCode);
-                      if (typeof window !== 'undefined') {
-                        localStorage.setItem('bems_kiosk_station_code', nextCode);
-                        const url = new URL(window.location.href);
-                        url.searchParams.set('station', nextCode);
-                        window.history.replaceState({}, '', url.toString());
-                      }
-                      void fetchToken(nextCode);
-                      void fetchRecent(nextCode, true);
-                    }}
-                    style={{
-                      padding: '3px 8px',
-                      borderRadius: '6px',
-                      border: '1px solid #cbd5e1',
-                      background: '#f8fafc',
-                      color: '#0f172a',
-                      fontSize: '11.5px',
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                    }}
-                    title="Switch physical Kiosk Location"
-                  >
-                    {stationData.stations.map((st) => (
-                      <option key={st.code} value={st.code}>
-                        📍 {st.name}{st.stateLocation ? ` — ${st.stateLocation}` : ''} ({st.code})
-                      </option>
-                    ))}
-                  </select>
-                )}
               </div>
             </div>
           </div>

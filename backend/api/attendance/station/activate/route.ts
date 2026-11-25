@@ -40,17 +40,12 @@ export async function POST(request: Request) {
     let authorized = false;
     let activatedBy = 'Kiosk Password';
 
-    if (isExecutive && actor) {
-      authorized = true;
-      activatedBy = `${actor.legalName} (${actor.role})`;
-    }
-
     // 1. Primary path: Dedicated Kiosk Access Password set in HR Admin
-    if (!authorized && suppliedPass) {
+    if (suppliedPass) {
       const kioskPwMeta = await getKioskPasswordMeta();
       if (kioskPwMeta && verifyKioskPasswordHash(suppliedPass, kioskPwMeta)) {
         authorized = true;
-        activatedBy = 'Kiosk Access Password';
+        activatedBy = isExecutive && actor ? `${actor.legalName} (Kiosk Password)` : 'Kiosk Access Password';
       }
     }
 

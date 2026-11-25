@@ -59,15 +59,13 @@ export async function getAuthenticatedStation(request: Request) {
   const cookieHeader = request.headers.get('cookie') || '';
   const kioskCookie = readCookieValue(cookieHeader, KIOSK_COOKIE_NAME) || '';
 
-  // Path 1: Tracked Kiosk Device Session (`ks:<sessionId>`) — allows dropdown switching & remote revocation
+  // Path 1: Tracked Kiosk Device Session (`ks:<sessionId>`) — strictly pinned to the station selected at unlock
   if (kioskCookie.startsWith('ks:')) {
     const sessionId = kioskCookie.slice(3).trim();
     const validSession = await verifyAndTouchKioskSession(sessionId);
     if (validSession) {
-      const targetCode = requestedCode || validSession.stationCode;
-      const station = await resolveActiveStation(targetCode);
+      const station = await resolveActiveStation(validSession.stationCode);
       if (station) {
-        // Record station switch or IP update onto the tracked kiosk session
         await verifyAndTouchKioskSession(sessionId, {
           stationCode: station.code,
           stationName: station.name,
@@ -79,14 +77,7 @@ export async function getAuthenticatedStation(request: Request) {
     }
   }
 
-  // Path 2: Authenticated Executive / HR browser session
-  const actor = await getAuthenticatedEmployee(request, { disallowServiceToken: true }).catch(() => null);
-  const isExecutiveOrHr = actor ? hasAnyRole(actor, ['GMD', 'SUPER_ADMIN', 'SYSTEM_ADMIN', 'CUSTOM_ADMIN']) : false;
-  if (isExecutiveOrHr) {
-    return resolveActiveStation(requestedCode || undefined);
-  }
-
-  // Path 3: Explicit x-station-secret header match (for headless/automated kiosk launchers)
+  // Path 2: Explicit x-station-secret header match (for headless/automated kiosk launchers)
   if (headerSecret && requestedCode) {
     const station = await resolveActiveStation(requestedCode);
     if (station && safeEqual(station.activeSecret, headerSecret)) {
