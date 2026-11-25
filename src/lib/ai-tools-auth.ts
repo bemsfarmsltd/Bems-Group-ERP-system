@@ -24,6 +24,7 @@ export interface AuthenticatedAiActor {
   phone?: string | null;
   isExecutive: boolean;
   customAdminPermissions?: any;
+  subsidiaryId?: string | null;
   authSource: 'SERVICE_TOKEN' | 'HUMAN_SESSION';
   conversationId?: string | null;
   scopedOrganizationId?: string | null;
@@ -149,6 +150,12 @@ export async function authenticateAiToolRequest(
       },
       include: {
         customAdminProfile: { select: { permissionsJson: true } },
+        assignments: {
+          where: { status: 'ACTIVE' },
+          orderBy: { isPrimary: 'desc' },
+          take: 1,
+          select: { subsidiaryId: true },
+        },
       },
     });
     const canonicalRole = employee ? normalizeCanonicalRole(employee.role) : null;
@@ -218,6 +225,7 @@ export async function authenticateAiToolRequest(
         phone: employee.phone,
         isExecutive: hasAnyRole(employee, ['GMD', 'SYSTEM_ADMIN', 'SUPER_ADMIN']) || isAuthorizedCustomAdmin,
         customAdminPermissions: resolveEmployeeCustomPermissions(employee),
+        subsidiaryId: employee.assignments?.[0]?.subsidiaryId || null,
         authSource: 'SERVICE_TOKEN',
         conversationId: del.conversationId,
         scopedOrganizationId: del.scopedOrganizationId,
@@ -276,6 +284,7 @@ export async function authenticateAiToolRequest(
       phone: standardUser.phone,
       isExecutive,
       customAdminPermissions: standardUser.customAdminPermissions,
+      subsidiaryId: standardUser.subsidiaryId || null,
       authSource: 'HUMAN_SESSION',
       conversationId: req.headers.get('x-conversation-id') || `conv_${standardUser.id}`,
       scopedOrganizationId: req.headers.get('x-subsidiary-id') || null,

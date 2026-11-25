@@ -35,6 +35,7 @@ export async function GET(req: NextRequest) {
         legalName: actor.legalName,
         workEmail: actor.workEmail,
         customAdminPermissions: actor.customAdminPermissions,
+        subsidiaryId: actor.subsidiaryId || actor.scopedOrganizationId || null,
       } as any,
       {
         date: dateParam,
@@ -70,9 +71,11 @@ export async function GET(req: NextRequest) {
       })
     );
   } catch (err: any) {
+    const msg = String(err?.message || 'Failed to query attendance roster.');
+    const isForbidden = msg.startsWith('FORBIDDEN:');
     return NextResponse.json(
-      { ok: false, error_code: 'QUERY_FAILED', message: err?.message || 'Failed to query attendance roster.' },
-      { status: 500 }
+      { ok: false, error_code: isForbidden ? 'FORBIDDEN' : 'QUERY_FAILED', message: msg },
+      { status: isForbidden ? 403 : 500 }
     );
   }
 }

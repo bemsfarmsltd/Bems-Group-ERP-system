@@ -491,6 +491,7 @@ export async function getHrAuthorizationScope(
     }
 
     const effectivePermissions = employee.customAdminPermissions ?? resolveEmployeeCustomPermissions(empRecord);
+    const effectiveSubsidiaryId = employee.subsidiaryId ?? empRecord.assignments?.[0]?.subsidiaryId ?? null;
     if (
       String(employee.role || '').toUpperCase() === 'CUSTOM_ADMIN' &&
       hasModuleAccess(employee.role, effectivePermissions, 'hr')
@@ -499,7 +500,7 @@ export async function getHrAuthorizationScope(
         employee.role,
         effectivePermissions,
         'hr',
-        employee.subsidiaryId
+        effectiveSubsidiaryId
       );
       if (allowedSubs === 'ALL') {
         const allActiveOrgs = await prisma.organization.findMany({
