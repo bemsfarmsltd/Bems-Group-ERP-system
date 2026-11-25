@@ -182,6 +182,7 @@ export async function POST(req: NextRequest) {
           operationMode: isReadOnlyUser ? 'READ_ONLY' : 'READ_AND_STAGE',
           ttlMs: 5 * 60 * 1000,
           allowAuthorizedSuperAdmin: canonicalActorRole === 'SUPER_ADMIN',
+          allowAuthorizedCustomAdmin: actor.role === 'CUSTOM_ADMIN' && accountAiPolicy.aiEnabled,
         });
         const authToken = delegationToken;
 

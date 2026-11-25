@@ -1,4 +1,5 @@
 import { hasGmdFeatureAccess } from '@/lib/gmd-access';
+import { getAccountAiPolicy } from '@/lib/ai-access-control';
 import { NextResponse } from 'next/server';
 import { getAuthenticatedEmployee, hasAnyRole } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
@@ -7,13 +8,14 @@ import { resolveAuthorizedOrganizationScope } from '@/lib/organizations';
 export async function GET(req: Request) {
   try {
     const actor = await getAuthenticatedEmployee(req);
-    if (actor && !hasGmdFeatureAccess(actor.role)) return NextResponse.json({ok:false,error_code:'GMD_AI_ONLY',message:'AI access requires GMD or an authorized Super Admin.'},{status:403});
     if (!actor) {
       return NextResponse.json({ ok: false, error_code: 'NOT_PERMITTED', message: 'Authentication required.' }, { status: 401 });
     }
 
     const isExecutive = hasAnyRole(actor, ['GMD', 'SYSTEM_ADMIN', 'SUPER_ADMIN']);
-    if (!isExecutive) {
+    const isCustomAdminWithAi =
+      actor.role === 'CUSTOM_ADMIN' && (await getAccountAiPolicy(actor.id, actor.role)).aiEnabled;
+    if (!hasGmdFeatureAccess(actor.role) && !isExecutive && !isCustomAdminWithAi) {
       return NextResponse.json({ ok: false, error_code: 'NOT_PERMITTED', message: 'Not permitted.' }, { status: 403 });
     }
 

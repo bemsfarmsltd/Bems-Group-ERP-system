@@ -1,8 +1,9 @@
 import { normalizeOrganizationIdentifier } from '@/lib/organization-identity';
 import { hasGmdFeatureAccess } from '@/lib/gmd-access';
+import { getAccountAiPolicy } from '@/lib/ai-access-control';
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getAuthenticatedEmployee } from "@/lib/auth";
+import { getAuthenticatedEmployee, hasAnyRole } from "@/lib/auth";
 import { cleanMarkdownTables } from "@/lib/ai/markdown-normalizer";
 import { redactUntrustedAndSensitiveFields } from "@/lib/platform/read-catalog";
 
@@ -49,9 +50,13 @@ function sanitizeAllowedMetadata(raw: unknown): Record<string, string> {
 export async function GET(req: NextRequest) {
   try {
     const actor = await getAuthenticatedEmployee(req);
-    if (actor && !hasGmdFeatureAccess(actor.role)) return NextResponse.json({ok:false,error_code:'GMD_AI_ONLY',message:'AI access requires GMD or an authorized Super Admin.'},{status:403});
     if (!actor) {
       return NextResponse.json({ ok: false, error_code: "NOT_PERMITTED", message: "Authentication required." }, { status: 401 });
+    }
+    const isCustomAdminWithAi =
+      actor.role === 'CUSTOM_ADMIN' && (await getAccountAiPolicy(actor.id, actor.role)).aiEnabled;
+    if (!hasGmdFeatureAccess(actor.role) && !hasAnyRole(actor, ['GMD', 'SYSTEM_ADMIN', 'SUPER_ADMIN']) && !isCustomAdminWithAi) {
+      return NextResponse.json({ ok: false, error_code: 'GMD_AI_ONLY', message: 'AI access requires GMD, Super Admin, or AI Copilot permission.' }, { status: 403 });
     }
 
     const { searchParams } = new URL(req.url);
@@ -194,9 +199,13 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const actor = await getAuthenticatedEmployee(req);
-    if (actor && !hasGmdFeatureAccess(actor.role)) return NextResponse.json({ok:false,error_code:'GMD_AI_ONLY',message:'AI access requires GMD or an authorized Super Admin.'},{status:403});
     if (!actor) {
       return NextResponse.json({ ok: false, error_code: "NOT_PERMITTED", message: "Authentication required." }, { status: 401 });
+    }
+    const isCustomAdminWithAi =
+      actor.role === 'CUSTOM_ADMIN' && (await getAccountAiPolicy(actor.id, actor.role)).aiEnabled;
+    if (!hasGmdFeatureAccess(actor.role) && !hasAnyRole(actor, ['GMD', 'SYSTEM_ADMIN', 'SUPER_ADMIN']) && !isCustomAdminWithAi) {
+      return NextResponse.json({ ok: false, error_code: 'GMD_AI_ONLY', message: 'AI access requires GMD, Super Admin, or AI Copilot permission.' }, { status: 403 });
     }
 
     const body = await req.json().catch(() => ({}));

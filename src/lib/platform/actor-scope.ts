@@ -34,6 +34,7 @@ export interface ScopedAutomationDelegation {
   requesterId: string;
   requesterRole: CanonicalRole;
   allowAuthorizedSuperAdmin?: boolean;
+  allowAuthorizedCustomAdmin?: boolean;
   conversationId: string;
   scopedOrganizationId: string | null;
   allowedScopes: AiAccessScopeKey[] | 'ALL';
@@ -83,12 +84,19 @@ export function createScopedAutomationToken(input: {
   operationMode?: DelegationOperationMode;
   ttlMs?: number;
   allowAuthorizedSuperAdmin?: boolean;
+  allowAuthorizedCustomAdmin?: boolean;
 }): string {
-  if(!hasGmdFeatureAccess(input.requesterRole, superAdminGmdAccessEnabled() || Boolean(input.allowAuthorizedSuperAdmin)))throw new Error('Only authorized GMD or Super Admin accounts can delegate AI access.');
+  const allowDelegation =
+    hasGmdFeatureAccess(input.requesterRole, superAdminGmdAccessEnabled() || Boolean(input.allowAuthorizedSuperAdmin)) ||
+    Boolean(input.allowAuthorizedCustomAdmin);
+  if (!allowDelegation) throw new Error('Only authorized GMD or Super Admin accounts can delegate AI access.');
   const now = Date.now();
-  const isExecutiveRole = input.requesterRole === 'GMD' || input.requesterRole === 'SUPER_ADMIN';
+  const canStage =
+    input.requesterRole === 'GMD' ||
+    input.requesterRole === 'SUPER_ADMIN' ||
+    Boolean(input.allowAuthorizedCustomAdmin);
   const effectiveOperationMode: DelegationOperationMode =
-    !isExecutiveRole
+    !canStage
       ? 'READ_ONLY'
       : input.operationMode === 'READ_ONLY'
       ? 'READ_ONLY'
@@ -99,6 +107,7 @@ export function createScopedAutomationToken(input: {
     requesterId: input.requesterId,
     requesterRole: input.requesterRole,
     allowAuthorizedSuperAdmin: input.requesterRole === 'SUPER_ADMIN' ? Boolean(input.allowAuthorizedSuperAdmin) : false,
+    allowAuthorizedCustomAdmin: Boolean(input.allowAuthorizedCustomAdmin),
     conversationId: input.conversationId,
     scopedOrganizationId: input.scopedOrganizationId || null,
     allowedScopes: input.allowedScopes || 'ALL',
@@ -160,7 +169,8 @@ export function verifyScopedAutomationToken(token: string | null | undefined): {
 
     const role = normalizeCanonicalRole(parsed.requesterRole);
     const allowSuperAdmin = superAdminGmdAccessEnabled() || (role === 'SUPER_ADMIN' && Boolean(parsed.allowAuthorizedSuperAdmin));
-    if (!role || !hasGmdFeatureAccess(role, allowSuperAdmin)) {
+    const allowCustomAdmin = role === 'STAFF' && Boolean(parsed.allowAuthorizedCustomAdmin);
+    if (!role || (!hasGmdFeatureAccess(role, allowSuperAdmin) && !allowCustomAdmin)) {
       return { valid: false, reason: 'AI delegation requires an authorized executive.' };
     }
 
@@ -176,9 +186,9 @@ export function verifyScopedAutomationToken(token: string | null | undefined): {
       return { valid: false, reason: 'Delegation token has expired.' };
     }
 
-    const isExecutiveRole = role === 'GMD' || role === 'SUPER_ADMIN';
+    const canStage = role === 'GMD' || role === 'SUPER_ADMIN' || allowCustomAdmin;
     const normalizedOperationMode: DelegationOperationMode =
-      !isExecutiveRole || parsed.operationMode === 'READ_ONLY'
+      !canStage || parsed.operationMode === 'READ_ONLY'
         ? 'READ_ONLY'
         : 'READ_AND_STAGE';
 
