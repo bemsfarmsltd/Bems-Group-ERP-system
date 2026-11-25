@@ -182,7 +182,18 @@ export function EnterpriseModulesScreen({ user }: { user: EnterpriseUserSummary 
   };
 
   return (
-    <div className="min-h-screen bg-[#f8fafc] text-slate-900 flex flex-col">
+    <div
+      className="min-h-screen bg-[#f8fafc] text-slate-900 flex flex-col"
+      style={
+        {
+          '--brand-primary': '#ea580c',
+          '--brand-shadow-color': 'rgba(234, 88, 12, 0.35)',
+          '--brand-gradient': 'linear-gradient(135deg, #ea580c 0%, #f97316 100%)',
+          '--brand-tint': '#fff7ed',
+          '--brand-border': 'rgba(234, 88, 12, 0.35)',
+        } as React.CSSProperties
+      }
+    >
       {/* Clean Minimal Top Bar */}
       <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/95 backdrop-blur px-6 h-16 flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
