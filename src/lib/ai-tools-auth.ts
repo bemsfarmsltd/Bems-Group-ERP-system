@@ -6,6 +6,7 @@ import { timingSafeEqual } from 'node:crypto';
 import {
   AiAccessScopeKey,
   checkAiScopeOrResponse,
+  getAccountAiPolicy,
   resolveScopeFromPathname,
 } from '@/lib/ai-access-control';
 import {
@@ -107,7 +108,6 @@ export async function authenticateAiToolRequest(
 
     const del = verified.delegation;
     const allowSuperAdmin = superAdminGmdAccessEnabled() || (del.requesterRole === 'SUPER_ADMIN' && Boolean(del.allowAuthorizedSuperAdmin));
-    if(!hasGmdFeatureAccess(del.requesterRole, allowSuperAdmin))return {actor:null,errorResponse:NextResponse.json({error_code:'GMD_AI_ONLY',message:'AI access requires GMD or an authorized Super Admin.'},{status:403})};
     if (mode === 'write' && del.operationMode === 'READ_ONLY') {
       return {
         actor: null,
@@ -162,14 +162,16 @@ export async function authenticateAiToolRequest(
       };
     }
 
-    if (!hasGmdFeatureAccess(canonicalRole, allowSuperAdmin)) {
+    const accountAiPolicy = await getAccountAiPolicy(employee.id, employee.role);
+    const isAuthorizedCustomAdmin = employee.role === 'CUSTOM_ADMIN' && accountAiPolicy.aiEnabled;
+    if (!hasGmdFeatureAccess(canonicalRole, allowSuperAdmin) && !isAuthorizedCustomAdmin) {
       return {
         actor: null,
         errorResponse: NextResponse.json(
           {
             ok: false,
             error_code: 'GMD_AI_ONLY',
-            message: 'AI access requires GMD or an authorized Super Admin.',
+            message: 'AI access requires GMD, an authorized Super Admin, or a Custom Admin with AI Copilot enabled.',
           },
           { status: 403 }
         ),
@@ -210,7 +212,7 @@ export async function authenticateAiToolRequest(
         canonicalRole,
         workEmail: employee.workEmail,
         phone: employee.phone,
-        isExecutive: hasAnyRole(employee, ['GMD', 'SYSTEM_ADMIN', 'SUPER_ADMIN']),
+        isExecutive: hasAnyRole(employee, ['GMD', 'SYSTEM_ADMIN', 'SUPER_ADMIN']) || isAuthorizedCustomAdmin,
         authSource: 'SERVICE_TOKEN',
         conversationId: del.conversationId,
         scopedOrganizationId: del.scopedOrganizationId,
@@ -255,7 +257,9 @@ export async function authenticateAiToolRequest(
     if (accountBlocked) return { actor: null, errorResponse: accountBlocked };
   }
   const canonicalRole = normalizeCanonicalRole(standardUser.role) || 'STAFF';
-  const isExecutive = hasAnyRole(standardUser, ['GMD', 'SYSTEM_ADMIN', 'SUPER_ADMIN']);
+  const isExecutive =
+    hasAnyRole(standardUser, ['GMD', 'SYSTEM_ADMIN', 'SUPER_ADMIN']) ||
+    standardUser.role === 'CUSTOM_ADMIN';
 
   return {
     actor: {

@@ -8,16 +8,17 @@ import type { AuthenticatedAiActor } from '@/lib/ai-tools-auth';
 export async function getAiReadClient(actor: AuthenticatedAiActor) {
   const scope = await resolveAuthorizedOrganizationScope(actor as any, actor.scopedOrganizationId || 'ALL', 'ai-copilot');
   const ids = scope.organizationIds;
+  const hasAdminReadScope = actor.isExecutive || actor.role === 'CUSTOM_ADMIN';
   const employee = { assignments: { some: { subsidiaryId: { in: ids }, status: 'ACTIVE' } } };
   const filters: Record<string, any> = {
     WalletBudgetEnvelope: { organizationId: { in: ids } },
-    WalletCreditLot: { organizationId: { in: ids }, ...(!actor.isExecutive ? { employeeId: actor.id } : {}) },
+    WalletCreditLot: { organizationId: { in: ids }, ...(!hasAdminReadScope ? { employeeId: actor.id } : {}) },
     Organization: { id: { in: ids } }, Department: { organizationId: { in: ids } },
-    Employee: actor.isExecutive ? employee : { id: actor.id },
+    Employee: hasAdminReadScope ? employee : { id: actor.id },
     EmployeeAssignment: { subsidiaryId: { in: ids } }, CompanyBankAccount: { organizationId: { in: ids } },
     WorkspaceSetting: { organizationId: { in: ids } }, Budget: { organizationId: { in: ids } },
     BudgetLine: { budget: { organizationId: { in: ids } } },
-    ExpenditureRequest: { subsidiaryId: { in: ids }, ...(!actor.isExecutive ? { requestedById: actor.id } : {}) },
+    ExpenditureRequest: { subsidiaryId: { in: ids }, ...(!hasAdminReadScope ? { requestedById: actor.id } : {}) },
     Disbursement: { payerOrgId: { in: ids } },
     AccountabilityCase: { request: { subsidiaryId: { in: ids } } },
     AttendanceStation: { organizationId: { in: ids } }, AttendancePolicy: { organizationId: { in: ids } },

@@ -10,7 +10,7 @@ import crypto from 'node:crypto';
 import { stageAction } from '@/lib/staged-actions';
 import { getConsolidatedTreasury } from '@/lib/financial-metrics';
 import { enforceMobileVersionGate } from '@/lib/mobile-gate';
-import { checkAiScopeOrResponse } from '@/lib/ai-access-control';
+import { checkAiScopeOrResponse, getAccountAiPolicy } from '@/lib/ai-access-control';
 import { createScopedAutomationToken, normalizeCanonicalRole } from '@/lib/platform/actor-scope';
 import { redactUntrustedAndSensitiveFields } from '@/lib/platform/read-catalog';
 import { type AiAgentDomain, resolveAiAgentRouteSmart } from '@/lib/ai-intent-router';
@@ -59,8 +59,12 @@ export async function POST(req: NextRequest) {
 
     const userName = actor.legalName.split(' ')[0] || 'User';
     const normalized = message.toLowerCase();
+    const accountAiPolicy = await getAccountAiPolicy(actor.id, actor.role);
     const isExecutive = hasAnyRole(actor, ['GMD', 'SYSTEM_ADMIN', 'SUPER_ADMIN']);
-    const isReadOnlyUser = !isExecutive || isReadOnlyEmployee(actor);
+    const canStageAiActions =
+      (isExecutive && !isReadOnlyEmployee(actor)) ||
+      (actor.role === 'CUSTOM_ADMIN' && accountAiPolicy.masterWrite && !isReadOnlyEmployee(actor));
+    const isReadOnlyUser = !canStageAiActions;
 
     const rawBusinessId = normalizeOrganizationIdentifier((body.context?.active_business_id || '').trim());
 
@@ -316,7 +320,7 @@ export async function POST(req: NextRequest) {
 
         const effectiveRole = hasAnyRole(actor, ['GMD'])
           ? 'GMD'
-          : hasAnyRole(actor, ['SUPER_ADMIN', 'SYSTEM_ADMIN', 'HR'])
+          : hasAnyRole(actor, ['SUPER_ADMIN', 'SYSTEM_ADMIN', 'HR', 'CUSTOM_ADMIN'])
             ? 'SYSTEM_ADMIN'
             : 'STAFF';
 
@@ -1460,18 +1464,10 @@ title: "<Chart Title>"
           `• **Total Net Payout:** **${formatNaira(netNaira)}**\n` +
           `• **Total Deductions:** **${formatNaira(deductionsNaira)}**\n\n` +
           `*To prepare or recalculate payroll with attendance absence/lateness penalties factored in, use the Payroll Desk or submit a request to the AI Automation Gateway.*`;
-
-        actionCard = {
-          type: 'PAYROLL',
-          title: `Payroll Overview (${monthName})`,
-          period: `${monthName} ${latestPeriod?.year || new Date().getFullYear()}`,
-          status: batch?.status || 'NOT_PREPARED',
-          netTotal: formatNaira(netNaira),
-          deductions: formatNaira(deductionsNaira),
-        };
       }
     } else if (
       normalized.includes('attendance') ||
+      normalized.includes('attenadnce') ||
       normalized.includes('roster') ||
       normalized.includes('lateness') ||
       normalized.includes('timesheet') ||
@@ -1484,24 +1480,46 @@ title: "<Chart Title>"
           workDate: todayDateStr,
           ...(scopedOrgId ? { employee: { assignments: { some: { subsidiaryId: scopedOrgId } } } } : {}),
         },
+        include: {
+          employee: { select: { legalName: true, employeeNumber: true } },
+          station: { select: { name: true } },
+        },
+        orderBy: { checkInTime: 'asc' },
       });
       const onTime = todayRecords.filter((r) => r.status === 'PRESENT' && !r.isManualOverride).length;
       const late = todayRecords.filter((r) => r.status === 'LATE').length;
       const excused = todayRecords.filter((r) => r.status === 'EXCUSED' || r.isManualOverride).length;
 
-      reply = `**${scopedOrgName} Live Attendance & Timekeeping Intelligence (${todayDateStr}):**\n\n` +
-        `• **Today's Presence:** **${todayRecords.length} staff checked in** (${onTime} on-time, ${late} late, ${excused} excused/override).\n` +
-        `• **Policy:** Check the recorded policy for the selected entity before applying attendance adjustments.\n\n` +
-        `*GMD / Super Admin can excuse or override any lateness penalty directly from the Attendance Master desk or via AI Automation tools.*`;
+      const rosterLines = todayRecords.length
+        ? '\n\n**Checked-In Staff Roster Today:**\n' +
+          todayRecords
+            .map((r, idx) => {
+              const inTime = r.checkInTime
+                ? new Date(r.checkInTime).toLocaleTimeString('en-US', {
+                    timeZone: 'Africa/Lagos',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    hour12: true,
+                  })
+                : '—';
+              const outTime = r.checkOutTime
+                ? new Date(r.checkOutTime).toLocaleTimeString('en-US', {
+                    timeZone: 'Africa/Lagos',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    hour12: true,
+                  })
+                : 'On Shift';
+              const stLabel = r.status === 'LATE' ? 'LATE' : r.status === 'EXCUSED' ? 'EXCUSED' : 'ON-TIME';
+              return `${idx + 1}. **${r.employee?.legalName || 'Staff'}** (${r.employee?.employeeNumber || '—'}) — In: **${inTime}** · Out: **${outTime}** · \`${stLabel}\`${r.station?.name ? ` · *${r.station.name}*` : ''}`;
+            })
+            .join('\n')
+        : '\n\n*No staff check-ins recorded yet for today.*';
 
-      actionCard = {
-        type: 'ATTENDANCE',
-        title: `${scopedOrgName} Attendance Radar (${todayDateStr})`,
-        punches: todayRecords.length,
-        onTime,
-        late,
-        excused,
-      };
+      reply =
+        `**${scopedOrgName} Live Attendance & Timekeeping Intelligence (${todayDateStr}):**\n\n` +
+        `• **Today's Presence:** **${todayRecords.length} staff checked in** (${onTime} on-time, ${late} late, ${excused} excused/override).` +
+        rosterLines;
     } else if (
       normalized.includes('budget') ||
       normalized.includes('envelope') ||
@@ -1581,11 +1599,16 @@ title: "<Chart Title>"
       }
     } else if (
       normalized.includes('create subsidiary') ||
+      normalized.includes('create a subsidiary') ||
+      normalized.includes('create subscidiary') ||
+      normalized.includes('create a subscidiary') ||
       normalized.includes('new subsidiary') ||
-      normalized.includes('add subsidiary')
+      normalized.includes('new subscidiary') ||
+      normalized.includes('add subsidiary') ||
+      normalized.includes('add subscidiary')
     ) {
-      if (!isExecutive) {
-        reply = `🔒 **Executive Authority Required:** Corporate entity formation and subsidiary provisioning can only be authorized by the Group Managing Director or System Administrator.`;
+      if (!canStageAiActions) {
+        reply = `🔒 **AI Write Authority Required:** Corporate entity formation and subsidiary provisioning require AI Write / Staging access.`;
       } else {
         reply = `🏛️ **Corporate Subsidiary Provisioning Specification**\n\n` +
           `To configure and launch a new operating subsidiary on BEMS, the following corporate parameters are required:\n\n` +
@@ -1597,12 +1620,6 @@ title: "<Chart Title>"
           `6. **Functional Currency**: Default is \`NGN\` (or \`USD\`, \`GBP\`, \`EUR\`)\n\n` +
           `*(Note: File uploads including corporate logos, registration certificates, and brand assets are excluded from AI tools and uploaded directly via the Web Dashboard).*\n\n` +
           `💬 *Please reply with these details, and I will prepare the complete subsidiary dossier for your authorization.*`;
-        
-        actionCard = {
-          type: 'SPECIFICATION_CHECKLIST',
-          title: 'Subsidiary Creation Checklist',
-          fields: ['Corporate Legal Name', 'Brand Color (Hex)', 'Industry Sector', 'Headquarters City/State', 'Shortcode'],
-        };
       }
     } else if (
       normalized.includes('onboard admin') ||
@@ -1610,8 +1627,8 @@ title: "<Chart Title>"
       normalized.includes('new admin') ||
       normalized.includes('invite admin')
     ) {
-      if (!isExecutive) {
-        reply = `🔒 **Executive Authority Required:** Only the GMD or Super Admin can provision executive accounts.`;
+      if (!canStageAiActions) {
+        reply = `🔒 **Executive Authority Required:** Only the GMD or an authorized Admin can provision executive accounts.`;
       } else {
         reply = `👤 **Executive Admin Onboarding Specification**\n\n` +
           `*(Strict 3-Role Governance: Limited strictly to SUPER_ADMIN or GMD. Staff accounts use self-service mobile app registration).*\n\n` +
@@ -1622,12 +1639,6 @@ title: "<Chart Title>"
           `4. **Executive Role**: Strictly \`SUPER_ADMIN\` or \`GMD\`\n` +
           `5. **Assigned Entity**: Primary subsidiary (e.g., *BEMS Group Holdings HQ*)\n\n` +
           `💬 *Once provided, an executive invitation token with cryptographic sign-in credentials will be generated and dispatched.*`;
-
-        actionCard = {
-          type: 'SPECIFICATION_CHECKLIST',
-          title: 'Admin Onboarding Checklist',
-          fields: ['Full Legal Name', 'Corporate Work Email', 'Mobile Phone', 'Executive Role (SUPER_ADMIN or GMD)', 'Assigned Entity'],
-        };
       }
     } else if (
       normalized.includes('register account') ||
@@ -1730,15 +1741,16 @@ title: "<Chart Title>"
         reply = `**Active Intercompany Balance & Netting Matrix (${scopedOrgName}):**\n\n${noteList}\n\n💬 *You can instruct me to stage a netting settlement across these notes for your authorization.*`;
       }
     } else if (
-      normalized.includes('subsidiary') ||
+      normalized.includes('subsidiar') ||
+      normalized.includes('subscidiar') ||
       normalized.includes('entities') ||
       normalized.includes('company') ||
       normalized.includes('companies')
     ) {
-      const orgNames = orgs.length ? orgs.map((o) => `• **${o.legalName}** (${o.type})`).join('\n') : `• **${scopedOrgName}**`;
+      const orgNames = orgs.length ? orgs.map((o, idx) => `${idx + 1}. **${o.legalName}** (${o.type})`).join('\n') : `1. **${scopedOrgName}**`;
       reply = !isGroupScope
         ? `**Active Workspace Subsidiary:**\n\n• **${scopedOrgName}** (Code: \`${scopedOrgCode}\`)\n\n*The AI Copilot is strictly isolated to this subsidiary. To view the group conglomerate portfolio, switch to BEMS Group.*`
-        : `**BEMS Group Multi-Subsidiary Architecture:**\n\n${orgNames}\n\nAll intercompany transactions generate automated bilateral Debit/Credit notes with zero double-counting.`;
+        : `**BEMS Group Multi-Subsidiary Architecture (${orgs.length} active entities):**\n\n${orgNames}\n\nAll intercompany transactions generate automated bilateral Debit/Credit notes with zero double-counting.`;
     } else if (
       routeDecision.intent === 'STAFF_MESSAGE' ||
       /\b(message|notify|tell|send\s+(?:a\s+)?message\s+to|follow\s*up\s+with)\s+[a-z]{2,}/i.test(cleanUserMessage) ||
@@ -2051,7 +2063,10 @@ title: "<Chart Title>"
           `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(geminiKey)}`,
           {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Content-Type': 'application/json',
+              'x-goog-api-key': geminiKey,
+            },
             body: JSON.stringify({
               contents: [{ role: 'user', parts: [{ text: geminiPrompt }] }],
               generationConfig: { temperature: 0.3, maxOutputTokens: 900 },
