@@ -1,8 +1,11 @@
 import { NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
 import { getAuthenticatedEmployee, getHrAuthorizationScope, hasAnyRole } from '@/lib/auth';
 import {
   getKioskPasswordMeta,
+  getStationCalibrationMap,
   listKioskSessions,
+  resetStationCalibration,
   revokeAllKioskSessions,
   revokeKioskSession,
   setKioskPassword,
@@ -21,14 +24,48 @@ async function authorizeKioskAdmin(request: Request) {
   return { actor };
 }
 
+async function listStationsWithCalibration() {
+  const [stations, calMap] = await Promise.all([
+    prisma.attendanceStation.findMany({
+      where: { status: 'ACTIVE' },
+      select: {
+        id: true,
+        code: true,
+        name: true,
+        stateLocation: true,
+        latitude: true,
+        longitude: true,
+        radiusMeters: true,
+        starlinkIpAddresses: true,
+      },
+      orderBy: { createdAt: 'asc' },
+    }),
+    getStationCalibrationMap(),
+  ]);
+
+  return stations.map((st) => {
+    const meta = calMap[st.code];
+    return {
+      ...st,
+      calibrated: Boolean(meta?.calibrated),
+      calibratedAt: meta?.calibratedAt || null,
+      calibratedRouterIp: meta?.routerIp || st.starlinkIpAddresses || null,
+      deviceLabel: meta?.deviceLabel || null,
+      resetAt: meta?.resetAt || null,
+      resetByName: meta?.resetByName || null,
+    };
+  });
+}
+
 export async function GET(request: Request) {
   try {
     const auth = await authorizeKioskAdmin(request);
     if ('error' in auth) return auth.error;
 
-    const [pwMeta, sessions] = await Promise.all([
+    const [pwMeta, sessions, stations] = await Promise.all([
       getKioskPasswordMeta(),
       listKioskSessions(),
+      listStationsWithCalibration(),
     ]);
 
     return NextResponse.json({
@@ -38,6 +75,7 @@ export async function GET(request: Request) {
       passwordUpdatedByName: pwMeta?.updatedByName || null,
       activeCount: sessions.filter((s) => s.status === 'ACTIVE').length,
       sessions,
+      stations,
     });
   } catch (error: any) {
     return NextResponse.json({ error: error?.message || 'Failed to load kiosk access settings.' }, { status: 500 });
@@ -92,6 +130,16 @@ export async function POST(request: Request) {
         success: true,
         activeCount: 0,
         sessions,
+      });
+    }
+
+    if (action === 'RESET_STATION_CALIBRATION') {
+      const stationCode = String(body.stationCode || '').trim() || 'ALL';
+      await resetStationCalibration(stationCode, actor.id, actor.legalName);
+      const stations = await listStationsWithCalibration();
+      return NextResponse.json({
+        success: true,
+        stations,
       });
     }
 

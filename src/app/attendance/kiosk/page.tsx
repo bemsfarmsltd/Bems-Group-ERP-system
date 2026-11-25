@@ -19,6 +19,8 @@ import {
   UserCheck,
   Users,
   Download,
+  MapPin,
+  Lock,
   Laptop,
   Check,
 } from 'lucide-react';
@@ -33,6 +35,9 @@ interface StationData {
   longitude: number;
   radiusMeters: number;
   starlinkOverrideMode?: string;
+  calibratedRouterIp?: string | null;
+  detectedRouterIp?: string | null;
+  requiresCalibration?: boolean;
   qrToken: string;
   qrDataUrl?: string;
   qrSvg?: string;
@@ -66,8 +71,18 @@ export default function AttendanceKioskPage() {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [requiresActivation, setRequiresActivation] = useState<boolean>(false);
+  const [availableStations, setAvailableStations] = useState<
+    Array<{ code: string; name: string; stateLocation?: string | null }>
+  >([]);
   const [activationPassword, setActivationPassword] = useState<string>('');
   const [activatingStation, setActivatingStation] = useState<boolean>(false);
+
+  // One-Time Location & Router Calibration Modal State
+  const [calCoords, setCalCoords] = useState<{ lat: number; lng: number; accuracy: number | null } | null>(null);
+  const [calRadius, setCalRadius] = useState<number>(100);
+  const [calibratingGps, setCalibratingGps] = useState<boolean>(false);
+  const [savingCalibration, setSavingCalibration] = useState<boolean>(false);
+  const [calError, setCalError] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [isQrOnlyFullscreen, setIsQrOnlyFullscreen] = useState<boolean>(false);
   const [recentPunches, setRecentPunches] = useState<any[]>([]);
@@ -362,6 +377,15 @@ export default function AttendanceKioskPage() {
         const errorData = await res.json().catch(() => null);
         if (res.status === 401 || errorData?.requiresActivation) {
           setRequiresActivation(true);
+          setStationData(null);
+          if (Array.isArray(errorData?.availableStations)) {
+            setAvailableStations(errorData.availableStations);
+            if (!codeToFetch && errorData.availableStations[0]?.code) {
+              setSelectedStationCode(errorData.availableStations[0].code);
+            }
+          }
+          setIsLoading(false);
+          return;
         }
         throw new Error(errorData?.error || 'Unable to connect to station server');
       }
@@ -415,8 +439,9 @@ export default function AttendanceKioskPage() {
     void fetchToken();
   }, [fetchToken]);
 
-  // 45-second countdown timer
+  // 45-second countdown timer (paused while locked behind password gate)
   useEffect(() => {
+    if (requiresActivation || !stationData) return;
     const timer = setInterval(() => {
       setSecondsRemaining(prev => {
         if (prev <= 1) {
@@ -427,14 +452,82 @@ export default function AttendanceKioskPage() {
       });
     }, 1000);
     return () => clearInterval(timer);
-  }, [fetchToken]);
+  }, [fetchToken, requiresActivation, stationData]);
 
-  // Poll recent arrivals & detect live QR clock-in/clock-out every 3 seconds
+  // Poll recent arrivals & detect live QR clock-in/clock-out every 3 seconds (only AFTER kiosk unlock)
   useEffect(() => {
+    if (requiresActivation || isLoading || !stationData) return;
     void fetchRecent();
     const interval = setInterval(() => void fetchRecent(), 3000);
     return () => clearInterval(interval);
-  }, [fetchRecent]);
+  }, [fetchRecent, requiresActivation, isLoading, stationData]);
+
+  const captureKioskGps = useCallback(() => {
+    if (typeof window === 'undefined' || !navigator.geolocation) {
+      setCalError('Browser geolocation is not supported on this device. Ensure Location Services are enabled.');
+      return;
+    }
+    setCalibratingGps(true);
+    setCalError(null);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setCalCoords({
+          lat: Number(pos.coords.latitude.toFixed(6)),
+          lng: Number(pos.coords.longitude.toFixed(6)),
+          accuracy: Number.isFinite(pos.coords.accuracy) ? Math.round(pos.coords.accuracy) : null,
+        });
+        setCalibratingGps(false);
+      },
+      (err) => {
+        setCalibratingGps(false);
+        setCalError(
+          err.code === 1
+            ? 'Location permission was denied. Please allow Location access in your browser bar and click Re-capture GPS.'
+            : 'Could not acquire high-accuracy GPS yet. Click Re-capture GPS to try again.'
+        );
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+    );
+  }, []);
+
+  useEffect(() => {
+    if (stationData?.requiresCalibration) {
+      setCalRadius(stationData.radiusMeters || 100);
+      if (!calCoords && !calibratingGps) {
+        captureKioskGps();
+      }
+    }
+  }, [stationData?.requiresCalibration, stationData?.stationCode, stationData?.radiusMeters, calCoords, calibratingGps, captureKioskGps]);
+
+  const handleSaveCalibration = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!calCoords || savingCalibration) return;
+    setSavingCalibration(true);
+    setCalError(null);
+    try {
+      const res = await fetch('/api/attendance/station/calibrate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          stationCode: stationData?.stationCode,
+          latitude: calCoords.lat,
+          longitude: calCoords.lng,
+          accuracyMeters: calCoords.accuracy,
+          radiusMeters: calRadius,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(json?.error || 'Could not save kiosk location and router setup.');
+      }
+      await fetchToken(stationData?.stationCode);
+    } catch (err: any) {
+      setCalError(err?.message || 'Failed to lock kiosk location and router.');
+    } finally {
+      setSavingCalibration(false);
+    }
+  };
 
   // Synchronize System Fullscreen state on fullscreenchange (Esc or browser button)
   useEffect(() => {
@@ -534,6 +627,195 @@ export default function AttendanceKioskPage() {
     return nameMatch || roleMatch || deptMatch || subMatch || idMatch;
   });
 
+  // FULL-SCREEN PASSWORD GATE FIRST: Never expose any kiosk dashboard, QR frame, or staff roster before unlocking
+  if ((isLoading && !stationData) || requiresActivation) {
+    return (
+      <div
+        style={{
+          minHeight: '100vh',
+          background: '#f8fafc',
+          color: '#0f172a',
+          fontFamily: "'Outfit', 'Plus Jakarta Sans', system-ui, sans-serif",
+          display: 'grid',
+          placeItems: 'center',
+          padding: '24px',
+        }}
+      >
+        {isLoading && !requiresActivation ? (
+          <div
+            style={{
+              background: '#ffffff',
+              border: '1px solid #e2e8f0',
+              borderRadius: '20px',
+              padding: '36px 32px',
+              width: '100%',
+              maxWidth: '400px',
+              textAlign: 'center',
+              boxShadow: '0 12px 32px rgba(15, 23, 42, 0.06)',
+            }}
+          >
+            <RefreshCw size={32} className="animate-spin" color="#ea580c" style={{ margin: '0 auto 12px' }} />
+            <div style={{ fontSize: '15px', fontWeight: 800, color: '#0f172a' }}>Verifying Kiosk Access...</div>
+            <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
+              Checking authorized reception terminal session
+            </div>
+          </div>
+        ) : (
+          <form
+            onSubmit={handleActivateKiosk}
+            style={{
+              background: '#ffffff',
+              border: '1px solid #e2e8f0',
+              borderRadius: '22px',
+              padding: '32px 30px',
+              width: '100%',
+              maxWidth: '430px',
+              boxShadow: '0 20px 50px rgba(15, 23, 42, 0.08)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '16px',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div
+                style={{
+                  width: 46,
+                  height: 46,
+                  borderRadius: 13,
+                  background: '#fff7ed',
+                  border: '1px solid #fed7aa',
+                  display: 'grid',
+                  placeItems: 'center',
+                  flexShrink: 0,
+                }}
+              >
+                <Lock size={22} color="#ea580c" />
+              </div>
+              <div>
+                <div
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    fontSize: '10.5px',
+                    fontWeight: 800,
+                    color: '#ea580c',
+                    background: '#fff7ed',
+                    border: '1px solid #fed7aa',
+                    padding: '2px 8px',
+                    borderRadius: '999px',
+                    marginBottom: '4px',
+                  }}
+                >
+                  PROTECTED TERMINAL
+                </div>
+                <h1 style={{ margin: 0, fontSize: '19px', fontWeight: 900, color: '#0f172a', letterSpacing: '-0.3px' }}>
+                  Unlock Attendance Kiosk
+                </h1>
+              </div>
+            </div>
+
+            <div style={{ fontSize: '12.5px', color: '#475569', lineHeight: 1.55 }}>
+              Enter the <strong>Kiosk Access Password</strong> configured by HR Admin before viewing live attendance QR codes or station records.
+            </div>
+
+            {availableStations.length > 0 && (
+              <div>
+                <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 800, color: '#334155', marginBottom: '6px' }}>
+                  Office Kiosk Station
+                </label>
+                <select
+                  value={selectedStationCode}
+                  onChange={(e) => {
+                    setSelectedStationCode(e.target.value);
+                    if (typeof window !== 'undefined') {
+                      localStorage.setItem('bems_kiosk_station_code', e.target.value);
+                    }
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: '10px',
+                    border: '1px solid #cbd5e1',
+                    background: '#f8fafc',
+                    fontSize: '13px',
+                    fontWeight: 700,
+                    color: '#0f172a',
+                  }}
+                >
+                  {availableStations.map((st) => (
+                    <option key={st.code} value={st.code}>
+                      {st.name} {st.stateLocation ? `(${st.stateLocation})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div>
+              <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 800, color: '#334155', marginBottom: '6px' }}>
+                Kiosk Access Password
+              </label>
+              <input
+                type="password"
+                required
+                autoFocus
+                value={activationPassword}
+                onChange={(e) => setActivationPassword(e.target.value)}
+                placeholder="Enter Kiosk Access Password..."
+                style={{
+                  width: '100%',
+                  padding: '11px 13px',
+                  borderRadius: '10px',
+                  border: '1px solid #cbd5e1',
+                  background: '#ffffff',
+                  fontSize: '13.5px',
+                  color: '#0f172a',
+                  boxSizing: 'border-box',
+                }}
+              />
+            </div>
+
+            {loadError && (
+              <div
+                style={{
+                  padding: '10px 12px',
+                  borderRadius: '10px',
+                  background: '#fef2f2',
+                  border: '1px solid #fecaca',
+                  color: '#b91c1c',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                }}
+              >
+                {loadError}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={activatingStation}
+              style={{
+                width: '100%',
+                padding: '12px 16px',
+                borderRadius: '11px',
+                border: 'none',
+                background: '#ea580c',
+                color: '#ffffff',
+                fontSize: '13.5px',
+                fontWeight: 800,
+                cursor: activatingStation ? 'wait' : 'pointer',
+                boxShadow: '0 4px 12px rgba(234, 88, 12, 0.22)',
+              }}
+            >
+              {activatingStation ? 'Unlocking Terminal...' : 'Unlock & Open Kiosk'}
+            </button>
+          </form>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div
       style={{
@@ -545,6 +827,246 @@ export default function AttendanceKioskPage() {
         flexDirection: 'column',
       }}
     >
+      {/* ONE-TIME LOCATION & ROUTER CALIBRATION MODAL (Triggers once per station until HR Admin resets) */}
+      {stationData?.requiresCalibration && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 9999,
+            background: 'rgba(15, 23, 42, 0.45)',
+            backdropFilter: 'blur(6px)',
+            display: 'grid',
+            placeItems: 'center',
+            padding: '20px',
+          }}
+        >
+          <form
+            onSubmit={handleSaveCalibration}
+            style={{
+              background: '#ffffff',
+              border: '1px solid #e2e8f0',
+              borderRadius: '22px',
+              padding: '28px',
+              width: '100%',
+              maxWidth: '520px',
+              boxShadow: '0 24px 60px rgba(15, 23, 42, 0.16)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '16px',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: 12,
+                  background: '#fff7ed',
+                  border: '1px solid #fed7aa',
+                  display: 'grid',
+                  placeItems: 'center',
+                  flexShrink: 0,
+                }}
+              >
+                <MapPin size={22} color="#ea580c" />
+              </div>
+              <div>
+                <div
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    fontSize: '10.5px',
+                    fontWeight: 800,
+                    color: '#ea580c',
+                    background: '#fff7ed',
+                    border: '1px solid #fed7aa',
+                    padding: '2px 8px',
+                    borderRadius: '999px',
+                    marginBottom: '3px',
+                  }}
+                >
+                  ONE-TIME STATION SETUP
+                </div>
+                <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 900, color: '#0f172a' }}>
+                  Bind Office Location &amp; Router IP
+                </h2>
+              </div>
+            </div>
+
+            <div style={{ fontSize: '12.5px', color: '#475569', lineHeight: 1.55 }}>
+              Lock the exact physical GPS coordinates and Wi-Fi / Starlink router connection for{' '}
+              <strong style={{ color: '#0f172a' }}>{stationData.stationName}</strong>. Staff phones scanning this kiosk will be matched against this exact location and router. Once saved, this setup will not appear again unless reset by HR Admin.
+            </div>
+
+            {/* 1. Physical GPS Coordinates */}
+            <div
+              style={{
+                padding: '14px 16px',
+                borderRadius: '14px',
+                background: '#f8fafc',
+                border: '1px solid #e2e8f0',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '10px',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
+                <div style={{ fontSize: '12.5px', fontWeight: 800, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <MapPin size={15} color="#059669" />
+                  <span>1. Physical Reception GPS Coordinates</span>
+                </div>
+                <button
+                  type="button"
+                  disabled={calibratingGps}
+                  onClick={captureKioskGps}
+                  style={{
+                    padding: '5px 10px',
+                    borderRadius: '8px',
+                    border: '1px solid #cbd5e1',
+                    background: '#ffffff',
+                    color: '#334155',
+                    fontSize: '11.5px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                  }}
+                >
+                  <RefreshCw size={12} className={calibratingGps ? 'animate-spin' : ''} />
+                  <span>{calibratingGps ? 'Capturing GPS...' : 'Re-capture GPS'}</span>
+                </button>
+              </div>
+
+              {calCoords ? (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                  <div style={{ fontSize: '12.5px', fontWeight: 700, color: '#047857' }}>
+                    Lat: {calCoords.lat}, Lng: {calCoords.lng}
+                  </div>
+                  {calCoords.accuracy !== null && (
+                    <span
+                      style={{
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        padding: '2px 8px',
+                        borderRadius: '999px',
+                        background: '#ecfdf5',
+                        color: '#047857',
+                        border: '1px solid #a7f3d0',
+                      }}
+                    >
+                      Accuracy ±{calCoords.accuracy}m
+                    </span>
+                  )}
+                </div>
+              ) : (
+                <div style={{ fontSize: '12px', color: '#64748b' }}>
+                  {calibratingGps
+                    ? 'Acquiring high-precision GPS from this device...'
+                    : 'Allow browser Location access and click Re-capture GPS.'}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', paddingTop: '6px', borderTop: '1px solid #e2e8f0' }}>
+                <span style={{ fontSize: '11.5px', fontWeight: 700, color: '#334155' }}>Allowed Geofence Radius:</span>
+                <select
+                  value={calRadius}
+                  onChange={(e) => setCalRadius(Number(e.target.value))}
+                  style={{
+                    padding: '5px 10px',
+                    borderRadius: '8px',
+                    border: '1px solid #cbd5e1',
+                    background: '#ffffff',
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    color: '#0f172a',
+                  }}
+                >
+                  <option value={50}>50 meters (Tight Building)</option>
+                  <option value={100}>100 meters (Standard Office)</option>
+                  <option value={150}>150 meters (Compound)</option>
+                  <option value={250}>250 meters (Large Facility)</option>
+                </select>
+              </div>
+            </div>
+
+            {/* 2. Office Router / Starlink Public IP */}
+            <div
+              style={{
+                padding: '14px 16px',
+                borderRadius: '14px',
+                background: '#f8fafc',
+                border: '1px solid #e2e8f0',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '10px',
+              }}
+            >
+              <div>
+                <div style={{ fontSize: '12.5px', fontWeight: 800, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Wifi size={15} color="#0284c7" />
+                  <span>2. Office Router / Starlink IP</span>
+                </div>
+                <div style={{ fontSize: '11.5px', color: '#64748b', marginTop: '3px' }}>
+                  Make sure this kiosk is connected to the office Wi-Fi / Starlink router.
+                </div>
+              </div>
+              <span
+                style={{
+                  fontSize: '12px',
+                  fontWeight: 800,
+                  padding: '5px 10px',
+                  borderRadius: '8px',
+                  background: '#eff6ff',
+                  color: '#1d4ed8',
+                  border: '1px solid #bfdbfe',
+                  fontFamily: 'monospace',
+                }}
+              >
+                {stationData.detectedRouterIp || 'Auto-detected on save'}
+              </span>
+            </div>
+
+            {calError && (
+              <div
+                style={{
+                  padding: '10px 12px',
+                  borderRadius: '10px',
+                  background: '#fef2f2',
+                  border: '1px solid #fecaca',
+                  color: '#b91c1c',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                }}
+              >
+                {calError}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={!calCoords || savingCalibration}
+              style={{
+                width: '100%',
+                padding: '12px 16px',
+                borderRadius: '11px',
+                border: 'none',
+                background: !calCoords ? '#cbd5e1' : '#ea580c',
+                color: '#ffffff',
+                fontSize: '13.5px',
+                fontWeight: 800,
+                cursor: !calCoords ? 'not-allowed' : savingCalibration ? 'wait' : 'pointer',
+              }}
+            >
+              {savingCalibration ? 'Locking Location & Router...' : 'Confirm & Lock Location & Router IP'}
+            </button>
+          </form>
+        </div>
+      )}
       {/* 
         TOP HEADER:
         "this should close on full screen" -> When isFullscreen is active, this header automatically closes/hides.

@@ -80,6 +80,7 @@ import * as route_kiosk_access from "../api/attendance/admin/kiosk-access/route"
 import * as route_64 from "../api/attendance/kiosk-punch/route";
 import * as route_65 from "../api/attendance/punch/route";
 import * as route_66 from "../api/attendance/station/activate/route";
+import * as route_station_calibrate from "../api/attendance/station/calibrate/route";
 import * as route_67 from "../api/attendance/station/qr/route";
 import * as route_68 from "../api/attendance/timesheet/route";
 import * as route_69 from "../api/attendance/verify-geofence/route";
@@ -344,6 +345,7 @@ export function registerAllNextApiRoutes(app: FastifyInstance): void {
   mountNextRoute(app, "/api/attendance/kiosk-punch", route_64 as unknown as NextRouteModule);
   mountNextRoute(app, "/api/attendance/punch", route_65 as unknown as NextRouteModule);
   mountNextRoute(app, "/api/attendance/station/activate", route_66 as unknown as NextRouteModule);
+  mountNextRoute(app, "/api/attendance/station/calibrate", route_station_calibrate as unknown as NextRouteModule);
   mountNextRoute(app, "/api/attendance/station/qr", route_67 as unknown as NextRouteModule);
   mountNextRoute(app, "/api/attendance/timesheet", route_68 as unknown as NextRouteModule);
   mountNextRoute(app, "/api/attendance/verify-geofence", route_69 as unknown as NextRouteModule);

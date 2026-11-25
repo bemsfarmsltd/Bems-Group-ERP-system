@@ -1,7 +1,8 @@
 import { getAuthenticatedStation } from '@/lib/attendance/station-auth';
+import { isStationCalibrated } from '@/lib/attendance/kiosk-sessions';
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { generateStationQrToken } from '@/lib/attendance/token';
+import { extractClientIp, generateStationQrToken } from '@/lib/attendance/token';
 import { checkRateLimit, getClientIp } from '@/lib/rate-limiter';
 import QRCode from 'qrcode';
 
@@ -23,11 +24,23 @@ export async function GET(request: Request) {
 
     const station = await getAuthenticatedStation(request);
     if (!station) {
+      const availableStations = await prisma.attendanceStation.findMany({
+        where: { status: 'ACTIVE' },
+        select: { code: true, name: true, stateLocation: true },
+        orderBy: { createdAt: 'asc' },
+      });
       return NextResponse.json(
-        { error: 'Kiosk station activation or Executive sign-in is required to display live attendance QR codes.', requiresActivation: true },
-        { status: 401 }
+        {
+          error: 'Enter the Kiosk Access Password to unlock this attendance kiosk.',
+          requiresActivation: true,
+          availableStations,
+        },
+        { status: 401, headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0' } }
       );
     }
+
+    const detectedRouterIp = extractClientIp(request);
+    const calibrated = await isStationCalibrated(station.code);
 
     const { token, expiresInSeconds } = generateStationQrToken(station.code, station.activeSecret);
 
@@ -87,6 +100,9 @@ export async function GET(request: Request) {
       longitude: station.longitude,
       radiusMeters: station.radiusMeters,
       starlinkOverrideMode: station.starlinkOverrideMode,
+      calibratedRouterIp: station.starlinkIpAddresses || null,
+      detectedRouterIp,
+      requiresCalibration: !calibrated,
       qrToken: token,
       qrDataUrl,
       qrSvg,

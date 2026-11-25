@@ -3,6 +3,19 @@ import { prisma } from '@/lib/prisma';
 
 export const KIOSK_PASSCODE_KEY = 'ATTENDANCE_KIOSK_ACCESS_PASSWORD';
 export const KIOSK_SESSIONS_KEY = 'ATTENDANCE_KIOSK_SESSIONS';
+export const KIOSK_CALIBRATION_KEY = 'ATTENDANCE_KIOSK_CALIBRATION';
+
+export interface StationCalibrationMeta {
+  calibrated: boolean;
+  calibratedAt?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  accuracyMeters?: number | null;
+  routerIp?: string | null;
+  deviceLabel?: string | null;
+  resetAt?: string | null;
+  resetByName?: string | null;
+}
 
 export interface KioskPasswordMeta {
   hash: string;
@@ -269,4 +282,117 @@ export async function revokeAllKioskSessions(
   );
   await saveKioskSessions(updated, actorId);
   return updated;
+}
+
+export async function getStationCalibrationMap(): Promise<Record<string, StationCalibrationMeta>> {
+  const row = await prisma.workspaceSetting.findFirst({
+    where: { key: KIOSK_CALIBRATION_KEY },
+    orderBy: { updatedAt: 'desc' },
+  });
+  if (!row?.value) return {};
+  try {
+    const parsed = JSON.parse(row.value);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Record<string, StationCalibrationMeta>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+async function saveStationCalibrationMap(
+  map: Record<string, StationCalibrationMeta>,
+  actorId?: string | null
+): Promise<void> {
+  const existing = await prisma.workspaceSetting.findFirst({
+    where: { key: KIOSK_CALIBRATION_KEY },
+    orderBy: { updatedAt: 'desc' },
+  });
+
+  if (existing) {
+    await prisma.workspaceSetting.update({
+      where: { id: existing.id },
+      data: { value: JSON.stringify(map), ...(actorId ? { updatedById: actorId } : {}) },
+    });
+  } else {
+    const orgId = await resolveRootOrganizationId();
+    const resolvedActorId =
+      actorId ||
+      (await prisma.employee.findFirst({ where: { status: 'ACTIVE' }, select: { id: true } }))?.id ||
+      'SYSTEM';
+    await prisma.workspaceSetting.create({
+      data: {
+        organizationId: orgId,
+        key: KIOSK_CALIBRATION_KEY,
+        value: JSON.stringify(map),
+        updatedById: resolvedActorId,
+      },
+    });
+  }
+}
+
+export async function isStationCalibrated(stationCode: string): Promise<boolean> {
+  if (!stationCode) return false;
+  const map = await getStationCalibrationMap();
+  return Boolean(map[stationCode]?.calibrated);
+}
+
+export async function markStationCalibrated(params: {
+  stationCode: string;
+  latitude: number;
+  longitude: number;
+  accuracyMeters?: number | null;
+  routerIp?: string | null;
+  deviceLabel?: string | null;
+}): Promise<StationCalibrationMeta> {
+  const map = await getStationCalibrationMap();
+  const prev = map[params.stationCode] || { calibrated: false };
+  const next: StationCalibrationMeta = {
+    ...prev,
+    calibrated: true,
+    calibratedAt: new Date().toISOString(),
+    latitude: params.latitude,
+    longitude: params.longitude,
+    accuracyMeters: params.accuracyMeters ?? null,
+    routerIp: params.routerIp || null,
+    deviceLabel: params.deviceLabel || null,
+  };
+  map[params.stationCode] = next;
+  await saveStationCalibrationMap(map);
+  return next;
+}
+
+export async function resetStationCalibration(
+  stationCodeOrAll: string,
+  actorId: string,
+  actorName: string
+): Promise<Record<string, StationCalibrationMeta>> {
+  const map = await getStationCalibrationMap();
+  const nowIso = new Date().toISOString();
+
+  if (stationCodeOrAll === 'ALL') {
+    const stations = await prisma.attendanceStation.findMany({
+      where: { status: 'ACTIVE' },
+      select: { code: true },
+    });
+    const codes = new Set([...Object.keys(map), ...stations.map((s) => s.code)]);
+    for (const code of codes) {
+      map[code] = {
+        ...(map[code] || {}),
+        calibrated: false,
+        resetAt: nowIso,
+        resetByName: actorName,
+      };
+    }
+  } else {
+    map[stationCodeOrAll] = {
+      ...(map[stationCodeOrAll] || {}),
+      calibrated: false,
+      resetAt: nowIso,
+      resetByName: actorName,
+    };
+  }
+
+  await saveStationCalibrationMap(map, actorId);
+  return map;
 }
