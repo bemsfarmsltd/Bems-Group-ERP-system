@@ -44,6 +44,8 @@ const READ_ONLY_AUTH_ALLOWLIST = new Set([
   '/api/ai/memory',
   '/api/attendance/punch',
   '/api/attendance/kiosk-punch',
+  '/api/attendance/face/enroll',
+  '/api/attendance/face-punch',
   '/api/attendance/verify-geofence',
   '/api/attendance/station/activate',
   '/api/attendance/station/calibrate',
