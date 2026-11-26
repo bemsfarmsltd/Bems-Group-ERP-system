@@ -66,7 +66,7 @@ export async function markDailyAbsences(params: MarkDailyAbsencesParams = {}) {
     prisma.employee.findMany({
       where: {
         status: 'ACTIVE',
-        role: 'STAFF',
+        role: { in: ['STAFF', 'CUSTOM_ADMIN'] },
         isAttendanceExempt: false,
       },
       include: {

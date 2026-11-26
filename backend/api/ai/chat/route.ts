@@ -1908,7 +1908,7 @@ title: "<Chart Title>"
       const orgFilter = scopedOrgId ? [scopedOrgId] : authorizedScope.organizationIds;
       const activeStaff = await prisma.employee.findMany({
         where: {
-          role: 'STAFF',
+          role: { in: ['STAFF', 'CUSTOM_ADMIN'] },
           status: 'ACTIVE',
           approvalStatus: 'APPROVED',
           isAttendanceExempt: false,
@@ -2026,7 +2026,7 @@ title: "<Chart Title>"
       for (const emp of activeEmployees) {
         const subName = emp.assignments[0]?.subsidiary?.legalName || scopedOrgName || 'BEMS Group';
         bySub.set(subName, (bySub.get(subName) || 0) + 1);
-        if (emp.role === 'STAFF' && !emp.isAttendanceExempt) attendanceRequired++;
+        if ((emp.role === 'STAFF' || emp.role === 'CUSTOM_ADMIN') && !emp.isAttendanceExempt) attendanceRequired++;
       }
       const breakdown = Array.from(bySub.entries())
         .sort((a, b) => b[1] - a[1])
