@@ -25,36 +25,12 @@ export async function GET(request: Request) {
     if (!authorized) return NextResponse.json({ error: 'Forbidden: HR or Executive access required.' }, { status: 403 });
 
     await ensureFaceAttendanceSchema();
-    const [modeConfig, stations, employees, faceRows] = await Promise.all([
+    const [modeConfig, stations, faceRows] = await Promise.all([
       getFaceAttendanceModeConfig(),
       prisma.attendanceStation.findMany({
         where: { status: 'ACTIVE' },
         select: { id: true, code: true, name: true, stateLocation: true },
         orderBy: { createdAt: 'asc' },
-      }),
-      prisma.employee.findMany({
-        where: {
-          status: 'ACTIVE',
-          role: { in: ['STAFF', 'CUSTOM_ADMIN'] },
-          isAttendanceExempt: false,
-        },
-        select: {
-          id: true,
-          legalName: true,
-          employeeNumber: true,
-          workEmail: true,
-          role: true,
-          avatarUrl: true,
-          assignments: {
-            where: { status: 'ACTIVE' },
-            take: 1,
-            select: {
-              subsidiary: { select: { id: true, legalName: true, code: true } },
-              department: { select: { id: true, name: true } },
-            },
-          },
-        },
-        orderBy: { legalName: 'asc' },
       }),
       prisma.$queryRawUnsafe<
         Array<{
@@ -76,6 +52,37 @@ export async function GET(request: Request) {
       ),
     ]);
 
+    const enrolledIds = faceRows.map((r) => r.employeeId);
+    const employees = await prisma.employee.findMany({
+      where: {
+        status: 'ACTIVE',
+        OR: [
+          {
+            role: { in: ['STAFF', 'CUSTOM_ADMIN'] },
+            isAttendanceExempt: false,
+          },
+          ...(enrolledIds.length > 0 ? [{ id: { in: enrolledIds } }] : []),
+        ],
+      },
+      select: {
+        id: true,
+        legalName: true,
+        employeeNumber: true,
+        workEmail: true,
+        role: true,
+        avatarUrl: true,
+        assignments: {
+          where: { status: 'ACTIVE' },
+          take: 1,
+          select: {
+            subsidiary: { select: { id: true, legalName: true, code: true } },
+            department: { select: { id: true, name: true } },
+          },
+        },
+      },
+      orderBy: { legalName: 'asc' },
+    });
+
     const faceMap = new Map(faceRows.map((r) => [r.employeeId, r]));
 
     let approvedCount = 0;
@@ -83,33 +90,45 @@ export async function GET(request: Request) {
     let rejectedCount = 0;
     let notEnrolledCount = 0;
 
-    const registry = employees.map((emp) => {
-      const fp = faceMap.get(emp.id) || null;
-      const status = fp?.status || 'NOT_ENROLLED';
-      if (status === 'APPROVED') approvedCount++;
-      else if (status === 'PENDING_APPROVAL') pendingCount++;
-      else if (status === 'REJECTED') rejectedCount++;
-      else notEnrolledCount++;
+    const registry = employees
+      .map((emp) => {
+        const fp = faceMap.get(emp.id) || null;
+        const rawStatus = fp?.status || 'NOT_ENROLLED';
+        const status = rawStatus === 'PENDING_APPROVAL' ? 'APPROVED' : rawStatus;
+        if (status === 'APPROVED') approvedCount++;
+        else if (status === 'REJECTED') rejectedCount++;
+        else notEnrolledCount++;
 
-      return {
-        employeeId: emp.id,
-        legalName: emp.legalName,
-        employeeNumber: emp.employeeNumber,
-        workEmail: emp.workEmail,
-        role: emp.role,
-        avatarUrl: emp.avatarUrl,
-        subsidiaryName: emp.assignments[0]?.subsidiary?.legalName || 'BEMS Group',
-        departmentName: emp.assignments[0]?.department?.name || 'Operations',
-        faceStatus: status,
-        referencePhotoUrl: fp?.referencePhotoUrl || null,
-        sampleCount: fp?.sampleCount || 0,
-        livenessVerified: fp?.livenessVerified ?? false,
-        enrolledAt: fp?.enrolledAt || null,
-        approvedByName: fp?.approvedByName || null,
-        approvedAt: fp?.approvedAt || null,
-        rejectionReason: fp?.rejectionReason || null,
-      };
-    });
+        return {
+          employeeId: emp.id,
+          legalName: emp.legalName,
+          employeeNumber: emp.employeeNumber,
+          workEmail: emp.workEmail,
+          role: emp.role,
+          avatarUrl: emp.avatarUrl,
+          subsidiaryName: emp.assignments[0]?.subsidiary?.legalName || 'BEMS Group',
+          departmentName: emp.assignments[0]?.department?.name || 'Operations',
+          faceStatus: status,
+          referencePhotoUrl: fp?.referencePhotoUrl || null,
+          sampleCount: fp?.sampleCount || 0,
+          livenessVerified: fp?.livenessVerified ?? false,
+          enrolledAt: fp?.enrolledAt || null,
+          approvedByName: fp?.approvedByName || 'Instant Self-Service Activation',
+          approvedAt: fp?.approvedAt || fp?.enrolledAt || null,
+          rejectionReason: fp?.rejectionReason || null,
+        };
+      })
+      .sort((a, b) => {
+        const rank = (s: string) => (s === 'APPROVED' ? 0 : s === 'REJECTED' ? 1 : 2);
+        const rDiff = rank(a.faceStatus) - rank(b.faceStatus);
+        if (rDiff !== 0) return rDiff;
+        if (a.faceStatus === 'APPROVED' && b.faceStatus === 'APPROVED') {
+          const tA = a.enrolledAt ? new Date(a.enrolledAt).getTime() : 0;
+          const tB = b.enrolledAt ? new Date(b.enrolledAt).getTime() : 0;
+          if (tB !== tA) return tB - tA;
+        }
+        return a.legalName.localeCompare(b.legalName);
+      });
 
     return NextResponse.json({
       modeConfig,

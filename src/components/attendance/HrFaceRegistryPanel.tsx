@@ -1,7 +1,104 @@
 'use client';
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { Camera, CheckCircle2, QrCode, RefreshCw, RotateCcw, ShieldCheck, XCircle } from 'lucide-react';
+import { Camera, CheckCircle2, QrCode, RefreshCw, RotateCcw, Search, ShieldCheck, XCircle } from 'lucide-react';
+
+export function TopBarAttendanceModeSwitcher({
+  onOpenFaceTab,
+}: {
+  onOpenFaceTab?: () => void;
+}) {
+  const [globalMode, setGlobalMode] = useState<'QR' | 'FACE'>('QR');
+  const [approvedCount, setApprovedCount] = useState<number>(0);
+  const [busy, setBusy] = useState(false);
+
+  const loadMode = useCallback(async () => {
+    try {
+      const res = await fetch('/api/attendance/face/admin', { cache: 'no-store' });
+      if (res.ok) {
+        const json = await res.json();
+        setGlobalMode(json?.modeConfig?.globalMode === 'FACE' ? 'FACE' : 'QR');
+        setApprovedCount((json?.counts?.approved || 0) + (json?.counts?.pending || 0));
+      }
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    loadMode();
+  }, [loadMode]);
+
+  const toggleMode = async () => {
+    const nextMode = globalMode === 'FACE' ? 'QR' : 'FACE';
+    try {
+      setBusy(true);
+      const res = await fetch('/api/attendance/face/admin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'SET_MODE', globalMode: nextMode }),
+      });
+      if (res.ok) {
+        setGlobalMode(nextMode);
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+      <button
+        type="button"
+        onClick={toggleMode}
+        disabled={busy}
+        title="Switch active kiosk attendance system between QR Code and Face Recognition"
+        style={{
+          padding: '7px 12px',
+          borderRadius: '8px',
+          background: globalMode === 'FACE' ? '#ecfdf5' : '#fff7ed',
+          color: globalMode === 'FACE' ? '#047857' : '#ea580c',
+          border: `1px solid ${globalMode === 'FACE' ? '#a7f3d0' : '#fed7aa'}`,
+          fontSize: '11.5px',
+          fontWeight: 800,
+          cursor: 'pointer',
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '6px',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {globalMode === 'FACE' ? <Camera size={12} /> : <QrCode size={12} />}
+        <span>
+          {globalMode === 'FACE'
+            ? 'Mode: Face ID Kiosk (Switch to QR)'
+            : 'Mode: QR Code (Switch to Face ID)'}
+        </span>
+      </button>
+      {onOpenFaceTab && (
+        <button
+          type="button"
+          onClick={onOpenFaceTab}
+          style={{
+            padding: '7px 11px',
+            borderRadius: '8px',
+            background: '#f8fafc',
+            color: '#334155',
+            border: '1px solid #cbd5e1',
+            fontSize: '11.5px',
+            fontWeight: 700,
+            cursor: 'pointer',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '5px',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          <Camera size={12} color="#ea580c" />
+          <span>Face Registry ({approvedCount})</span>
+        </button>
+      )}
+    </div>
+  );
+}
 
 interface HrFaceRegistryPanelProps {
   onModeChanged?: () => void;
@@ -12,6 +109,7 @@ export function HrFaceRegistryPanel({ onModeChanged }: HrFaceRegistryPanelProps)
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [filter, setFilter] = useState<'ALL' | 'PENDING_APPROVAL' | 'APPROVED' | 'NOT_ENROLLED'>('ALL');
+  const [searchQuery, setSearchQuery] = useState('');
   const [feedback, setFeedback] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
@@ -73,12 +171,22 @@ export function HrFaceRegistryPanel({ onModeChanged }: HrFaceRegistryPanelProps)
   };
 
   const globalMode: 'QR' | 'FACE' = data?.modeConfig?.globalMode === 'FACE' ? 'FACE' : 'QR';
-  const requireHrApproval: boolean = data?.modeConfig?.requireHrApproval !== false;
   const counts = data?.counts || { total: 0, approved: 0, pending: 0, rejected: 0, notEnrolled: 0 };
   const stations: any[] = data?.stations || [];
-  const registry: any[] = (data?.registry || []).filter((r: any) =>
-    filter === 'ALL' ? true : r.faceStatus === filter
-  );
+  const qNorm = searchQuery.trim().toLowerCase();
+  const registry: any[] = (data?.registry || []).filter((r: any) => {
+    const statusMatch =
+      filter === 'ALL'
+        ? true
+        : filter === 'APPROVED'
+        ? r.faceStatus === 'APPROVED' || r.faceStatus === 'PENDING_APPROVAL'
+        : r.faceStatus === filter;
+    if (!statusMatch) return false;
+    if (!qNorm) return true;
+    return `${r.legalName} ${r.employeeNumber} ${r.workEmail} ${r.subsidiaryName}`
+      .toLowerCase()
+      .includes(qNorm);
+  });
 
   return (
     <div
@@ -305,9 +413,33 @@ export function HrFaceRegistryPanel({ onModeChanged }: HrFaceRegistryPanelProps)
           ))}
         </div>
 
-        <span style={{ fontSize: '11.5px', fontWeight: 700, color: '#059669' }}>
-          ✓ Self-service Face IDs activate immediately upon liveness verification
-        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+          <div style={{ position: 'relative' }}>
+            <Search
+              size={13}
+              color="#94a3b8"
+              style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)' }}
+            />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search staff name or ID..."
+              style={{
+                padding: '6px 10px 6px 28px',
+                borderRadius: '8px',
+                border: '1px solid #cbd5e1',
+                background: '#ffffff',
+                fontSize: '12px',
+                color: '#0f172a',
+                width: '210px',
+              }}
+            />
+          </div>
+          <span style={{ fontSize: '11.5px', fontWeight: 700, color: '#059669' }}>
+            ✓ Enrolled faces appear at the top &amp; activate immediately
+          </span>
+        </div>
       </div>
 
       {/* Staff Face Registry Table */}

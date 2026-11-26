@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import KioskAccessControlPanel from '@/components/attendance/KioskAccessControlPanel';
-import { HrFaceRegistryPanel } from '@/components/attendance/HrFaceRegistryPanel';
+import { HrFaceRegistryPanel, TopBarAttendanceModeSwitcher } from '@/components/attendance/HrFaceRegistryPanel';
 import {
   Clock,
   Users,
@@ -1031,6 +1031,8 @@ export default function AttendanceDeskPage() {
               <span>{policy.requireGeofence ? 'Bypass Geofence' : 'Enforce Geofence'}</span>
             </button>
 
+            <TopBarAttendanceModeSwitcher onOpenFaceTab={() => setActiveTab('face' as any)} />
+
             <Link
               href="/attendance/kiosk"
               target="_blank"
@@ -1074,6 +1076,7 @@ export default function AttendanceDeskPage() {
               { id: 'calendar', label: 'Monthly Calendar', icon: CalendarDays },
               { id: 'live', label: 'Live Presence', icon: Clock },
               { id: 'roster', label: 'Weekly Off-Days', icon: Calendar },
+              { id: 'face', label: 'Face ID Registry', icon: ShieldCheck },
               { id: 'kiosks', label: 'Kiosk Stations & Access', icon: QrCode },
               { id: 'policy', label: 'Shift & Deduction Rules', icon: Settings },
               { id: 'payroll', label: 'Payroll Penalties', icon: ShieldCheck },
@@ -2656,6 +2659,13 @@ export default function AttendanceDeskPage() {
                 );
               })}
             </div>
+          </div>
+        )}
+
+        {/* Tab: Dedicated Face ID Registry & Dual Attendance Mode */}
+        {(activeTab as string) === 'face' && (
+          <div style={{ display: 'grid', gap: '16px', width: '100%' }}>
+            <HrFaceRegistryPanel />
           </div>
         )}
 
