@@ -31,15 +31,24 @@ jobs:
       - name: Pull and rebuild bemserp-api on Hostinger VPS
         env:
           GEMINI_KEY_SECRET: ${{ secrets.GEMINI_API_KEY }}
+          RESEND_KEY_SECRET: ${{ secrets.RESEND_API_KEY }}
         run: |
+          GEMINI_B64=$(printf '%s' "$GEMINI_KEY_SECRET" | base64 -w0)
+          RESEND_B64=$(printf '%s' "$RESEND_KEY_SECRET" | base64 -w0)
           ssh -o StrictHostKeyChecking=accept-new ${{ secrets.VPS_USER || 'root' }}@${{ secrets.VPS_HOST || '194.31.150.67' }} "
             set -e
             cd /opt/bemserp
             git fetch origin main
             git reset --hard origin/main
-            if [ -n \"\$GEMINI_KEY_SECRET\" ] && [ -f .env ]; then
+            if [ -n '${GEMINI_B64}' ] && [ -f .env ]; then
+              GEMINI_VAL=\$(printf '%s' '${GEMINI_B64}' | base64 -d)
               grep -v '^GEMINI_API_KEY=' .env > .env.tmp && mv .env.tmp .env
-              echo \"GEMINI_API_KEY=\\\"\$GEMINI_KEY_SECRET\\\"\" >> .env
+              printf 'GEMINI_API_KEY=\"%s\"\n' \"\$GEMINI_VAL\" >> .env
+            fi
+            if [ -n '${RESEND_B64}' ] && [ -f .env ]; then
+              RESEND_VAL=\$(printf '%s' '${RESEND_B64}' | base64 -d)
+              grep -v '^RESEND_API_KEY=' .env > .env.tmp && mv .env.tmp .env
+              printf 'RESEND_API_KEY=\"%s\"\n' \"\$RESEND_VAL\" >> .env
             fi
             docker compose -f docker-compose.vps.yml up -d --build bemserp-api
             for i in \$(seq 1 12); do
