@@ -228,3 +228,60 @@ export function captureFaceThumbnailDataUrl(videoEl: HTMLVideoElement): string |
     return null;
   }
 }
+
+let lastSpokenText = '';
+let lastSpokenAt = 0;
+
+/**
+ * Smart Web Speech API voice coach for Face ID enrollment & Kiosk recognition.
+ * Automatically debounces repeated prompts and selects a clear natural English voice.
+ */
+export function speakFaceVoicePrompt(
+  text: string,
+  options?: { force?: boolean; muted?: boolean; minIntervalMs?: number }
+): void {
+  if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+  if (options?.muted) return;
+
+  const clean = text.trim();
+  if (!clean) return;
+
+  const now = Date.now();
+  const minInterval = options?.minIntervalMs ?? 3500;
+  if (!options?.force && clean === lastSpokenText && now - lastSpokenAt < minInterval) {
+    return;
+  }
+  if (!options?.force && now - lastSpokenAt < 1600) {
+    return;
+  }
+
+  try {
+    lastSpokenText = clean;
+    lastSpokenAt = now;
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(clean);
+    utterance.rate = 1.02;
+    utterance.pitch = 1.0;
+    utterance.volume = 1.0;
+
+    const voices = window.speechSynthesis.getVoices();
+    const preferred =
+      voices.find((v) => /en-(NG|GB|US)/i.test(v.lang) && /natural|google|samantha|daniel|karen|serena/i.test(v.name)) ||
+      voices.find((v) => /^en/i.test(v.lang));
+    if (preferred) {
+      utterance.voice = preferred;
+    }
+
+    window.speechSynthesis.speak(utterance);
+  } catch {
+    // ignore speech synthesis restrictions
+  }
+}
+
+export function stopFaceVoicePrompt(): void {
+  if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+  try {
+    window.speechSynthesis.cancel();
+  } catch {}
+}
+

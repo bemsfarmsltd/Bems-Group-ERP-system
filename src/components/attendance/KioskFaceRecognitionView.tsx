@@ -1,8 +1,13 @@
 'use client';
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Camera, CheckCircle2, LogIn, LogOut, RefreshCw, ShieldAlert, Sparkles } from 'lucide-react';
-import { analyzeVideoFaceFrame, loadFaceApiModels } from '@/lib/attendance/face-client';
+import { Camera, CheckCircle2, LogIn, LogOut, RefreshCw, ShieldAlert, Sparkles, Volume2, VolumeX } from 'lucide-react';
+import {
+  analyzeVideoFaceFrame,
+  loadFaceApiModels,
+  speakFaceVoicePrompt,
+  stopFaceVoicePrompt,
+} from '@/lib/attendance/face-client';
 
 interface KioskFaceRecognitionViewProps {
   stationCode: string;
@@ -22,6 +27,8 @@ export function KioskFaceRecognitionView({
   const [faceDetected, setFaceDetected] = useState(false);
   const [livenessReady, setLivenessReady] = useState(false);
   const [verifying, setVerifying] = useState(false);
+  const [voiceMuted, setVoiceMuted] = useState(false);
+  const voiceMutedRef = useRef(false);
   const [banner, setBanner] = useState<{
     type: 'success' | 'error';
     title: string;
@@ -39,8 +46,14 @@ export function KioskFaceRecognitionView({
     actionRef.current = action;
   }, [action]);
 
+  useEffect(() => {
+    voiceMutedRef.current = voiceMuted;
+    if (voiceMuted) stopFaceVoicePrompt();
+  }, [voiceMuted]);
+
   const stopCamera = useCallback(() => {
     activeRef.current = false;
+    stopFaceVoicePrompt();
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
@@ -101,6 +114,10 @@ export function KioskFaceRecognitionView({
               baselineEar = Math.max(0.24, frame.ear);
               baselineYaw = frame.yawRatio;
               setStatusText('Face detected — blink naturally or slightly nod/turn head to verify liveness...');
+              speakFaceVoicePrompt('Face detected. Please blink naturally or nod slightly.', {
+                muted: voiceMutedRef.current,
+                minIntervalMs: 5000,
+              });
             } else {
               const blinked = frame.ear < Math.min(0.22, baselineEar * 0.84);
               const turned = baselineYaw !== null && Math.abs(frame.yawRatio - baselineYaw) >= 0.09;
@@ -127,6 +144,18 @@ export function KioskFaceRecognitionView({
                 setLivenessReady(false);
 
                 if (res.ok && json.success) {
+                  const firstName = String(json.employeeName || 'Staff').split(' ')[0];
+                  const spoken =
+                    json.alreadyCheckedIn
+                      ? `Hello ${firstName}, you are already checked in for today at ${json.timeStr}.`
+                      : json.alreadyCheckedOut
+                      ? `Hello ${firstName}, you already checked out today at ${json.timeStr}.`
+                      : actionRef.current === 'CHECK_OUT'
+                      ? `Goodbye ${firstName}! Checked out at ${json.timeStr}.`
+                      : json.status === 'LATE'
+                      ? `Welcome ${firstName}! Clocked in late at ${json.timeStr}.`
+                      : `Welcome ${firstName}! Clocked in on time at ${json.timeStr}.`;
+                  speakFaceVoicePrompt(spoken, { force: true, muted: voiceMutedRef.current });
                   setBanner({
                     type: 'success',
                     title: `${json.employeeName} (${json.employeeNumber})`,
@@ -135,6 +164,10 @@ export function KioskFaceRecognitionView({
                   });
                   onSuccessPunch?.(json);
                 } else {
+                  speakFaceVoicePrompt(
+                    json?.error || 'Face not recognized. Please look directly at the camera.',
+                    { force: true, muted: voiceMutedRef.current }
+                  );
                   setBanner({
                     type: 'error',
                     title: 'Face ID Check-In Not Completed',
@@ -335,26 +368,47 @@ export function KioskFaceRecognitionView({
         </div>
       )}
 
-      <button
-        type="button"
-        onClick={startScanner}
-        style={{
-          marginTop: '8px',
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: '5px',
-          padding: '5px 10px',
-          borderRadius: '8px',
-          border: '1px solid #e2e8f0',
-          background: '#ffffff',
-          color: '#64748b',
-          fontSize: '11px',
-          fontWeight: 700,
-          cursor: 'pointer',
-        }}
-      >
-        <RefreshCw size={11} /> Restart Camera
-      </button>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
+        <button
+          type="button"
+          onClick={() => setVoiceMuted((m) => !m)}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '5px',
+            padding: '5px 10px',
+            borderRadius: '8px',
+            border: '1px solid #e2e8f0',
+            background: voiceMuted ? '#f8fafc' : '#fff7ed',
+            color: voiceMuted ? '#64748b' : '#ea580c',
+            fontSize: '11px',
+            fontWeight: 700,
+            cursor: 'pointer',
+          }}
+        >
+          {voiceMuted ? <VolumeX size={11} /> : <Volume2 size={11} />}
+          {voiceMuted ? 'Voice Guide Off' : 'Voice Guide On'}
+        </button>
+        <button
+          type="button"
+          onClick={startScanner}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '5px',
+            padding: '5px 10px',
+            borderRadius: '8px',
+            border: '1px solid #e2e8f0',
+            background: '#ffffff',
+            color: '#64748b',
+            fontSize: '11px',
+            fontWeight: 700,
+            cursor: 'pointer',
+          }}
+        >
+          <RefreshCw size={11} /> Restart Camera
+        </button>
+      </div>
     </div>
   );
 }

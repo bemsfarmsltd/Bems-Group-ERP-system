@@ -1,11 +1,13 @@
 'use client';
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Camera, CheckCircle2, Clock, RefreshCw, ShieldAlert, ShieldCheck, Sparkles, X } from 'lucide-react';
+import { Camera, CheckCircle2, Clock, RefreshCw, ShieldAlert, ShieldCheck, Sparkles, Volume2, VolumeX, X } from 'lucide-react';
 import {
   analyzeVideoFaceFrame,
   captureFaceThumbnailDataUrl,
   loadFaceApiModels,
+  speakFaceVoicePrompt,
+  stopFaceVoicePrompt,
 } from '@/lib/attendance/face-client';
 
 interface FaceProfileResponse {
@@ -45,6 +47,13 @@ export function StaffFaceEnrollmentCard({
   const [statusHint, setStatusHint] = useState('Initializing camera & biometric models...');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [voiceMuted, setVoiceMuted] = useState(false);
+  const voiceMutedRef = useRef(false);
+
+  useEffect(() => {
+    voiceMutedRef.current = voiceMuted;
+    if (voiceMuted) stopFaceVoicePrompt();
+  }, [voiceMuted]);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -94,6 +103,7 @@ export function StaffFaceEnrollmentCard({
 
   const stopCamera = useCallback(() => {
     loopActiveRef.current = false;
+    stopFaceVoicePrompt();
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
@@ -123,8 +133,15 @@ export function StaffFaceEnrollmentCard({
         throw new Error(json?.error || 'Failed to save Face ID.');
       }
       setStep('DONE');
-      setStatusHint(json.message || 'Face ID registered successfully!');
-      stopCamera();
+      setStatusHint(json.message || 'Face ID registered and activated!');
+      speakFaceVoicePrompt(
+        'Face ID registered and activated! You can now clock in at the office reception kiosk camera.',
+        { force: true, muted: voiceMutedRef.current }
+      );
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
+      }
       await fetchProfile();
     } catch (err: any) {
       setErrorMsg(err?.message || 'Enrollment failed. Please try again.');
@@ -158,16 +175,29 @@ export function StaffFaceEnrollmentCard({
       let currentStep: CaptureStep = 'STRAIGHT';
       let openEyeFrames = 0;
 
+      speakFaceVoicePrompt(
+        'Welcome to BEMS Face ID setup. Step 1: Please center your face in the oval and look straight at the camera.',
+        { force: true, muted: voiceMutedRef.current }
+      );
+
       const tick = async () => {
         if (!loopActiveRef.current || !videoRef.current) return;
         try {
           const frame = await analyzeVideoFaceFrame(videoRef.current, true);
           if (frame.multipleFaces) {
             setStatusHint('Multiple faces detected — make sure only you are in front of the camera.');
+            speakFaceVoicePrompt('Multiple faces detected. Please ensure only you are in front of the camera.', {
+              muted: voiceMutedRef.current,
+              minIntervalMs: 5000,
+            });
           } else if (!frame.detected || !frame.descriptor) {
             setStatusHint('Center your face inside the frame in clear front lighting.');
           } else if (frame.faceSizeRatio < 0.2) {
             setStatusHint('Move slightly closer to the camera.');
+            speakFaceVoicePrompt('Please move slightly closer to the camera.', {
+              muted: voiceMutedRef.current,
+              minIntervalMs: 4500,
+            });
           } else if (currentStep === 'STRAIGHT') {
             if (Math.abs(frame.yawRatio) <= 0.18) {
               samplesRef.current.push(frame.descriptor);
@@ -176,6 +206,10 @@ export function StaffFaceEnrollmentCard({
               currentStep = 'TURN_HEAD';
               setStep('TURN_HEAD');
               setStatusHint('Great! Now slightly turn your head left or right.');
+              speakFaceVoicePrompt('Great! Step 2: Now slowly turn your head slightly to the left or right.', {
+                force: true,
+                muted: voiceMutedRef.current,
+              });
             } else {
               setStatusHint('Step 1 of 3: Look straight at the camera.');
             }
@@ -185,6 +219,10 @@ export function StaffFaceEnrollmentCard({
               currentStep = 'BLINK';
               setStep('BLINK');
               setStatusHint('Step 3 of 3 (Liveness): Look straight and blink both eyes naturally (or nod slightly).');
+              speakFaceVoicePrompt(
+                'Almost done! Step 3: Look straight at the camera and blink both eyes naturally.',
+                { force: true, muted: voiceMutedRef.current }
+              );
             } else {
               setStatusHint('Step 2 of 3: Slightly turn your head left or right.');
             }
@@ -510,30 +548,53 @@ export function StaffFaceEnrollmentCard({
                   Self-Service Face ID Registration
                 </h3>
                 <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#64748b' }}>
-                  One-time biometric enrollment with anti-spoofing liveness check
+                  Voice-guided biometric setup with anti-spoofing liveness check
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  stopCamera();
-                  setModalOpen(false);
-                }}
-                style={{
-                  border: '1px solid #e2e8f0',
-                  background: '#f8fafc',
-                  borderRadius: '8px',
-                  width: '32px',
-                  height: '32px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: 'pointer',
-                  color: '#475569',
-                }}
-              >
-                <X size={16} />
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <button
+                  type="button"
+                  onClick={() => setVoiceMuted((m) => !m)}
+                  title={voiceMuted ? 'Unmute Voice Guide' : 'Mute Voice Guide'}
+                  style={{
+                    border: '1px solid #e2e8f0',
+                    background: voiceMuted ? '#f8fafc' : '#fff7ed',
+                    borderRadius: '8px',
+                    padding: '6px 10px',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    cursor: 'pointer',
+                    color: voiceMuted ? '#64748b' : '#ea580c',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                  }}
+                >
+                  {voiceMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}
+                  {voiceMuted ? 'Voice Off' : 'Voice On'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    stopCamera();
+                    setModalOpen(false);
+                  }}
+                  style={{
+                    border: '1px solid #e2e8f0',
+                    background: '#f8fafc',
+                    borderRadius: '8px',
+                    width: '32px',
+                    height: '32px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    color: '#475569',
+                  }}
+                >
+                  <X size={16} />
+                </button>
+              </div>
             </div>
 
             {/* Step Progress Pills */}

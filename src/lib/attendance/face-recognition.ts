@@ -38,6 +38,13 @@ export async function ensureFaceAttendanceSchema(): Promise<void> {
     await prisma.$executeRawUnsafe(`
       CREATE INDEX IF NOT EXISTS "EmployeeFaceProfile_status_idx" ON "EmployeeFaceProfile"("status");
     `);
+    await prisma.$executeRawUnsafe(`
+      UPDATE "EmployeeFaceProfile"
+      SET "status" = 'APPROVED',
+          "approvedByName" = COALESCE("approvedByName", 'Auto-Activated'),
+          "approvedAt" = COALESCE("approvedAt", CURRENT_TIMESTAMP)
+      WHERE "status" = 'PENDING_APPROVAL';
+    `);
     schemaEnsured = true;
   } catch (err) {
     console.warn('[FaceAttendance] Schema ensure warning:', err);
@@ -55,7 +62,7 @@ async function resolveRootOrganizationId(): Promise<string> {
 export async function getFaceAttendanceModeConfig(): Promise<FaceAttendanceModeConfig> {
   const defaults: FaceAttendanceModeConfig = {
     globalMode: 'QR',
-    requireHrApproval: true,
+    requireHrApproval: false,
     stationOverrides: {},
     updatedAt: new Date().toISOString(),
     updatedByName: null,
@@ -69,7 +76,7 @@ export async function getFaceAttendanceModeConfig(): Promise<FaceAttendanceModeC
     const parsed = JSON.parse(row.value);
     return {
       globalMode: parsed?.globalMode === 'FACE' ? 'FACE' : 'QR',
-      requireHrApproval: parsed?.requireHrApproval !== false,
+      requireHrApproval: false,
       stationOverrides:
         parsed?.stationOverrides && typeof parsed.stationOverrides === 'object'
           ? parsed.stationOverrides

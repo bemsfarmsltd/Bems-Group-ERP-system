@@ -282,8 +282,7 @@ export function HrFaceRegistryPanel({ onModeChanged }: HrFaceRegistryPanelProps)
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
           {[
             { key: 'ALL', label: `All Staff (${counts.total})` },
-            { key: 'PENDING_APPROVAL', label: `Pending Approval (${counts.pending})` },
-            { key: 'APPROVED', label: `Approved Face ID (${counts.approved})` },
+            { key: 'APPROVED', label: `Active Face ID (${counts.approved + counts.pending})` },
             { key: 'NOT_ENROLLED', label: `Not Enrolled (${counts.notEnrolled})` },
           ].map((tab) => (
             <button
@@ -306,24 +305,9 @@ export function HrFaceRegistryPanel({ onModeChanged }: HrFaceRegistryPanelProps)
           ))}
         </div>
 
-        <label
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '6px',
-            fontSize: '12px',
-            fontWeight: 700,
-            color: '#334155',
-            cursor: 'pointer',
-          }}
-        >
-          <input
-            type="checkbox"
-            checked={requireHrApproval}
-            onChange={(e) => updateMode({ requireHrApproval: e.target.checked })}
-          />
-          Require HR Approval for new self-service Face IDs
-        </label>
+        <span style={{ fontSize: '11.5px', fontWeight: 700, color: '#059669' }}>
+          ✓ Self-service Face IDs activate immediately upon liveness verification
+        </span>
       </div>
 
       {/* Staff Face Registry Table */}

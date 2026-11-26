@@ -70,8 +70,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const modeConfig = await getFaceAttendanceModeConfig();
-    const nextStatus = modeConfig.requireHrApproval ? 'PENDING_APPROVAL' : 'APPROVED';
+    const nextStatus = 'APPROVED';
     const descriptorsJson = JSON.stringify(validDescriptors);
     const now = new Date();
 
@@ -95,9 +94,9 @@ export async function POST(request: Request) {
         validDescriptors.length,
         nextStatus,
         now,
-        nextStatus === 'APPROVED' ? actor.id : null,
-        nextStatus === 'APPROVED' ? 'Auto-Approved by Policy' : null,
-        nextStatus === 'APPROVED' ? now : null,
+        actor.id,
+        'Instant Self-Service Activation',
+        now,
         actor.id
       );
     } else {
@@ -112,9 +111,9 @@ export async function POST(request: Request) {
         validDescriptors.length,
         nextStatus,
         now,
-        nextStatus === 'APPROVED' ? actor.id : null,
-        nextStatus === 'APPROVED' ? 'Auto-Approved by Policy' : null,
-        nextStatus === 'APPROVED' ? now : null
+        actor.id,
+        'Instant Self-Service Activation',
+        now
       );
     }
 
@@ -122,10 +121,7 @@ export async function POST(request: Request) {
       success: true,
       status: nextStatus,
       sampleCount: validDescriptors.length,
-      message:
-        nextStatus === 'APPROVED'
-          ? 'Face ID enrolled and active! You can now clock in at the Reception Kiosk camera.'
-          : 'Face ID enrolled successfully and submitted for HR / Super Admin approval.',
+      message: 'Face ID enrolled and active! You can now clock in at the Reception Kiosk camera.',
     });
   } catch (error: any) {
     console.error('[attendance/face/enroll] Error:', error);
