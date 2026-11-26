@@ -11,6 +11,7 @@ import {
 interface FaceProfileResponse {
   enrolled: boolean;
   status: 'NOT_ENROLLED' | 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED';
+  shouldPromptEnrollment?: boolean;
   profile: {
     id: string;
     status: string;
@@ -28,10 +29,18 @@ interface FaceProfileResponse {
 
 type CaptureStep = 'STRAIGHT' | 'TURN_HEAD' | 'BLINK' | 'SUBMITTING' | 'DONE';
 
-export function StaffFaceEnrollmentCard() {
+export function StaffFaceEnrollmentCard({
+  autoPromptIfUnenrolled = false,
+  autoStartCamera = false,
+}: {
+  autoPromptIfUnenrolled?: boolean;
+  autoStartCamera?: boolean;
+} = {}) {
   const [data, setData] = useState<FaceProfileResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
+  const [promptBannerOpen, setPromptBannerOpen] = useState(false);
+  const autoPromptTriggeredRef = useRef(false);
   const [step, setStep] = useState<CaptureStep>('STRAIGHT');
   const [statusHint, setStatusHint] = useState('Initializing camera & biometric models...');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -62,6 +71,26 @@ export function StaffFaceEnrollmentCard() {
   useEffect(() => {
     fetchProfile();
   }, [fetchProfile]);
+
+  useEffect(() => {
+    if (!data || autoPromptTriggeredRef.current) return;
+    const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+    const wantsAutoStart = autoStartCamera || params?.get('autostart') === '1';
+    if (wantsAutoStart && (data.status === 'NOT_ENROLLED' || data.status === 'REJECTED')) {
+      autoPromptTriggeredRef.current = true;
+      startEnrollmentWizard();
+      return;
+    }
+    if (
+      autoPromptIfUnenrolled &&
+      data.shouldPromptEnrollment &&
+      typeof window !== 'undefined' &&
+      sessionStorage.getItem('bems_face_prompt_dismissed') !== '1'
+    ) {
+      autoPromptTriggeredRef.current = true;
+      setPromptBannerOpen(true);
+    }
+  }, [autoPromptIfUnenrolled, autoStartCamera, data]);
 
   const stopCamera = useCallback(() => {
     loopActiveRef.current = false;
@@ -336,6 +365,119 @@ export function StaffFaceEnrollmentCard() {
           </button>
         )}
       </div>
+
+      {promptBannerOpen && !modalOpen && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 9998,
+            background: 'rgba(15, 23, 42, 0.45)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px',
+          }}
+        >
+          <div
+            style={{
+              background: '#ffffff',
+              border: '1px solid #e2e8f0',
+              borderRadius: '20px',
+              maxWidth: '430px',
+              width: '100%',
+              padding: '24px',
+              boxShadow: '0 20px 50px rgba(15, 23, 42, 0.18)',
+              textAlign: 'center',
+            }}
+          >
+            <div
+              style={{
+                width: '52px',
+                height: '52px',
+                borderRadius: '16px',
+                background: '#fff7ed',
+                border: '1px solid #fed7aa',
+                color: '#ea580c',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                margin: '0 auto 14px',
+              }}
+            >
+              <Camera size={26} />
+            </div>
+            <div
+              style={{
+                display: 'inline-block',
+                padding: '3px 10px',
+                borderRadius: '999px',
+                background: '#fff7ed',
+                border: '1px solid #fed7aa',
+                color: '#ea580c',
+                fontSize: '10.5px',
+                fontWeight: 800,
+                marginBottom: '8px',
+              }}
+            >
+              ACTION REQUIRED · ATTENDANCE SETUP
+            </div>
+            <h3 style={{ margin: '0 0 8px', fontSize: '18px', fontWeight: 900, color: '#0f172a' }}>
+              {status === 'REJECTED' ? 'Re-Register Your Kiosk Face ID' : 'Register Your Kiosk Face ID'}
+            </h3>
+            <p style={{ margin: '0 0 18px', fontSize: '13px', color: '#475569', lineHeight: 1.55 }}>
+              {status === 'REJECTED'
+                ? data?.profile?.rejectionReason ||
+                  'Your previous Face ID enrollment needs to be retaken in clear front lighting.'
+                : 'Welcome to BEMS! Please take 15 seconds to enroll your Face ID now so the Office Reception Kiosk camera can clock you in and out automatically.'}
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setPromptBannerOpen(false);
+                  startEnrollmentWizard();
+                }}
+                style={{
+                  width: '100%',
+                  padding: '11px 16px',
+                  borderRadius: '12px',
+                  border: 'none',
+                  background: '#ea580c',
+                  color: '#ffffff',
+                  fontSize: '13px',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 12px rgba(234, 88, 12, 0.25)',
+                }}
+              >
+                Enroll My Face ID Now →
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  sessionStorage.setItem('bems_face_prompt_dismissed', '1');
+                  setPromptBannerOpen(false);
+                }}
+                style={{
+                  width: '100%',
+                  padding: '9px 14px',
+                  borderRadius: '12px',
+                  border: '1px solid #e2e8f0',
+                  background: '#f8fafc',
+                  color: '#64748b',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                Remind Me Later
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {modalOpen && (
         <div

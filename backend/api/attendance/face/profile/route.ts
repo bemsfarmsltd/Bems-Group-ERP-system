@@ -16,7 +16,11 @@ export async function GET(request: Request) {
     }
 
     await ensureFaceAttendanceSchema();
-    const [profileRows, modeConfig] = await Promise.all([
+    const [empRecord, profileRows, modeConfig] = await Promise.all([
+      prisma.employee.findUnique({
+        where: { id: actor.id },
+        select: { role: true, isAttendanceExempt: true },
+      }),
       prisma.$queryRawUnsafe<
         Array<{
           id: string;
@@ -42,10 +46,16 @@ export async function GET(request: Request) {
     ]);
 
     const profile = profileRows[0] || null;
+    const isAttendanceTracked =
+      Boolean(empRecord) &&
+      !empRecord?.isAttendanceExempt &&
+      (empRecord?.role === 'STAFF' || empRecord?.role === 'CUSTOM_ADMIN');
 
     return NextResponse.json({
       enrolled: Boolean(profile),
       status: profile?.status || 'NOT_ENROLLED',
+      shouldPromptEnrollment:
+        isAttendanceTracked && (!profile || profile.status === 'NOT_ENROLLED' || profile.status === 'REJECTED'),
       profile: profile
         ? {
             id: profile.id,

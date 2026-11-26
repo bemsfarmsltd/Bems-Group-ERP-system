@@ -26,6 +26,7 @@ import {
 import { useGmdAccess } from '@/components/ai/useGmdAccess';
 import { useAiFinancialManager } from '@/components/ai/useAiFinancialManager';
 import { AmbientBottomAiBar } from '@/components/ai/AmbientBottomAiBar';
+import { StaffFaceEnrollmentCard } from '@/components/attendance/StaffFaceEnrollmentCard';
 
 export interface EnterpriseUserSummary {
   id: string;
@@ -518,6 +519,11 @@ export function EnterpriseModulesScreen({ user }: { user: EnterpriseUserSummary 
                 </div>
               </Link>
             )}
+          </div>
+        )}
+        {(isStaff || user?.role === 'CUSTOM_ADMIN') && (
+          <div className="mt-6">
+            <StaffFaceEnrollmentCard autoPromptIfUnenrolled />
           </div>
         )}
       </main>
