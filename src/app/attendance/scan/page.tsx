@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import jsQR from 'jsqr';
+import { StaffFaceEnrollmentCard } from '@/components/attendance/StaffFaceEnrollmentCard';
 import {
   Camera,
   MapPin,
@@ -386,6 +387,10 @@ export default function MobileAttendanceScannerPage() {
           <Sparkles size={18} />
         </div>
       </header>
+
+      <div style={{ width: '100%', maxWidth: '460px' }}>
+        <StaffFaceEnrollmentCard />
+      </div>
 
       {/* Airplane Window Scanner Frame */}
       <div

@@ -1,5 +1,6 @@
 import { getAuthenticatedStation } from '@/lib/attendance/station-auth';
 import { isStationCalibrated, resolveEffectiveStationGates } from '@/lib/attendance/kiosk-sessions';
+import { getFaceAttendanceModeConfig, resolveEffectiveAttendanceMode } from '@/lib/attendance/face-recognition';
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { extractClientIp, generateStationQrToken } from '@/lib/attendance/token';
@@ -44,7 +45,7 @@ export async function GET(request: Request) {
 
     const { token, expiresInSeconds } = generateStationQrToken(station.code, station.activeSecret);
 
-    const [gates, allStations] = await Promise.all([
+    const [gates, allStations, faceModeConfig] = await Promise.all([
       resolveEffectiveStationGates(station),
       prisma.attendanceStation.findMany({
         where: { status: 'ACTIVE' },
@@ -60,7 +61,9 @@ export async function GET(request: Request) {
         },
         orderBy: { createdAt: 'asc' },
       }),
+      getFaceAttendanceModeConfig(),
     ]);
+    const effectiveAttendanceMode = resolveEffectiveAttendanceMode(faceModeConfig, station.code);
 
     const policy = gates.policy;
     const effectiveRequireStarlink = gates.requireStarlink;
@@ -94,6 +97,9 @@ export async function GET(request: Request) {
       calibratedRouterIp: station.starlinkIpAddresses || null,
       detectedRouterIp,
       requiresCalibration: !calibrated,
+      attendanceMode: effectiveAttendanceMode,
+      globalAttendanceMode: faceModeConfig.globalMode,
+      stationAttendanceModeOverride: faceModeConfig.stationOverrides?.[station.code] || 'INHERIT',
       qrToken: token,
       qrDataUrl,
       qrSvg,

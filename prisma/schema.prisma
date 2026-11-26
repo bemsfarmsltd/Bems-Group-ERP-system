@@ -199,6 +199,7 @@ model Employee {
   goodsReceiptsReceived GoodsReceiptNote[]
   adminMessages         StaffAdminMessage[]
   attendanceRecords     AttendanceRecord[]
+  faceProfile           EmployeeFaceProfile?
   workSchedule          StaffWorkSchedule?
   profileUpdateRequests StaffProfileUpdateRequest[] @relation("TargetEmployee")
   createdProfileUpdateRequests StaffProfileUpdateRequest[] @relation("RequestedByAdmin")
@@ -1126,6 +1127,25 @@ model AttendanceRecord {
   @@unique([employeeId, workDate])
   @@index([workDate, status])
   @@index([employeeId, workDate])
+}
+
+model EmployeeFaceProfile {
+  id                String    @id @default(uuid())
+  employeeId        String    @unique
+  employee          Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  descriptorsJson   String    // JSON array of 128-d float vectors captured across angles
+  referencePhotoUrl String?   // Compressed JPEG data URL for HR visual audit
+  sampleCount       Int       @default(3)
+  livenessVerified  Boolean   @default(true)
+  status            String    @default("PENDING_APPROVAL") // PENDING_APPROVAL | APPROVED | REJECTED
+  enrolledAt        DateTime  @default(now())
+  approvedById      String?
+  approvedByName    String?
+  approvedAt        DateTime?
+  rejectionReason   String?
+  updatedAt         DateTime  @updatedAt
+
+  @@index([status])
 }
 
 model StoredFile {

@@ -1,0 +1,73 @@
+import { NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+import { getAuthenticatedEmployee } from '@/lib/auth';
+import {
+  ensureFaceAttendanceSchema,
+  getFaceAttendanceModeConfig,
+} from '@/lib/attendance/face-recognition';
+
+export const dynamic = 'force-dynamic';
+
+export async function GET(request: Request) {
+  try {
+    const actor = await getAuthenticatedEmployee(request);
+    if (!actor) {
+      return NextResponse.json({ error: 'Authentication required.' }, { status: 401 });
+    }
+
+    await ensureFaceAttendanceSchema();
+    const [profileRows, modeConfig] = await Promise.all([
+      prisma.$queryRawUnsafe<
+        Array<{
+          id: string;
+          employeeId: string;
+          referencePhotoUrl: string | null;
+          sampleCount: number;
+          livenessVerified: boolean;
+          status: string;
+          enrolledAt: Date;
+          approvedByName: string | null;
+          approvedAt: Date | null;
+          rejectionReason: string | null;
+          updatedAt: Date;
+        }>
+      >(
+        `SELECT "id", "employeeId", "referencePhotoUrl", "sampleCount", "livenessVerified", "status", "enrolledAt", "approvedByName", "approvedAt", "rejectionReason", "updatedAt"
+         FROM "EmployeeFaceProfile"
+         WHERE "employeeId" = $1
+         LIMIT 1`,
+        actor.id
+      ),
+      getFaceAttendanceModeConfig(),
+    ]);
+
+    const profile = profileRows[0] || null;
+
+    return NextResponse.json({
+      enrolled: Boolean(profile),
+      status: profile?.status || 'NOT_ENROLLED',
+      profile: profile
+        ? {
+            id: profile.id,
+            status: profile.status,
+            sampleCount: profile.sampleCount,
+            livenessVerified: profile.livenessVerified,
+            referencePhotoUrl: profile.referencePhotoUrl,
+            enrolledAt: profile.enrolledAt,
+            approvedByName: profile.approvedByName,
+            approvedAt: profile.approvedAt,
+            rejectionReason: profile.rejectionReason,
+            updatedAt: profile.updatedAt,
+          }
+        : null,
+      attendanceMode: modeConfig.globalMode,
+      requireHrApproval: modeConfig.requireHrApproval,
+    });
+  } catch (error: any) {
+    console.error('[attendance/face/profile] Error:', error);
+    return NextResponse.json(
+      { error: error?.message || 'Failed to load face profile.' },
+      { status: 500 }
+    );
+  }
+}

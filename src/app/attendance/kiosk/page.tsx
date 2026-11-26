@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
+import { KioskFaceRecognitionView } from '@/components/attendance/KioskFaceRecognitionView';
 import {
   Clock,
   ShieldCheck,
@@ -38,6 +39,9 @@ interface StationData {
   calibratedRouterIp?: string | null;
   detectedRouterIp?: string | null;
   requiresCalibration?: boolean;
+  attendanceMode?: 'QR' | 'FACE';
+  globalAttendanceMode?: 'QR' | 'FACE';
+  stationAttendanceModeOverride?: 'INHERIT' | 'QR' | 'FACE';
   qrToken: string;
   qrDataUrl?: string;
   qrSvg?: string;
@@ -1504,7 +1508,7 @@ export default function AttendanceKioskPage() {
             alignItems: 'stretch',
           }}
         >
-          {/* LEFT COLUMN: Dynamic QR Showcase Card */}
+          {/* LEFT COLUMN: Dynamic QR OR Face Recognition Kiosk Card */}
           <div
             style={{
               background: '#ffffff',
@@ -1518,6 +1522,17 @@ export default function AttendanceKioskPage() {
               justifyContent: 'space-between',
             }}
           >
+            {stationData?.attendanceMode === 'FACE' && !requiresActivation ? (
+              <KioskFaceRecognitionView
+                stationCode={stationData.stationCode}
+                stationName={stationData.stationName}
+                closingTime={stationData.closingTime || '17:00'}
+                onSuccessPunch={() => {
+                  fetchRecent();
+                }}
+              />
+            ) : (
+              <>
             {/* Top Prompt Badge */}
             <div style={{ textAlign: 'center', marginBottom: '18px' }}>
               <span
@@ -1813,6 +1828,8 @@ export default function AttendanceKioskPage() {
               <Maximize2 size={15} />
               <span>Fullscreen QR Code</span>
             </button>
+              </>
+            )}
           </div>
 
           {/* RIGHT COLUMN: List of Staff That Have Marked Attendance */}

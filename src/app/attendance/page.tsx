@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import KioskAccessControlPanel from '@/components/attendance/KioskAccessControlPanel';
+import { HrFaceRegistryPanel } from '@/components/attendance/HrFaceRegistryPanel';
 import {
   Clock,
   Users,
@@ -2689,6 +2690,7 @@ export default function AttendanceDeskPage() {
             </div>
 
             {/* Clean Office Kiosk Station Editor */}
+            <HrFaceRegistryPanel />
             <div
               style={{
                 padding: '20px',

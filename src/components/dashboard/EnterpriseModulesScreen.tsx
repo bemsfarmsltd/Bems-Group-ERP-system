@@ -370,12 +370,20 @@ export function EnterpriseModulesScreen({ user }: { user: EnterpriseUserSummary 
                 <h3 className="text-base font-extrabold tracking-tight text-slate-900">Staff Web Portal</h3>
                 <p className="text-xs text-slate-500 mt-0.5">Self-service workspace &amp; requests</p>
               </div>
-              <a
-                href="/staff-app/index.html"
-                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-orange-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-orange-700 transition"
-              >
-                Open Staff Portal →
-              </a>
+              <div className="flex flex-col gap-2">
+                <a
+                  href="/staff-app/index.html"
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-orange-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-orange-700 transition"
+                >
+                  Open Staff Portal →
+                </a>
+                <Link
+                  href="/attendance/face-enroll"
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl border border-orange-200 bg-orange-50/70 px-4 py-2 text-xs font-bold text-orange-700 hover:bg-orange-100 transition"
+                >
+                  Register Kiosk Face ID →
+                </Link>
+              </div>
             </div>
 
             {/* Tile 4: Right Tall Feature — Project Management (4 cols, 2 rows) */}

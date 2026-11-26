@@ -71,6 +71,50 @@
       });
     })();
   </script>
+  <a
+    id="bems-face-enroll-pill"
+    href="/attendance/face-enroll"
+    style="display:none;position:fixed;left:16px;bottom:16px;z-index:99998;background:#ffffff;border:1.5px solid #ea580c;border-radius:999px;padding:8px 14px;box-shadow:0 8px 24px rgba(15,23,42,0.12);font-family:system-ui,-apple-system,sans-serif;text-decoration:none;align-items:center;gap:8px;color:#0f172a;font-size:12px;font-weight:800;"
+  >
+    <span id="bems-face-pill-dot" style="width:8px;height:8px;border-radius:50%;background:#ea580c;display:inline-block;"></span>
+    <span id="bems-face-pill-text">Register Kiosk Face ID</span>
+  </a>
+  <script>
+    (function() {
+      var pill = document.getElementById('bems-face-enroll-pill');
+      var dot = document.getElementById('bems-face-pill-dot');
+      var txt = document.getElementById('bems-face-pill-text');
+      if (!pill) return;
+      function checkFaceStatus() {
+        fetch('/api/attendance/face/profile', { credentials: 'include', cache: 'no-store' })
+          .then(function(r) { return r.ok ? r.json() : null; })
+          .then(function(data) {
+            if (!data) return;
+            pill.style.display = 'inline-flex';
+            if (data.status === 'APPROVED') {
+              pill.style.borderColor = '#10b981';
+              if (dot) dot.style.background = '#10b981';
+              if (txt) txt.textContent = 'Face ID Active ✓';
+            } else if (data.status === 'PENDING_APPROVAL') {
+              pill.style.borderColor = '#f59e0b';
+              if (dot) dot.style.background = '#f59e0b';
+              if (txt) txt.textContent = 'Face ID Pending HR Approval';
+            } else if (data.status === 'REJECTED') {
+              pill.style.borderColor = '#ef4444';
+              if (dot) dot.style.background = '#ef4444';
+              if (txt) txt.textContent = 'Re-Register Face ID';
+            } else {
+              pill.style.borderColor = '#ea580c';
+              if (dot) dot.style.background = '#ea580c';
+              if (txt) txt.textContent = 'Register Kiosk Face ID';
+            }
+          })
+          .catch(function() {});
+      }
+      setTimeout(checkFaceStatus, 1500);
+      setInterval(checkFaceStatus, 15000);
+    })();
+  </script>
   <script src="flutter_bootstrap.js?v=20261118_0806" async></script>
 </body>
 </html>
