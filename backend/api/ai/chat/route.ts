@@ -329,7 +329,7 @@ export async function POST(req: NextRequest) {
         const effectiveRole = hasAnyRole(actor, ['GMD'])
           ? 'GMD'
           : hasAnyRole(actor, ['SUPER_ADMIN', 'SYSTEM_ADMIN', 'HR', 'CUSTOM_ADMIN'])
-            ? 'SYSTEM_ADMIN'
+            ? 'SUPER_ADMIN'
             : 'STAFF';
 
         const n8nPayload = {
@@ -337,7 +337,7 @@ export async function POST(req: NextRequest) {
           user: {
             id: actor.id,
             name: actor.legalName,
-            title: (actor as any).jobTitle || (effectiveRole === 'GMD' ? 'Group Managing Director' : effectiveRole === 'SYSTEM_ADMIN' ? 'System Admin' : 'Staff'),
+            title: (actor as any).jobTitle || (effectiveRole === 'GMD' ? 'Group Managing Director' : effectiveRole === 'SUPER_ADMIN' ? 'Super Admin' : 'Staff'),
             role: effectiveRole,
             permissions: isReadOnlyUser ? ['read_only_inquiry', 'data_analytics'] : ['all'],
             can_execute_actions: false,
@@ -1061,7 +1061,7 @@ title: "<Chart Title>"
       normalized.includes('reserve')
     ) {
       if (!hasAiExecutiveRead) {
-        reply = `🔒 **Executive Confidentiality:** ${scopedOrgName} liquid treasury reserves, bank account balances, and banking institution records are confidential executive data accessible only to the Group Managing Director and System Administrator.`;
+        reply = `🔒 **Executive Confidentiality:** ${scopedOrgName} liquid treasury reserves, bank account balances, and banking institution records are confidential executive data accessible only to the Group Managing Director and Super Admin.`;
         actionCard = null;
       } else if (bankAccounts.length === 0) {
         reply = !isGroupScope

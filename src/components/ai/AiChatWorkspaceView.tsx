@@ -568,7 +568,7 @@ export function AiChatWorkspaceView({
                 AI Chat Access Paused by Administrator
               </h3>
               <p style={{ margin: 0, fontSize: '13.5px', color: '#7f1d1d', lineHeight: 1.5, maxWidth: 700 }}>
-                The Group Managing Director or System Administrator has temporarily toggled off interactive AI chat for the AI Analyst role in <strong>Settings → AI & Copilot Access</strong>. While chat is paused, you can still view Executive Briefings and Request Channels.
+                The Group Managing Director or Super Admin has temporarily toggled off interactive AI chat for the AI Analyst role in <strong>Settings → AI & Copilot Access</strong>. While chat is paused, you can still view Executive Briefings and Request Channels.
               </p>
             </div>
           </div>

@@ -508,7 +508,7 @@ function AuthGate({ onAuthed }: { onAuthed: (user: AuthUser) => void }) {
     authRequest<{ ok?: boolean; message?: string; error?: string }>('/api/auth/bootstrap', {
       action: 'send_code',
       bootstrapSecret,
-      fullName: signupForm.fullName || 'System Admin',
+      fullName: signupForm.fullName || 'Super Admin',
       email: loginForm.email,
       password: loginForm.password,
     }).then(({ ok, data }) => {
@@ -532,7 +532,7 @@ function AuthGate({ onAuthed }: { onAuthed: (user: AuthUser) => void }) {
     authRequest<{ user?: AuthUser; error?: string }>('/api/auth/bootstrap', {
       action: 'verify',
       bootstrapSecret,
-      fullName: signupForm.fullName || 'System Admin',
+      fullName: signupForm.fullName || 'Super Admin',
       email: loginForm.email,
       password: loginForm.password,
       code: bootstrapOtp.trim(),
@@ -601,7 +601,7 @@ function AuthGate({ onAuthed }: { onAuthed: (user: AuthUser) => void }) {
               ⚡ INITIAL WORKSPACE SETUP
             </div>
             <p style={{ margin: '0 0 10px 0', fontSize: 13, color: '#78350f', lineHeight: 1.4 }}>
-              Zero accounts currently exist. As the system administrator, set up the root System Admin account to begin onboarding leadership roles.
+              Zero accounts currently exist. As the system administrator, set up the root Super Admin account to begin onboarding leadership roles.
             </p>
             <button
               type="button"
@@ -618,7 +618,7 @@ function AuthGate({ onAuthed }: { onAuthed: (user: AuthUser) => void }) {
                 cursor: 'pointer',
               }}
             >
-              Set up First System Admin →
+              Set up First Super Admin →
             </button>
           </div>
         )}
@@ -1259,8 +1259,8 @@ function AuthGate({ onAuthed }: { onAuthed: (user: AuthUser) => void }) {
       {view==='setup' && bootstrapStep==='form' && (
         <form className="journey-card" onSubmit={requestBootstrapCode}>
           <p className="kicker">ONE-TIME INITIALIZATION · STEP 1 OF 2</p>
-          <h2>Create the first System Admin</h2>
-          <p className="lead">This setup is available only before a System Admin account exists. A 6-digit verification code will be sent to your work email to verify administrative ownership.</p>
+          <h2>Create the first Super Admin</h2>
+          <p className="lead">This setup is available only before a Super Admin account exists. A 6-digit verification code will be sent to your work email to verify administrative ownership.</p>
           <div className="form-grid">
             <label className="full">Setup key
               <input required type="password" value={bootstrapSecret} onChange={e=>setBootstrapSecret(e.target.value)} placeholder="Enter the master bootstrap secret"/>
@@ -1323,7 +1323,7 @@ function AuthGate({ onAuthed }: { onAuthed: (user: AuthUser) => void }) {
           <p className="kicker">ONE-TIME INITIALIZATION · STEP 2 OF 2</p>
           <h2>Verify administrator email</h2>
           <p className="lead">
-            We sent a 6-digit verification code to <strong>{loginForm.email}</strong>. Enter the passcode below to verify your email and activate your System Admin profile.
+            We sent a 6-digit verification code to <strong>{loginForm.email}</strong>. Enter the passcode below to verify your email and activate your Super Admin profile.
           </p>
           {bootstrapNotice && (
             <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#166534', padding: '12px 16px', borderRadius: 10, fontSize: 13, marginBottom: 20 }}>
@@ -1383,7 +1383,7 @@ function AuthGate({ onAuthed }: { onAuthed: (user: AuthUser) => void }) {
               ← Edit Details
             </button>
             <button type="submit" className="continue-button" disabled={busy || bootstrapOtp.length !== 6}>
-              {busy ? 'Verifying…' : 'Verify & Create System Admin'} <span>→</span>
+              {busy ? 'Verifying…' : 'Verify & Create Super Admin'} <span>→</span>
             </button>
           </footer>
         </form>
@@ -1439,7 +1439,7 @@ function AuthGate({ onAuthed }: { onAuthed: (user: AuthUser) => void }) {
           )}
         </p>
       )}
-      {view==='login' && bootstrapAvailable && <p className="signin-note"><button onClick={()=>{setError('');setView('setup')}}>Set up the first System Admin</button></p>}
+      {view==='login' && bootstrapAvailable && <p className="signin-note"><button onClick={()=>{setError('');setView('setup')}}>Set up the first Super Admin</button></p>}
       {view==='login' && !adminExists && !bootstrapConfigured && <p className="signin-note">First-time setup needs <code>BEMS_BOOTSTRAP_SECRET</code> in <code>.env.local</code>.</p>}
     </section>
   </main>;

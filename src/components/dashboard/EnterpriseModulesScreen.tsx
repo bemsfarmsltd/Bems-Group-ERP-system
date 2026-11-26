@@ -238,7 +238,12 @@ export function EnterpriseModulesScreen({ user }: { user: EnterpriseUserSummary 
               <div className="text-xs font-bold text-slate-900">{user?.legalName || 'User'}</div>
               <div className="text-[10px] font-medium text-slate-500 flex items-center justify-end gap-1.5">
                 <span>{user?.subsidiaryName || 'BEMS Group'} ·</span>
-                <span className="text-orange-600 font-bold">{user?.customAdminTitle || user?.role || 'STAFF'}</span>
+                <span className="text-orange-600 font-bold">
+                  {user?.customAdminTitle ||
+                    (user?.role === 'SYSTEM_ADMIN' || user?.role === 'SUPER_ADMIN'
+                      ? 'Super Admin'
+                      : user?.role || 'STAFF')}
+                </span>
                 {isReadOnly && (
                   <span className="rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700">
                     Read-Only
