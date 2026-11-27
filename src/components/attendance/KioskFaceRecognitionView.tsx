@@ -283,8 +283,8 @@ export function KioskFaceRecognitionView({
               setLightingAlert(null);
             }
 
-            // Collect high-confidence frames for multi-frame biometric centroid fusion
-            if (frame.descriptor && frame.detectionScore >= 0.45) {
+            // Collect frames for multi-frame biometric centroid fusion
+            if (frame.descriptor && frame.detectionScore >= 0.30) {
               capturedDescriptors.push(frame.descriptor);
               if (capturedDescriptors.length > 4) capturedDescriptors.shift();
             }
@@ -493,8 +493,9 @@ export function KioskFaceRecognitionView({
         style={{
           position: 'relative',
           width: '100%',
-          maxWidth: isFullscreen ? '780px' : '370px',
-          aspectRatio: '4 / 3.2',
+          maxWidth: isFullscreen ? 'min(820px, 76vh * 1.32)' : '370px',
+          aspectRatio: isFullscreen ? '16 / 10.5' : '4 / 3.2',
+          maxHeight: isFullscreen ? '64vh' : undefined,
           padding: '10px',
           display: 'flex',
           alignItems: 'center',
@@ -960,17 +961,16 @@ export function KioskFaceRecognitionView({
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
-          justifyContent: 'center',
-          padding: '24px',
+          justifyContent: 'flex-start',
+          padding: '18px 28px 22px',
+          gap: '16px',
+          overflowY: 'auto',
         }}
       >
-        {/* Top Floating Header in Fullscreen */}
+        {/* Top Header in Fullscreen (in-flow so it NEVER overlaps the camera card) */}
         <div
           style={{
-            position: 'absolute',
-            top: '20px',
-            left: '28px',
-            right: '28px',
+            width: '100%',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
@@ -979,6 +979,7 @@ export function KioskFaceRecognitionView({
             borderRadius: '16px',
             padding: '12px 20px',
             boxShadow: '0 4px 16px rgba(15, 23, 42, 0.04)',
+            flexShrink: 0,
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -1037,11 +1038,11 @@ export function KioskFaceRecognitionView({
             background: '#ffffff',
             border: '1px solid #e2e8f0',
             borderRadius: '28px',
-            padding: '28px 32px',
+            padding: '22px 28px',
             boxShadow: '0 20px 50px rgba(15, 23, 42, 0.07)',
             width: '100%',
-            maxWidth: '920px',
-            marginTop: '64px',
+            maxWidth: '940px',
+            margin: 'auto 0',
           }}
         >
           {content}

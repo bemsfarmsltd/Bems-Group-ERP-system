@@ -179,6 +179,27 @@ function computeEyeAspectRatio(eye: Array<{ x: number; y: number }>): number {
   return (v1 + v2) / (2.0 * h);
 }
 
+let boostCanvas: HTMLCanvasElement | null = null;
+function buildExposureBoostedCanvas(videoEl: HTMLVideoElement): HTMLCanvasElement | null {
+  try {
+    const w = Math.min(480, videoEl.videoWidth || 480);
+    const h = Math.round((w * (videoEl.videoHeight || 360)) / Math.max(1, videoEl.videoWidth || 480));
+    if (!boostCanvas) boostCanvas = document.createElement('canvas');
+    if (boostCanvas.width !== w || boostCanvas.height !== h) {
+      boostCanvas.width = w;
+      boostCanvas.height = h;
+    }
+    const ctx = boostCanvas.getContext('2d');
+    if (!ctx) return null;
+    ctx.filter = 'brightness(1.45) contrast(1.18)';
+    ctx.drawImage(videoEl, 0, 0, w, h);
+    ctx.filter = 'none';
+    return boostCanvas;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Analyzes a single video frame for a single clear face, computes 68-point liveness metrics
  * (EAR for blink detection + nose-to-jaw yaw ratio for head turn), and extracts the 128-d embedding.
@@ -204,15 +225,35 @@ export async function analyzeVideoFaceFrame(
   }
 
   const options = new faceapi.TinyFaceDetectorOptions({
-    inputSize: 416,
-    scoreThreshold: 0.45,
+    inputSize: 320,
+    scoreThreshold: 0.32,
   });
 
   if (includeDescriptor) {
-    const detections = await faceapi
+    let sourceEl: HTMLVideoElement | HTMLCanvasElement = videoEl;
+    let sourceWidth = Math.max(1, videoEl.videoWidth);
+    let sourceHeight = Math.max(1, videoEl.videoHeight);
+
+    let detections = await faceapi
       .detectAllFaces(videoEl, options)
       .withFaceLandmarks(true)
       .withFaceDescriptors();
+
+    // Smart Backlight / Low-Light Recovery: if raw video fails to detect a face, retry on an exposure-boosted frame
+    if (!detections || detections.length === 0) {
+      const boosted = buildExposureBoostedCanvas(videoEl);
+      if (boosted) {
+        detections = await faceapi
+          .detectAllFaces(boosted, options)
+          .withFaceLandmarks(true)
+          .withFaceDescriptors();
+        if (detections && detections.length > 0) {
+          sourceEl = boosted;
+          sourceWidth = boosted.width;
+          sourceHeight = boosted.height;
+        }
+      }
+    }
 
     if (!detections || detections.length === 0) {
       return {
@@ -265,12 +306,19 @@ export async function analyzeVideoFaceFrame(
     }
 
     const box = det.detection.box;
-    const vw = Math.max(1, videoEl.videoWidth);
-    const vh = Math.max(1, videoEl.videoHeight);
+    const vw = sourceWidth;
+    const vh = sourceHeight;
     const faceSizeRatio = box.width / vw;
     const centerOffsetX = (box.x + box.width / 2 - vw / 2) / vw;
     const centerOffsetY = (box.y + box.height / 2 - vh / 2) / vh;
-    const faceBrightness = measureBoxBrightness(videoEl, box);
+    const scaleX = videoEl.videoWidth / vw;
+    const scaleY = videoEl.videoHeight / vh;
+    const faceBrightness = measureBoxBrightness(videoEl, {
+      x: box.x * scaleX,
+      y: box.y * scaleY,
+      width: box.width * scaleX,
+      height: box.height * scaleY,
+    });
     const detectionScore = Number(det.detection.score || 0);
     const descriptor = det.descriptor ? Array.from(det.descriptor as Float32Array).map((n) => Number(n.toFixed(6))) : null;
 
@@ -285,7 +333,7 @@ export async function analyzeVideoFaceFrame(
       centerOffsetY,
       faceBrightness,
       detectionScore,
-      box: { x: box.x, y: box.y, width: box.width, height: box.height },
+      box: { x: box.x * scaleX, y: box.y * scaleY, width: box.width * scaleX, height: box.height * scaleY },
     };
   } else {
     const detections = await faceapi.detectAllFaces(videoEl, options).withFaceLandmarks(true);
