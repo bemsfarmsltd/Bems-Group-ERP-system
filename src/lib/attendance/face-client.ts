@@ -42,6 +42,30 @@ export async function loadFaceApiModels(): Promise<any> {
       throw new Error('Face recognition engine unavailable.');
     }
 
+    // Explicitly initialize TensorFlow.js backend (webgl -> cpu fallback) and await tf.ready()
+    // Prevents "The highest priority backend 'wasm' has not yet been initialized" on Windows/HP laptops
+    if (faceapi.tf) {
+      const candidates = ['webgl', 'cpu'];
+      let backendReady = false;
+      for (const backend of candidates) {
+        try {
+          if (typeof faceapi.tf.setBackend === 'function') {
+            const ok = await faceapi.tf.setBackend(backend);
+            if (ok !== false) {
+              await faceapi.tf.ready();
+              backendReady = true;
+              break;
+            }
+          }
+        } catch {
+          // try next backend
+        }
+      }
+      if (!backendReady && typeof faceapi.tf.ready === 'function') {
+        await faceapi.tf.ready();
+      }
+    }
+
     const modelPath = '/models/face';
     await Promise.all([
       faceapi.nets.tinyFaceDetector.loadFromUri(modelPath),
