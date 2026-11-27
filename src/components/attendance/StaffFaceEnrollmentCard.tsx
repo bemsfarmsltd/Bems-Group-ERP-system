@@ -5,6 +5,7 @@ import { Camera, CheckCircle2, Clock, RefreshCw, ShieldAlert, ShieldCheck, Spark
 import {
   analyzeVideoFaceFrame,
   captureFaceThumbnailDataUrl,
+  getStoredStaffAppSession,
   loadFaceApiModels,
   speakFaceVoicePrompt,
   stopFaceVoicePrompt,
@@ -65,7 +66,11 @@ export function StaffFaceEnrollmentCard({
   const fetchProfile = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/attendance/face/profile', { cache: 'no-store' });
+      const { headers } = getStoredStaffAppSession();
+      const res = await fetch('/api/attendance/face/profile', {
+        cache: 'no-store',
+        headers,
+      });
       if (res.ok) {
         const json = await res.json();
         setData(json);
@@ -119,13 +124,15 @@ export function StaffFaceEnrollmentCard({
     setSubmitting(true);
     setStatusHint('Encrypting & saving your Face ID profile...');
     try {
+      const { headers, user } = getStoredStaffAppSession();
       const res = await fetch('/api/attendance/face/enroll', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...headers },
         body: JSON.stringify({
           descriptors: samplesRef.current,
           referencePhotoUrl: thumbnailRef.current,
           livenessVerified: true,
+          staffEmployeeId: user?.id || undefined,
         }),
       });
       const json = await res.json();

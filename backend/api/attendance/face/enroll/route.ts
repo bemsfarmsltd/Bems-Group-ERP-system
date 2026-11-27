@@ -31,6 +31,31 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json().catch(() => ({}));
+    let targetEmployeeId = actor.id;
+    const requestedStaffId = typeof body?.staffEmployeeId === 'string' ? body.staffEmployeeId.trim() : '';
+
+    // If the mobile browser had an executive cookie (SUPER_ADMIN / SYSTEM_ADMIN / GMD) alongside the Flutter Staff App,
+    // honor the explicit Staff App employeeId if it belongs to an active STAFF / CUSTOM_ADMIN account.
+    if (actor.role === 'SYSTEM_ADMIN' || actor.role === 'SUPER_ADMIN' || actor.role === 'GMD') {
+      if (requestedStaffId) {
+        const staffEmp = await prisma.employee.findUnique({
+          where: { id: requestedStaffId },
+          select: { id: true, role: true, status: true },
+        });
+        if (staffEmp && staffEmp.status === 'ACTIVE' && (staffEmp.role === 'STAFF' || staffEmp.role === 'CUSTOM_ADMIN')) {
+          targetEmployeeId = staffEmp.id;
+        }
+      }
+      if (targetEmployeeId === actor.id) {
+        return NextResponse.json(
+          {
+            error:
+              'Your browser is currently signed in as Super Admin / GMD. Please open the Staff App and sign in with your Staff / Custom Admin account to register your personal Face ID.',
+          },
+          { status: 403 }
+        );
+      }
+    }
     const rawDescriptors = Array.isArray(body?.descriptors) ? body.descriptors : [];
     const livenessVerified = body?.livenessVerified === true;
     const referencePhotoUrl =
@@ -56,7 +81,7 @@ export async function POST(request: Request) {
     await ensureFaceAttendanceSchema();
     const existingRows = await prisma.$queryRawUnsafe<Array<{ id: string; status: string }>>(
       `SELECT "id", "status" FROM "EmployeeFaceProfile" WHERE "employeeId" = $1 LIMIT 1`,
-      actor.id
+      targetEmployeeId
     );
     const existing = existingRows[0] || null;
 
@@ -94,10 +119,10 @@ export async function POST(request: Request) {
         validDescriptors.length,
         nextStatus,
         now,
-        actor.id,
+        targetEmployeeId,
         'Instant Self-Service Activation',
         now,
-        actor.id
+        targetEmployeeId
       );
     } else {
       await prisma.$executeRawUnsafe(
@@ -105,13 +130,13 @@ export async function POST(request: Request) {
          ("id", "employeeId", "descriptorsJson", "referencePhotoUrl", "sampleCount", "livenessVerified", "status", "enrolledAt", "approvedById", "approvedByName", "approvedAt", "updatedAt")
          VALUES ($1, $2, $3, $4, $5, true, $6, $7, $8, $9, $10, $7)`,
         randomUUID(),
-        actor.id,
+        targetEmployeeId,
         descriptorsJson,
         referencePhotoUrl,
         validDescriptors.length,
         nextStatus,
         now,
-        actor.id,
+        targetEmployeeId,
         'Instant Self-Service Activation',
         now
       );

@@ -285,3 +285,54 @@ export function stopFaceVoicePrompt(): void {
   } catch {}
 }
 
+export interface StoredStaffAppUser {
+  id?: string;
+  name?: string;
+  employeeNumber?: string;
+  email?: string;
+  token?: string;
+}
+
+/**
+ * Reads the Flutter Staff Web App session (`flutter.bems_staff_user` in localStorage)
+ * so `/attendance/face-enroll` always authenticates as the Staff App user rather than
+ * an older admin dashboard cookie in the same mobile browser.
+ */
+export function getStoredStaffAppSession(): {
+  headers: Record<string, string>;
+  user: StoredStaffAppUser | null;
+} {
+  if (typeof window === 'undefined') {
+    return { headers: {}, user: null };
+  }
+  try {
+    const raw =
+      window.localStorage.getItem('flutter.bems_staff_user') ||
+      window.localStorage.getItem('bems_staff_user');
+    if (!raw) return { headers: {}, user: null };
+    let parsed: any = JSON.parse(raw);
+    if (typeof parsed === 'string') {
+      parsed = JSON.parse(parsed);
+    }
+    if (!parsed || typeof parsed !== 'object') {
+      return { headers: {}, user: null };
+    }
+    const token = typeof parsed.token === 'string' ? parsed.token.trim() : '';
+    const user: StoredStaffAppUser = {
+      id: parsed.id || undefined,
+      name: parsed.fullName || parsed.legalName || parsed.name || undefined,
+      employeeNumber: parsed.employeeNumber || undefined,
+      email: parsed.email || parsed.workEmail || undefined,
+      token: token || undefined,
+    };
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    return { headers, user };
+  } catch {
+    return { headers: {}, user: null };
+  }
+}
+
+

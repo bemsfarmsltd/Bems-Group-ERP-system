@@ -126,8 +126,20 @@
         });
       }
       if (!pill) return;
+      function getStaffHeaders() {
+        var hdrs = {};
+        try {
+          var raw = localStorage.getItem('flutter.bems_staff_user') || localStorage.getItem('bems_staff_user');
+          if (raw) {
+            var p = JSON.parse(raw);
+            if (typeof p === 'string') p = JSON.parse(p);
+            if (p && p.token) hdrs['Authorization'] = 'Bearer ' + p.token;
+          }
+        } catch (e) {}
+        return hdrs;
+      }
       function checkFaceStatus() {
-        fetch('/api/attendance/face/profile', { credentials: 'include', cache: 'no-store' })
+        fetch('/api/attendance/face/profile', { credentials: 'include', cache: 'no-store', headers: getStaffHeaders() })
           .then(function(r) { return r.ok ? r.json() : null; })
           .then(function(data) {
             if (!data) return;

@@ -45,6 +45,30 @@ export async function ensureFaceAttendanceSchema(): Promise<void> {
           "approvedAt" = COALESCE("approvedAt", CURRENT_TIMESTAMP)
       WHERE "status" = 'PENDING_APPROVAL';
     `);
+    // If a face profile was accidentally recorded onto the root Super Admin account (ADM-2259 / SYSTEM_ADMIN)
+    // from a mobile browser that had a stale admin cookie alongside the Staff App, reassign it to Henry (BEMS-GRO-2026-0001)
+    // and remove any root SYSTEM_ADMIN / GMD rows from EmployeeFaceProfile.
+    await prisma.$executeRawUnsafe(`
+      UPDATE "EmployeeFaceProfile"
+      SET "employeeId" = (
+        SELECT "id" FROM "Employee" WHERE "employeeNumber" = 'BEMS-GRO-2026-0001' LIMIT 1
+      )
+      WHERE "employeeId" IN (
+        SELECT "id" FROM "Employee" WHERE "employeeNumber" = 'ADM-2259' OR "role" IN ('SYSTEM_ADMIN', 'SUPER_ADMIN', 'GMD')
+      )
+      AND EXISTS (SELECT 1 FROM "Employee" WHERE "employeeNumber" = 'BEMS-GRO-2026-0001')
+      AND NOT EXISTS (
+        SELECT 1 FROM "EmployeeFaceProfile" fp2
+        INNER JOIN "Employee" e2 ON e2."id" = fp2."employeeId"
+        WHERE e2."employeeNumber" = 'BEMS-GRO-2026-0001'
+      );
+    `);
+    await prisma.$executeRawUnsafe(`
+      DELETE FROM "EmployeeFaceProfile"
+      WHERE "employeeId" IN (
+        SELECT "id" FROM "Employee" WHERE "role" IN ('SYSTEM_ADMIN', 'SUPER_ADMIN', 'GMD')
+      );
+    `);
     schemaEnsured = true;
   } catch (err) {
     console.warn('[FaceAttendance] Schema ensure warning:', err);

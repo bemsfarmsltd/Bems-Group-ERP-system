@@ -19,7 +19,7 @@ export async function GET(request: Request) {
     const [empRecord, profileRows, modeConfig] = await Promise.all([
       prisma.employee.findUnique({
         where: { id: actor.id },
-        select: { role: true, isAttendanceExempt: true },
+        select: { id: true, legalName: true, employeeNumber: true, role: true, isAttendanceExempt: true },
       }),
       prisma.$queryRawUnsafe<
         Array<{
@@ -53,9 +53,17 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
       enrolled: Boolean(profile),
-      status: profile?.status || 'NOT_ENROLLED',
+      status: profile?.status === 'PENDING_APPROVAL' ? 'APPROVED' : profile?.status || 'NOT_ENROLLED',
       shouldPromptEnrollment:
         isAttendanceTracked && (!profile || profile.status === 'NOT_ENROLLED' || profile.status === 'REJECTED'),
+      employee: empRecord
+        ? {
+            id: empRecord.id,
+            legalName: empRecord.legalName,
+            employeeNumber: empRecord.employeeNumber,
+            role: empRecord.role,
+          }
+        : null,
       profile: profile
         ? {
             id: profile.id,
