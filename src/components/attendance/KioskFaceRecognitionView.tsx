@@ -191,6 +191,31 @@ export function KioskFaceRecognitionView({
       activeRef.current = true;
       let capturedDescriptors: number[][] = [];
       let lockFrames = 0;
+      let maxEar = 0;
+      let minEar = 1;
+      let sawEyesOpen = false;
+      let sawBlinkDip = false;
+      let baselineYaw: number | null = null;
+      let maxYawDelta = 0;
+      let baselineEyeSym: number | null = null;
+      let maxEyeSymDelta = 0;
+      let baselineMar: number | null = null;
+      let maxMarDelta = 0;
+
+      const resetLivenessBuffer = () => {
+        capturedDescriptors = [];
+        lockFrames = 0;
+        maxEar = 0;
+        minEar = 1;
+        sawEyesOpen = false;
+        sawBlinkDip = false;
+        baselineYaw = null;
+        maxYawDelta = 0;
+        baselineEyeSym = null;
+        maxEyeSymDelta = 0;
+        baselineMar = null;
+        maxMarDelta = 0;
+      };
 
       // Auto-recover if the camera track stops unexpectedly
       stream.getVideoTracks().forEach((track) => {
@@ -205,7 +230,7 @@ export function KioskFaceRecognitionView({
       });
 
       speakFaceVoicePrompt(
-        `BEMS 3D Face Recognition Kiosk is active for ${isEveningShiftRef.current ? 'evening sign-out' : 'morning check-in'}. Walk past or look toward the camera to clock in automatically.`,
+        `BEMS 3D Face Recognition Kiosk is active for ${isEveningShiftRef.current ? 'evening sign-out' : 'morning check-in'}. Look at the camera and blink naturally to verify.`,
         { force: true, muted: false }
       );
 
@@ -213,7 +238,7 @@ export function KioskFaceRecognitionView({
         if (!activeRef.current || !videoRef.current) return;
 
         try {
-          // Passive long-range walk-by scan: tracks ALL faces anywhere in frame, even from distance!
+          // Continuous 3D radar tracks all faces in view, while strictly requiring real biological liveness before punching
           const frame = await analyzeVideoFaceFrame(videoRef.current, true, {
             allowMultiple: true,
             longRange: true,
@@ -229,9 +254,9 @@ export function KioskFaceRecognitionView({
             (f) => f.descriptor && f.faceSizeRatio >= 0.05 && f.detectionScore >= 0.25
           );
 
-          // High-clarity faces eligible for biometric identity matching (prevents false matches on blurry distant shadows)
+          // High-clarity faces eligible for biometric identity + liveness verification
           const matchableFaces = trackedFaces.filter(
-            (f) => f.faceSizeRatio >= 0.11 && f.detectionScore >= 0.45 && Math.abs(f.yawRatio) <= 0.30
+            (f) => f.faceSizeRatio >= 0.11 && f.detectionScore >= 0.45 && Math.abs(f.yawRatio) <= 0.36
           );
 
           if (trackedFaces.length === 0) {
@@ -239,22 +264,18 @@ export function KioskFaceRecognitionView({
             setLivenessReady(false);
             setScanProgress(0);
             setLightingAlert(null);
-            lockFrames = 0;
-            capturedDescriptors = [];
-            setStatusText('3D Radar Active — Scanning room for passing staff faces...');
+            resetLivenessBuffer();
+            setStatusText('3D Radar Active — Scanning room for live staff faces...');
           } else if (matchableFaces.length === 0) {
             setFaceDetected(true);
             setLivenessReady(false);
             setScanProgress(25);
-            lockFrames = 0;
-            capturedDescriptors = [];
+            resetLivenessBuffer();
             const nearest = trackedFaces[0];
             if (nearest.faceSizeRatio < 0.11) {
-              setStatusText('3D Face Tracked — step slightly closer so scanner can verify identity');
-            } else if (Math.abs(nearest.yawRatio) > 0.30) {
-              setStatusText('3D Face Tracked — glance toward the camera to verify identity');
+              setStatusText('3D Face Tracked — step slightly closer & blink to verify');
             } else {
-              setStatusText('3D Face Tracked — stabilizing focus for biometric verification...');
+              setStatusText('3D Face Tracked — look toward camera & blink naturally');
             }
           } else {
             const primary = matchableFaces[0];
@@ -263,7 +284,7 @@ export function KioskFaceRecognitionView({
               frame.faceBrightness < 44 ? 'Low lighting detected — auto-exposure boost active' : null
             );
 
-            // Frame-to-frame stability check: only fuse descriptors that agree closely (< 0.28)
+            // Frame-to-frame stability check: reset if a different person enters frame
             if (primary.descriptor) {
               if (capturedDescriptors.length > 0) {
                 const prev = capturedDescriptors[capturedDescriptors.length - 1];
@@ -272,112 +293,172 @@ export function KioskFaceRecognitionView({
                   const diff = primary.descriptor[i] - prev[i];
                   sumSq += diff * diff;
                 }
-                const frameDelta = Math.sqrt(sumSq);
-                if (frameDelta > 0.28) {
-                  // Person moved or someone else stepped in front — reset buffer cleanly
-                  capturedDescriptors = [primary.descriptor];
-                  lockFrames = 0;
-                } else {
-                  capturedDescriptors.push(primary.descriptor);
+                if (Math.sqrt(sumSq) > 0.32) {
+                  resetLivenessBuffer();
                 }
-              } else {
-                capturedDescriptors.push(primary.descriptor);
               }
-              if (capturedDescriptors.length > 3) capturedDescriptors.shift();
+              if (Math.abs(primary.yawRatio) <= 0.28) {
+                capturedDescriptors.push(primary.descriptor);
+                if (capturedDescriptors.length > 3) capturedDescriptors.shift();
+              }
             }
 
             lockFrames++;
             if (lockFrames === 1) {
-              setScanProgress(55);
+              baselineYaw = primary.yawRatio;
+              baselineEyeSym = primary.eyeSymmetry;
+              baselineMar = primary.mar;
+              maxEar = primary.ear;
+              minEar = primary.ear;
+              if (primary.ear >= 0.22) sawEyesOpen = true;
+              setScanProgress(45);
               playKioskChime('lock');
-              setStatusText(
-                trackedFaces.length > 1
-                  ? `3D Tracking ${trackedFaces.length} faces — verifying primary identity...`
-                  : '3D Face Mesh Locked — verifying identity...'
-              );
-            }
-
-            // Require at least 2 stable, consistent frames before matching
-            if (lockFrames >= 2 && capturedDescriptors.length >= 2) {
-              setLivenessReady(true);
-              setVerifying(true);
-              setScanProgress(100);
-              setStatusText('Verifying 3D Face ID against BEMS staff roster...');
-              cooldownUntilRef.current = Date.now() + 4200;
-
-              const fusedDescriptor = averageFaceDescriptors(capturedDescriptors);
-              const res = await fetch('/api/attendance/face-punch', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  stationCode,
-                  action: 'AUTO',
-                  descriptor: fusedDescriptor,
-                  livenessVerified: true,
-                }),
+              setStatusText('3D Face Locked — please blink your eyes or smile slightly to verify');
+              speakFaceVoicePrompt('Face detected. Please blink your eyes or turn your head slightly.', {
+                muted: false,
+                minIntervalMs: 5000,
               });
-              const json = await res.json();
-              setVerifying(false);
-              setScanProgress(0);
-              lockFrames = 0;
-              capturedDescriptors = [];
-              setLivenessReady(false);
+            } else {
+              // Update real biological liveness signals across frames
+              if (primary.ear > maxEar) maxEar = primary.ear;
+              if (primary.ear < minEar) minEar = primary.ear;
+              if (primary.ear >= 0.22) sawEyesOpen = true;
+              if (sawEyesOpen && primary.ear <= Math.min(0.21, maxEar * 0.80)) {
+                sawBlinkDip = true;
+              }
 
-              if (res.ok && json.success) {
-                const firstName = String(json.employeeName || 'Staff').split(' ')[0];
-                const isNoticeOnly = Boolean(json.alreadyCheckedIn || json.alreadyCheckedOut);
-                playKioskChime(isNoticeOnly ? 'warning' : 'success');
-                const spoken = json.alreadyCheckedIn
-                  ? `Hello ${firstName}, you are already clocked in for today at ${json.timeStr}.`
-                  : json.alreadyCheckedOut
-                  ? `Hello ${firstName}, you already signed out today at ${json.timeStr}.`
-                  : json.action === 'CHECK_OUT'
-                  ? `Goodbye ${firstName}! Signed out at ${json.timeStr}. Have a wonderful evening.`
-                  : json.status === 'LATE'
-                  ? `Welcome ${firstName}! Clocked in late at ${json.timeStr}.`
-                  : `Welcome ${firstName}! Clocked in on time at ${json.timeStr}. Have a productive day.`;
+              const earDelta = Math.max(0, maxEar - minEar);
+              const yawDelta = baselineYaw !== null ? Math.abs(primary.yawRatio - baselineYaw) : 0;
+              const eyeSymDelta = baselineEyeSym !== null ? Math.abs(primary.eyeSymmetry - baselineEyeSym) : 0;
+              const marDelta = baselineMar !== null ? Math.abs(primary.mar - baselineMar) : 0;
+              if (yawDelta > maxYawDelta) maxYawDelta = yawDelta;
+              if (eyeSymDelta > maxEyeSymDelta) maxEyeSymDelta = eyeSymDelta;
+              if (marDelta > maxMarDelta) maxMarDelta = marDelta;
 
-                speakFaceVoicePrompt(spoken, { force: true, muted: false });
+              // Genuine Biological Liveness Proof (impossible for a static photo or phone screen!)
+              const blinkVerified = sawBlinkDip && earDelta >= 0.045 && primary.ear >= minEar + 0.025;
+              const head3dVerified = maxYawDelta >= 0.13 && maxEyeSymDelta >= 0.07;
+              const expressionVerified = maxMarDelta >= 0.09;
 
-                setPopup({
-                  variant: isNoticeOnly ? 'warning' : 'success',
-                  badgeText: json.alreadyCheckedIn
-                    ? 'ALREADY CLOCKED IN TODAY'
-                    : json.alreadyCheckedOut
-                    ? 'SHIFT ALREADY COMPLETED'
-                    : json.action === 'CHECK_OUT'
-                    ? 'EVENING SIGN-OUT VERIFIED'
-                    : json.status === 'LATE'
-                    ? 'MORNING CHECK-IN · LATE'
-                    : 'MORNING CHECK-IN · ON TIME',
-                  employeeName: json.employeeName,
-                  employeeNumber: json.employeeNumber,
-                  department: json.department,
-                  subsidiary: json.subsidiary,
-                  timeStr: json.timeStr,
-                  confidence: json.confidencePercent,
-                  message: json.message,
+              const livenessMethod = blinkVerified
+                ? 'BLINK'
+                : head3dVerified
+                ? 'HEAD_3D_TURN'
+                : expressionVerified
+                ? 'EXPRESSION'
+                : null;
+
+              if (livenessMethod && capturedDescriptors.length >= 2) {
+                setLivenessReady(true);
+                setVerifying(true);
+                setScanProgress(100);
+                setStatusText('Live person verified — matching 3D Face ID...');
+                cooldownUntilRef.current = Date.now() + 4500;
+
+                const fusedDescriptor = averageFaceDescriptors(capturedDescriptors);
+                const livenessProof = {
+                  method: livenessMethod,
+                  earDelta: Number(earDelta.toFixed(4)),
+                  yawDelta: Number(maxYawDelta.toFixed(4)),
+                  eyeSymDelta: Number(maxEyeSymDelta.toFixed(4)),
+                  marDelta: Number(maxMarDelta.toFixed(4)),
+                  framesAnalyzed: lockFrames,
+                };
+
+                const res = await fetch('/api/attendance/face-punch', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    stationCode,
+                    action: 'AUTO',
+                    descriptor: fusedDescriptor,
+                    livenessVerified: true,
+                    livenessProof,
+                  }),
                 });
-                onSuccessPunchRef.current?.(json);
-              } else {
-                const isRecognizedWindowLock = Boolean(json?.employeeName);
-                playKioskChime(isRecognizedWindowLock ? 'warning' : 'error');
+                const json = await res.json();
+                setVerifying(false);
+                setScanProgress(0);
+                resetLivenessBuffer();
+                setLivenessReady(false);
+
+                if (res.ok && json.success) {
+                  const firstName = String(json.employeeName || 'Staff').split(' ')[0];
+                  const isNoticeOnly = Boolean(json.alreadyCheckedIn || json.alreadyCheckedOut);
+                  playKioskChime(isNoticeOnly ? 'warning' : 'success');
+                  const spoken = json.alreadyCheckedIn
+                    ? `Hello ${firstName}, you are already clocked in for today at ${json.timeStr}.`
+                    : json.alreadyCheckedOut
+                    ? `Hello ${firstName}, you already signed out today at ${json.timeStr}.`
+                    : json.action === 'CHECK_OUT'
+                    ? `Goodbye ${firstName}! Signed out at ${json.timeStr}. Have a wonderful evening.`
+                    : json.status === 'LATE'
+                    ? `Welcome ${firstName}! Clocked in late at ${json.timeStr}.`
+                    : `Welcome ${firstName}! Clocked in on time at ${json.timeStr}. Have a productive day.`;
+
+                  speakFaceVoicePrompt(spoken, { force: true, muted: false });
+
+                  setPopup({
+                    variant: isNoticeOnly ? 'warning' : 'success',
+                    badgeText: json.alreadyCheckedIn
+                      ? 'ALREADY CLOCKED IN TODAY'
+                      : json.alreadyCheckedOut
+                      ? 'SHIFT ALREADY COMPLETED'
+                      : json.action === 'CHECK_OUT'
+                      ? 'EVENING SIGN-OUT VERIFIED'
+                      : json.status === 'LATE'
+                      ? 'MORNING CHECK-IN · LATE'
+                      : 'MORNING CHECK-IN · ON TIME',
+                    employeeName: json.employeeName,
+                    employeeNumber: json.employeeNumber,
+                    department: json.department,
+                    subsidiary: json.subsidiary,
+                    timeStr: json.timeStr,
+                    confidence: json.confidencePercent,
+                    message: json.message,
+                  });
+                  onSuccessPunchRef.current?.(json);
+                } else {
+                  const isRecognizedWindowLock = Boolean(json?.employeeName);
+                  playKioskChime(isRecognizedWindowLock ? 'warning' : 'error');
+                  speakFaceVoicePrompt(
+                    json?.error || 'Face not recognized. Please ensure your Face ID is registered.',
+                    { force: true, muted: false }
+                  );
+                  setPopup({
+                    variant: isRecognizedWindowLock ? 'warning' : 'error',
+                    badgeText: json?.spoofBlocked
+                      ? 'ANTI-SPOOFING BLOCKED'
+                      : isRecognizedWindowLock
+                      ? 'TIME WINDOW LOCKED'
+                      : 'BIOMETRIC MATCH NOT FOUND',
+                    employeeName: json?.employeeName || null,
+                    employeeNumber: json?.employeeNumber || null,
+                    confidence: json?.confidencePercent,
+                    message:
+                      json?.error ||
+                      'Could not verify Face ID. Ensure your Face ID is registered on the Staff Portal and look toward the kiosk camera.',
+                  });
+                }
+              } else if (lockFrames >= 18) {
+                // Held up a static photo / phone screen for >3.5 seconds with ZERO blink, ZERO 3D turn, ZERO expression!
+                cooldownUntilRef.current = Date.now() + 4200;
+                resetLivenessBuffer();
+                setScanProgress(0);
+                playKioskChime('error');
                 speakFaceVoicePrompt(
-                  json?.error || 'Face not recognized. Please ensure your Face ID is registered.',
+                  'Photo or static screen detected. Live person required. Please step up in person and blink naturally.',
                   { force: true, muted: false }
                 );
                 setPopup({
-                  variant: isRecognizedWindowLock ? 'warning' : 'error',
-                  badgeText: isRecognizedWindowLock
-                    ? 'TIME WINDOW LOCKED'
-                    : 'BIOMETRIC MATCH NOT FOUND',
-                  employeeName: json?.employeeName || null,
-                  employeeNumber: json?.employeeNumber || null,
-                  confidence: json?.confidencePercent,
+                  variant: 'error',
+                  badgeText: 'SPOOF BLOCKED · PHOTO / SCREEN DETECTED',
                   message:
-                    json?.error ||
-                    'Could not verify Face ID. Ensure your Face ID is registered on the Staff Portal and look toward the kiosk camera.',
+                    'No live blink or 3D facial movement detected. Photos and phone screens are strictly blocked. Please step up in person and blink naturally.',
                 });
+              } else {
+                setScanProgress(Math.min(82, 45 + Math.round(lockFrames * 2)));
+                setStatusText('Anti-Spoofing Check — blink your eyes naturally or turn head slightly');
               }
             }
           }

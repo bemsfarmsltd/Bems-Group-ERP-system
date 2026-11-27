@@ -61,6 +61,8 @@ export async function loadFaceApiModels(): Promise<any> {
 export interface DetectedFace3D {
   descriptor: number[] | null;
   ear: number;
+  mar: number; // Mouth Aspect Ratio (changes on slight smile/speak; completely static on photos)
+  eyeSymmetry: number; // LeftEyeWidth / RightEyeWidth (shifts on true 3D head rotation; flat on 2D photos)
   yawRatio: number;
   faceSizeRatio: number;
   detectionScore: number;
@@ -193,6 +195,26 @@ function computeEyeAspectRatio(eye: Array<{ x: number; y: number }>): number {
   const h = dist2D(eye[0], eye[3]);
   if (h <= 0.001) return 0.3;
   return (v1 + v2) / (2.0 * h);
+}
+
+function computeMouthAspectRatio(mouth: Array<{ x: number; y: number }>): number {
+  if (!mouth || mouth.length < 12) return 0.15;
+  // Outer mouth: left corner 0, right corner 6; top 3, bottom 9
+  const v = dist2D(mouth[3], mouth[9]);
+  const h = dist2D(mouth[0], mouth[6]);
+  if (h <= 0.001) return 0.15;
+  return v / h;
+}
+
+function computeEyeWidthSymmetry(
+  leftEye: Array<{ x: number; y: number }>,
+  rightEye: Array<{ x: number; y: number }>
+): number {
+  if (!leftEye || leftEye.length < 4 || !rightEye || rightEye.length < 4) return 1;
+  const lw = dist2D(leftEye[0], leftEye[3]);
+  const rw = dist2D(rightEye[0], rightEye[3]);
+  if (rw <= 0.001) return 1;
+  return lw / rw;
 }
 
 let boostCanvas: HTMLCanvasElement | null = null;
@@ -531,7 +553,12 @@ export async function analyzeVideoFaceFrame(
     const parsedFaces: DetectedFace3D[] = detections
       .map((det: any) => {
         const lm = det.landmarks;
-        const ear = (computeEyeAspectRatio(lm.getLeftEye()) + computeEyeAspectRatio(lm.getRightEye())) / 2;
+        const leftEye = lm.getLeftEye();
+        const rightEye = lm.getRightEye();
+        const mouth = lm.getMouth();
+        const ear = (computeEyeAspectRatio(leftEye) + computeEyeAspectRatio(rightEye)) / 2;
+        const mar = computeMouthAspectRatio(mouth);
+        const eyeSymmetry = computeEyeWidthSymmetry(leftEye, rightEye);
         const nose = lm.getNose();
         const jaw = lm.getJawOutline();
         const noseTip = nose[3] || nose[0];
@@ -549,6 +576,8 @@ export async function analyzeVideoFaceFrame(
             ? Array.from(det.descriptor as Float32Array).map((n) => Number(n.toFixed(6)))
             : null,
           ear,
+          mar,
+          eyeSymmetry,
           yawRatio,
           faceSizeRatio: b.width / vw,
           detectionScore: Number(det.detection.score || 0),

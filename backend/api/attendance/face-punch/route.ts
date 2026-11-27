@@ -31,13 +31,36 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => ({}));
     const descriptor = body?.descriptor;
     const livenessVerified = body?.livenessVerified === true;
+    const livenessProof = body?.livenessProof as
+      | {
+          method?: string;
+          earDelta?: number;
+          yawDelta?: number;
+          marDelta?: number;
+          eyeSymDelta?: number;
+          framesAnalyzed?: number;
+        }
+      | undefined;
     const requestedAction = typeof body?.action === 'string' ? body.action.toUpperCase() : 'AUTO';
     const requestedStationCode = typeof body?.stationCode === 'string' ? body.stationCode.trim() : '';
 
-    if (!livenessVerified) {
+    const validBlinkProof =
+      livenessProof?.method === 'BLINK' && Number(livenessProof?.earDelta || 0) >= 0.045;
+    const valid3dTurnProof =
+      livenessProof?.method === 'HEAD_3D_TURN' &&
+      Number(livenessProof?.yawDelta || 0) >= 0.13 &&
+      Number(livenessProof?.eyeSymDelta || 0) >= 0.07;
+    const validExpressionProof =
+      livenessProof?.method === 'EXPRESSION' && Number(livenessProof?.marDelta || 0) >= 0.09;
+
+    if (!livenessVerified || (!validBlinkProof && !valid3dTurnProof && !validExpressionProof)) {
       return NextResponse.json(
-        { error: 'Liveness check required. Please blink naturally or slightly turn your head at the camera.' },
-        { status: 400 }
+        {
+          error:
+            'Anti-Spoofing Liveness Required: Static photos or phone screens cannot clock in. Please step up in person and blink naturally or turn your head slightly.',
+          spoofBlocked: true,
+        },
+        { status: 403 }
       );
     }
 
