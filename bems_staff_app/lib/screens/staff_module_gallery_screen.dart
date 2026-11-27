@@ -130,34 +130,6 @@ class _StaffModuleGalleryScreenState extends State<StaffModuleGalleryScreen> wit
                           ),
                           Row(
                             children: [
-                              InkWell(
-                                onTap: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => DigitalIdCardScreen(user: _user, hrData: const {}),
-                                    ),
-                                  );
-                                },
-                                borderRadius: BorderRadius.circular(12),
-                                child: Container(
-                                  height: 34,
-                                  padding: const EdgeInsets.symmetric(horizontal: 11),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFF0F172A),
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                  child: const Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(Icons.badge_outlined, size: 15, color: Colors.white),
-                                      SizedBox(width: 5),
-                                      Text('Staff ID', style: TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w800)),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 4),
                               IconButton(
                                 icon: Icon(
                                   Icons.refresh_rounded,
