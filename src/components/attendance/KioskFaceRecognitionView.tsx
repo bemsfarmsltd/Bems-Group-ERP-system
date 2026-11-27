@@ -197,49 +197,72 @@ export function KioskFaceRecognitionView({
         await videoRef.current.play();
       }
 
-      type ActiveChallengeType = 'MEDIAPIPE_BLINK' | 'MEDIAPIPE_JAW_CYCLE';
-      type ChallengeStage = 'IDLE' | 'WAIT_ACTION' | 'WAIT_RETURN';
+      type ActiveChallengeType =
+        | 'MEDIAPIPE_BLINK'
+        | 'MEDIAPIPE_JAW_CYCLE'
+        | 'MEDIAPIPE_NOD'
+        | 'MEDIAPIPE_HEAD_TURN';
+      type FlowStage = 'LOCKING' | 'LOCK_PAUSE' | 'WAIT_ACTION' | 'WAIT_RETURN';
 
       activeRef.current = true;
-      let lockFrames = 0;
+      let lastChallenge: ActiveChallengeType | null = null;
+      let flowStage: FlowStage = 'LOCKING';
+      let lockStartedAt = 0;
+      let lockPauseUntil = 0;
       let challengeStartedAt = 0;
+      let lockFrames = 0;
       let activeChallenge: ActiveChallengeType | null = null;
-      let stage: ChallengeStage = 'IDLE';
 
-      // Blink metrics (neural blendshapes 0..1)
+      // Blink metrics
       let startBlink = 0;
       let peakBlinkLeft = 0;
       let peakBlinkRight = 0;
 
-      // Jaw cycle metrics (neural blendshape 0..1)
+      // Jaw metrics
       let startJaw = 0;
       let peakJaw = 0;
 
-      // Anti-Photo-Swap & Neural PAD CNN state
+      // Nod (pitch) metrics
+      let startPitch = 0;
+      let peakPitchDown = 0;
+
+      // Head turn (left & right) metrics
+      let minYaw = 0;
+      let maxYaw = 0;
+      let turnedLeft = false;
+      let turnedRight = false;
+
+      // Anti-Swap & Calm Single-Verdict Neural PAD accumulator (NO mid-scan spoof flicker!)
       let prevBox: { cx: number; cy: number; w: number } | null = null;
       let baselineRgb: { r: number; g: number; b: number } | null = null;
       let maxFlashRgbDelta = 0;
       let neuralReadyFlag = false;
       let antispoofScores: number[] = [];
       let livenessScores: number[] = [];
-      let consecutiveSpoofFrames = 0;
 
       const resetLivenessBuffer = () => {
-        lockFrames = 0;
+        flowStage = 'LOCKING';
+        lockStartedAt = 0;
+        lockPauseUntil = 0;
         challengeStartedAt = 0;
+        lockFrames = 0;
         activeChallenge = null;
-        stage = 'IDLE';
         startBlink = 0;
         peakBlinkLeft = 0;
         peakBlinkRight = 0;
         startJaw = 0;
         peakJaw = 0;
+        startPitch = 0;
+        peakPitchDown = 0;
+        minYaw = 0;
+        maxYaw = 0;
+        turnedLeft = false;
+        turnedRight = false;
         prevBox = null;
         baselineRgb = null;
         maxFlashRgbDelta = 0;
         antispoofScores = [];
         livenessScores = [];
-        consecutiveSpoofFrames = 0;
         setFlashPhase('idle');
       };
 
@@ -255,7 +278,7 @@ export function KioskFaceRecognitionView({
       });
 
       speakFaceVoicePrompt(
-        `BEMS 3D Face Recognition Kiosk is active for ${isEveningShiftRef.current ? 'evening sign-out' : 'morning check-in'}. Look at the camera and follow the live prompt.`,
+        `BEMS 3D Face Recognition Kiosk is active for ${isEveningShiftRef.current ? 'evening sign-out' : 'morning check-in'}. Step up calmly and look at the camera.`,
         { force: true, muted: false }
       );
 
@@ -263,18 +286,19 @@ export function KioskFaceRecognitionView({
         if (!activeRef.current || !videoRef.current) return;
 
         try {
-          // 30 FPS Google MediaPipe 478-point 3D tracking & 52 neural blendshapes
+          // 20-30 FPS Google MediaPipe 478-point 3D tracking & 52 neural blendshapes
           const mpFrame = await detectMediaPipeFaceFrame(videoRef.current);
           latestFacesRef.current = mpFrame.faces;
 
+          // Clean cooldown between scans — never rushes or double-fires
           if (Date.now() < cooldownUntilRef.current) {
-            setTimeout(tick, 120);
+            setTimeout(tick, 140);
             return;
           }
 
           const trackedFaces = mpFrame.faces.filter((f) => f.faceSizeRatio >= 0.06);
           const matchableFaces = trackedFaces.filter(
-            (f) => f.faceSizeRatio >= 0.11 && Math.abs(f.yawRatio) <= 0.42
+            (f) => f.faceSizeRatio >= 0.11 && Math.abs(f.yawRatio) <= 0.55
           );
 
           if (trackedFaces.length === 0) {
@@ -283,17 +307,17 @@ export function KioskFaceRecognitionView({
             setScanProgress(0);
             setLightingAlert(null);
             resetLivenessBuffer();
-            setStatusText('3D Radar Active — Scanning room for live staff faces...');
+            setStatusText('3D Radar Active — Step up and look at the camera...');
           } else if (matchableFaces.length === 0) {
             setFaceDetected(true);
             setLivenessReady(false);
-            setScanProgress(25);
+            setScanProgress(15);
             resetLivenessBuffer();
             const nearest = trackedFaces[0];
             if (nearest.faceSizeRatio < 0.11) {
-              setStatusText('3D Face Tracked — step slightly closer to begin liveness check');
+              setStatusText('Face detected — step slightly closer to begin');
             } else {
-              setStatusText('3D Face Tracked — look straight at the camera');
+              setStatusText('Face detected — look straight at the camera');
             }
           } else {
             const primary = matchableFaces[0];
@@ -301,113 +325,123 @@ export function KioskFaceRecognitionView({
             const { eyeBlinkLeft, eyeBlinkRight, jawOpen } = primary.blendshapes;
             const blinkAvg = (eyeBlinkLeft + eyeBlinkRight) / 2;
 
-            // Anti-Photo-Swap Guard: reset immediately if face box jumps (swiping between photos on a phone)
+            // Anti-Photo-Swap Guard: reset cleanly if face box jumps suddenly (swiping between two photos)
             const curCx = primary.normBox.x + primary.normBox.width / 2;
             const curCy = primary.normBox.y + primary.normBox.height / 2;
             const curW = Math.max(0.05, primary.normBox.width);
-            if (prevBox && stage !== 'IDLE') {
+            if (prevBox && flowStage !== 'LOCKING') {
               const jumpDist = Math.hypot(curCx - prevBox.cx, curCy - prevBox.cy);
               const scaleDiff = Math.abs(curW - prevBox.w) / prevBox.w;
-              if (jumpDist > prevBox.w * 0.24 || scaleDiff > 0.26) {
+              if (jumpDist > prevBox.w * 0.28 || scaleDiff > 0.28) {
                 resetLivenessBuffer();
-                setStatusText('Movement interrupted — hold steady and look straight at the camera');
-                if (activeRef.current) setTimeout(tick, 50);
+                setStatusText('Hold steady and look straight at the camera...');
+                if (activeRef.current) setTimeout(tick, 60);
                 return;
               }
             }
             prevBox = { cx: curCx, cy: curCy, w: curW };
 
-            // Layer 1: Self-Hosted Neural Anti-Spoofing & Liveness CNN (sampled every 4th frame at 20-30fps)
-            if (lockFrames % 4 === 0) {
+            // Quietly accumulate Neural Anti-Spoofing CNN samples across the entire calm sequence
+            // (Evaluated ONCE at the end — zero mid-scan false spoof popups!)
+            if (lockFrames % 5 === 0) {
               const pad = await evaluateNeuralAntiSpoof(videoRef.current, primary.box);
               if (pad.neuralReady) {
                 neuralReadyFlag = true;
                 antispoofScores.push(pad.antispoofScore);
                 livenessScores.push(pad.livenessScore);
-                if (antispoofScores.length > 8) antispoofScores.shift();
-                if (livenessScores.length > 8) livenessScores.shift();
-
-                if (pad.antispoofScore < 0.34 && pad.livenessScore < 0.34) {
-                  consecutiveSpoofFrames++;
-                } else {
-                  consecutiveSpoofFrames = 0;
-                }
-
-                if (consecutiveSpoofFrames >= 3) {
-                  cooldownUntilRef.current = Date.now() + 4000;
-                  resetLivenessBuffer();
-                  setScanProgress(0);
-                  playKioskChime('error');
-                  speakFaceVoicePrompt(
-                    'Spoof detected. Phone screens and photos are strictly blocked. Please step up in person.',
-                    { force: true, muted: false }
-                  );
-                  setPopup({
-                    variant: 'error',
-                    badgeText: 'NEURAL ANTI-SPOOF · SCREEN / PHOTO BLOCKED',
-                    message:
-                      'A phone screen or flat photo was detected by the neural anti-spoofing guard. Please step up in person.',
-                  });
-                  if (activeRef.current) setTimeout(tick, 120);
-                  return;
-                }
+                if (antispoofScores.length > 10) antispoofScores.shift();
+                if (livenessScores.length > 10) livenessScores.shift();
               }
             }
 
-            // Layer 2: Randomized Google MediaPipe Neural Blendshape Challenge (BLINK or JAW_CYCLE)
-            if (stage === 'IDLE') {
+            // =========================================================================
+            // INTERVAL 1: CALM FACE LOCK (~1.0 second steady straight-facing hold)
+            // =========================================================================
+            if (flowStage === 'LOCKING') {
               if (Math.abs(primary.yawRatio) > 0.22) {
-                setScanProgress(35);
-                setStatusText('Look straight at the camera to begin verification...');
+                lockStartedAt = 0;
+                setScanProgress(20);
+                setStatusText('Step 1 of 2 · Look straight at the camera to lock your face');
               } else {
-                // Pick randomized challenge based on clean resting neural blendshape baseline
-                const canBlink = blinkAvg <= 0.24;
-                const canJaw = jawOpen <= 0.14;
-                if (!canBlink && !canJaw) {
-                  setScanProgress(38);
-                  setStatusText('Look naturally at the camera to start...');
-                } else {
-                  const pool: ActiveChallengeType[] = [];
-                  if (canBlink) pool.push('MEDIAPIPE_BLINK');
-                  if (canJaw) pool.push('MEDIAPIPE_JAW_CYCLE');
-                  activeChallenge = pool[Math.floor(Math.random() * pool.length)];
-                  stage = 'WAIT_ACTION';
-                  lockFrames = 1;
-                  challengeStartedAt = Date.now();
-                  startBlink = blinkAvg;
-                  peakBlinkLeft = eyeBlinkLeft;
-                  peakBlinkRight = eyeBlinkRight;
-                  startJaw = jawOpen;
-                  peakJaw = jawOpen;
-                  baselineRgb = measureFaceRgbMean(videoRef.current, primary.box);
-                  maxFlashRgbDelta = 0;
-                  setFlashPhase('warm');
-                  setScanProgress(52);
-                  playKioskChime('lock');
+                if (lockStartedAt === 0) lockStartedAt = Date.now();
+                const heldMs = Date.now() - lockStartedAt;
+                lockFrames++;
+                setScanProgress(Math.min(42, 20 + Math.round((heldMs / 950) * 22)));
+                setStatusText('Step 1 of 2 · Hold steady — locking your face...');
 
-                  if (activeChallenge === 'MEDIAPIPE_BLINK') {
-                    setStatusText('Liveness Check: Please BLINK naturally');
-                    speakFaceVoicePrompt('Face locked. Please blink to verify.', {
-                      force: true,
-                      muted: false,
-                    });
-                  } else {
-                    setStatusText('Liveness Check: Please OPEN YOUR MOUTH slightly, then close it');
-                    speakFaceVoicePrompt('Face locked. Please open your mouth, then close it to verify.', {
-                      force: true,
-                      muted: false,
-                    });
-                  }
+                if (heldMs >= 950) {
+                  // Face cleanly locked! Pause 450ms calmly before issuing the dynamic challenge
+                  flowStage = 'LOCK_PAUSE';
+                  lockPauseUntil = Date.now() + 450;
+                  setScanProgress(46);
+                  playKioskChime('lock');
+                  setStatusText('Step 1 of 2 · Face Locked ✓ Preparing live check...');
+                }
+              }
+            } else if (flowStage === 'LOCK_PAUSE') {
+              lockFrames++;
+              if (Date.now() >= lockPauseUntil) {
+                // Dynamically pick 1 of 4 unpredictable challenges, NEVER repeating the previous one
+                const candidates: ActiveChallengeType[] = [];
+                if (blinkAvg <= 0.24) candidates.push('MEDIAPIPE_BLINK');
+                if (jawOpen <= 0.14) candidates.push('MEDIAPIPE_JAW_CYCLE');
+                candidates.push('MEDIAPIPE_NOD');
+                candidates.push('MEDIAPIPE_HEAD_TURN');
+
+                const nonRepeating = candidates.filter((c) => c !== lastChallenge);
+                const pool = nonRepeating.length > 0 ? nonRepeating : candidates;
+                activeChallenge = pool[Math.floor(Math.random() * pool.length)];
+                lastChallenge = activeChallenge;
+
+                flowStage = 'WAIT_ACTION';
+                challengeStartedAt = Date.now();
+                lockFrames = 1;
+                startBlink = blinkAvg;
+                peakBlinkLeft = eyeBlinkLeft;
+                peakBlinkRight = eyeBlinkRight;
+                startJaw = jawOpen;
+                peakJaw = jawOpen;
+                startPitch = primary.pitchRatio;
+                peakPitchDown = primary.pitchRatio;
+                minYaw = primary.yawRatio;
+                maxYaw = primary.yawRatio;
+                turnedLeft = false;
+                turnedRight = false;
+                baselineRgb = measureFaceRgbMean(videoRef.current, primary.box);
+                maxFlashRgbDelta = 0;
+                setFlashPhase('warm');
+                setScanProgress(52);
+
+                if (activeChallenge === 'MEDIAPIPE_BLINK') {
+                  setStatusText('Step 2 of 2 · Please BLINK naturally');
+                  speakFaceVoicePrompt('Face locked. Please blink naturally.', { force: true, muted: false });
+                } else if (activeChallenge === 'MEDIAPIPE_JAW_CYCLE') {
+                  setStatusText('Step 2 of 2 · Please OPEN your mouth, then close it');
+                  speakFaceVoicePrompt('Face locked. Please open your mouth, then close it.', {
+                    force: true,
+                    muted: false,
+                  });
+                } else if (activeChallenge === 'MEDIAPIPE_NOD') {
+                  setStatusText('Step 2 of 2 · Please NOD your head down and up');
+                  speakFaceVoicePrompt('Face locked. Please nod your head gently.', { force: true, muted: false });
+                } else {
+                  setStatusText('Step 2 of 2 · Please TURN your head LEFT, then RIGHT');
+                  speakFaceVoicePrompt('Face locked. Please turn your head slightly left, then right.', {
+                    force: true,
+                    muted: false,
+                  });
                 }
               }
             } else {
+              // =========================================================================
+              // INTERVAL 2: DYNAMIC UNPREDICTABLE CHALLENGE (8.5s calm window)
+              // =========================================================================
               lockFrames++;
               const elapsedMs = Date.now() - challengeStartedAt;
 
-              // Subtle light-theme screen-flash ring alternation + RGB skin reflection sampling
-              if (lockFrames === 8) setFlashPhase('cool');
-              else if (lockFrames === 16) setFlashPhase('warm');
-              if (baselineRgb && lockFrames % 3 === 0) {
+              if (lockFrames === 10) setFlashPhase('cool');
+              else if (lockFrames === 20) setFlashPhase('warm');
+              if (baselineRgb && lockFrames % 4 === 0) {
                 const curRgb = measureFaceRgbMean(videoRef.current, primary.box);
                 const rgbDelta = Math.hypot(
                   curRgb.r - baselineRgb.r,
@@ -426,18 +460,17 @@ export function KioskFaceRecognitionView({
                 const peakAvg = (peakBlinkLeft + peakBlinkRight) / 2;
                 const blinkDelta = Math.max(0, peakAvg - startBlink);
 
-                if (stage === 'WAIT_ACTION') {
+                if (flowStage === 'WAIT_ACTION') {
                   if (peakBlinkLeft >= 0.44 && peakBlinkRight >= 0.44 && blinkDelta >= 0.26) {
-                    stage = 'WAIT_RETURN';
+                    flowStage = 'WAIT_RETURN';
                     setFlashPhase('cool');
                     setScanProgress(85);
                   } else {
-                    setScanProgress(Math.min(76, 52 + Math.round(elapsedMs / 160)));
-                    setStatusText('Liveness Check: Please BLINK naturally');
+                    setScanProgress(Math.min(78, 52 + Math.round(elapsedMs / 220)));
+                    setStatusText('Step 2 of 2 · Please BLINK naturally');
                   }
                 }
-
-                if (stage === 'WAIT_RETURN' && blinkAvg <= 0.22 && lockFrames >= 3) {
+                if (flowStage === 'WAIT_RETURN' && blinkAvg <= 0.22 && lockFrames >= 3) {
                   challengePassed = true;
                   livenessProof = {
                     method: 'MEDIAPIPE_BLINK',
@@ -453,20 +486,19 @@ export function KioskFaceRecognitionView({
                 if (jawOpen > peakJaw) peakJaw = jawOpen;
                 const openDelta = Math.max(0, peakJaw - startJaw);
 
-                if (stage === 'WAIT_ACTION') {
+                if (flowStage === 'WAIT_ACTION') {
                   if (peakJaw >= 0.28 && openDelta >= 0.20) {
-                    stage = 'WAIT_RETURN';
+                    flowStage = 'WAIT_RETURN';
                     setFlashPhase('cool');
                     setScanProgress(84);
                     playKioskChime('lock');
-                    setStatusText('Great! Now CLOSE YOUR MOUTH to verify');
+                    setStatusText('Step 2 of 2 · Great! Now CLOSE your mouth');
                   } else {
-                    setScanProgress(Math.min(76, 52 + Math.round(elapsedMs / 160)));
-                    setStatusText('Liveness Check: Please OPEN YOUR MOUTH slightly, then close it');
+                    setScanProgress(Math.min(78, 52 + Math.round(elapsedMs / 220)));
+                    setStatusText('Step 2 of 2 · Please OPEN your mouth, then close it');
                   }
                 }
-
-                if (stage === 'WAIT_RETURN') {
+                if (flowStage === 'WAIT_RETURN') {
                   const closeDelta = Math.max(0, peakJaw - jawOpen);
                   if (jawOpen <= 0.12 && closeDelta >= 0.16 && lockFrames >= 3) {
                     challengePassed = true;
@@ -480,11 +512,72 @@ export function KioskFaceRecognitionView({
                       framesAnalyzed: lockFrames,
                     };
                   } else {
-                    setStatusText('Great! Now CLOSE YOUR MOUTH to verify');
+                    setStatusText('Step 2 of 2 · Great! Now CLOSE your mouth');
                   }
+                }
+              } else if (activeChallenge === 'MEDIAPIPE_NOD') {
+                if (primary.pitchRatio > peakPitchDown) peakPitchDown = primary.pitchRatio;
+                const nodDownDelta = Math.max(0, peakPitchDown - startPitch);
+
+                if (flowStage === 'WAIT_ACTION') {
+                  if (nodDownDelta >= 0.12) {
+                    flowStage = 'WAIT_RETURN';
+                    setFlashPhase('cool');
+                    setScanProgress(84);
+                    playKioskChime('lock');
+                    setStatusText('Step 2 of 2 · Great! Now lift your head back up');
+                  } else {
+                    setScanProgress(Math.min(78, 52 + Math.round(elapsedMs / 220)));
+                    setStatusText('Step 2 of 2 · Please NOD your head down and up');
+                  }
+                }
+                if (flowStage === 'WAIT_RETURN') {
+                  const nodReturnDelta = Math.max(0, peakPitchDown - primary.pitchRatio);
+                  if (nodReturnDelta >= 0.08 && lockFrames >= 4) {
+                    challengePassed = true;
+                    livenessProof = {
+                      method: 'MEDIAPIPE_NOD',
+                      startPitch: Number(startPitch.toFixed(4)),
+                      peakPitchDown: Number(peakPitchDown.toFixed(4)),
+                      nodDownDelta: Number(nodDownDelta.toFixed(4)),
+                      nodReturnDelta: Number(nodReturnDelta.toFixed(4)),
+                      framesAnalyzed: lockFrames,
+                    };
+                  } else {
+                    setStatusText('Step 2 of 2 · Great! Now lift your head back up');
+                  }
+                }
+              } else if (activeChallenge === 'MEDIAPIPE_HEAD_TURN') {
+                if (primary.yawRatio < minYaw) minYaw = primary.yawRatio;
+                if (primary.yawRatio > maxYaw) maxYaw = primary.yawRatio;
+                if (primary.yawRatio <= -0.22) turnedLeft = true;
+                if (primary.yawRatio >= 0.22) turnedRight = true;
+                const yawSweep = Math.max(0, maxYaw - minYaw);
+
+                if (turnedLeft && turnedRight && yawSweep >= 0.48 && lockFrames >= 4) {
+                  challengePassed = true;
+                  livenessProof = {
+                    method: 'MEDIAPIPE_HEAD_TURN',
+                    minYaw: Number(minYaw.toFixed(4)),
+                    maxYaw: Number(maxYaw.toFixed(4)),
+                    yawSweep: Number(yawSweep.toFixed(4)),
+                    framesAnalyzed: lockFrames,
+                  };
+                } else if (turnedLeft && !turnedRight) {
+                  setScanProgress(78);
+                  setStatusText('Step 2 of 2 · Great! Now turn slightly to the other side');
+                } else if (turnedRight && !turnedLeft) {
+                  setScanProgress(78);
+                  setStatusText('Step 2 of 2 · Great! Now turn slightly to the other side');
+                } else {
+                  setScanProgress(Math.min(72, 52 + Math.round(elapsedMs / 240)));
+                  setStatusText('Step 2 of 2 · Please TURN your head LEFT, then RIGHT');
                 }
               }
 
+              // =========================================================================
+              // INTERVAL 3: SINGLE DECISIVE VERDICT (Clean 5.5s cooldown — never contradicts)
+              // =========================================================================
               if (challengePassed && livenessProof) {
                 const avgAntispoof =
                   antispoofScores.length > 0
@@ -495,36 +588,46 @@ export function KioskFaceRecognitionView({
                     ? livenessScores.reduce((a, b) => a + b, 0) / livenessScores.length
                     : 1;
 
-                const neuralPadPassed = !neuralReadyFlag || avgAntispoof >= 0.40 || avgLiveness >= 0.42;
+                const isPose =
+                  activeChallenge === 'MEDIAPIPE_NOD' || activeChallenge === 'MEDIAPIPE_HEAD_TURN';
+                const neuralPadPassed = !neuralReadyFlag
+                  ? true
+                  : isPose
+                  ? avgAntispoof >= 0.46 || avgLiveness >= 0.48
+                  : avgAntispoof >= 0.38 || avgLiveness >= 0.40;
+
                 if (!neuralPadPassed) {
-                  cooldownUntilRef.current = Date.now() + 4000;
+                  cooldownUntilRef.current = Date.now() + 5500;
                   resetLivenessBuffer();
                   setScanProgress(0);
                   playKioskChime('error');
                   speakFaceVoicePrompt(
-                    'Neural anti-spoofing blocked this scan. Phone screens and video replays are not allowed.',
+                    'Verification blocked. Phone screens and photos are not allowed. Please step up in person.',
                     { force: true, muted: false }
                   );
                   setPopup({
                     variant: 'error',
-                    badgeText: 'NEURAL ANTI-SPOOF · SCREEN REPLAY BLOCKED',
+                    badgeText: 'ANTI-SPOOFING · SCREEN / PHOTO BLOCKED',
                     message:
-                      'Our neural anti-spoofing model detected a screen or video replay. Please step up to the kiosk in person.',
+                      'A phone screen or photo was detected. Please step up to the kiosk in person.',
                   });
-                  if (activeRef.current) setTimeout(tick, 120);
+                  if (activeRef.current) setTimeout(tick, 140);
                   return;
                 }
 
-                // Single-shot 128-D biometric descriptor extraction ONLY after MediaPipe 3D liveness passes
                 setFlashPhase('idle');
                 setLivenessReady(true);
                 setVerifying(true);
-                setScanProgress(96);
-                setStatusText('Live 3D check passed — matching Face ID...');
-                cooldownUntilRef.current = Date.now() + 4500;
+                setScanProgress(94);
+                setStatusText('Live check passed ✓ Matching 3D Face ID...');
+                cooldownUntilRef.current = Date.now() + 5500;
+
+                // Calmly pause 180ms so the face settles straight before extracting the 128-D vector
+                await new Promise((r) => setTimeout(r, 180));
 
                 const descriptors: number[][] = [];
                 for (let attempt = 0; attempt < 2; attempt++) {
+                  if (!videoRef.current) break;
                   const idFrame = await analyzeVideoFaceFrame(videoRef.current, true, {
                     allowMultiple: true,
                     longRange: true,
@@ -537,9 +640,9 @@ export function KioskFaceRecognitionView({
                   setScanProgress(0);
                   resetLivenessBuffer();
                   setLivenessReady(false);
-                  cooldownUntilRef.current = Date.now() + 1200;
-                  setStatusText('Could not capture clear Face ID — hold steady and look at the camera');
-                  if (activeRef.current) setTimeout(tick, 120);
+                  cooldownUntilRef.current = Date.now() + 1800;
+                  setStatusText('Look straight at the camera briefly to complete Face ID match...');
+                  if (activeRef.current) setTimeout(tick, 140);
                   return;
                 }
 
@@ -627,21 +730,20 @@ export function KioskFaceRecognitionView({
                       'Could not verify Face ID. Ensure your Face ID is registered on the Staff Portal and look toward the kiosk camera.',
                   });
                 }
-              } else if (elapsedMs >= 6500) {
-                // Failed to complete live neural blendshape action within 6.5s (photo / phone screen!)
-                cooldownUntilRef.current = Date.now() + 4000;
+              } else if (elapsedMs >= 8500) {
+                cooldownUntilRef.current = Date.now() + 5000;
                 resetLivenessBuffer();
                 setScanProgress(0);
                 playKioskChime('error');
                 speakFaceVoicePrompt(
-                  'Liveness check failed. Photos and phone screens are strictly blocked. Please step up in person and follow the prompt.',
+                  'Liveness check timed out. Please step up in person and follow the on-screen step.',
                   { force: true, muted: false }
                 );
                 setPopup({
                   variant: 'error',
-                  badgeText: 'SPOOF BLOCKED · LIVENESS CHECK FAILED',
+                  badgeText: 'LIVENESS CHECK TIMED OUT',
                   message:
-                    'The live facial action was not completed. Photos and phone screens are strictly blocked. Please step up in person.',
+                    'The live verification step was not completed in time. Please step up in person and follow the prompt.',
                 });
               }
             }
@@ -652,7 +754,7 @@ export function KioskFaceRecognitionView({
         }
 
         if (activeRef.current) {
-          setTimeout(tick, 45);
+          setTimeout(tick, 50);
         }
       };
 

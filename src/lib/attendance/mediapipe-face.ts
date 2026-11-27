@@ -19,6 +19,7 @@ export interface MediaPipeFace3D {
   box: { x: number; y: number; width: number; height: number };
   faceSizeRatio: number;
   yawRatio: number;
+  pitchRatio: number; // Positive = nodding down, Negative = tilting up
   noseProtrusionZ: number;
   blendshapes: MediaPipeBlendshapes;
 }
@@ -115,11 +116,15 @@ export async function detectMediaPipeFaceFrame(videoEl: HTMLVideoElement): Promi
       const normW = Math.max(0.01, maxX - minX);
       const normH = Math.max(0.01, maxY - minY);
 
-      // Nose tip (1) vs left cheek edge (234) and right cheek edge (454)
+      // Nose tip (1) vs left cheek edge (234) & right cheek edge (454) for yaw,
+      // and forehead (10) & chin (152) for vertical pitch (nodding down/up)
       const noseTip = lms[1];
       const leftCheek = lms[234];
       const rightCheek = lms[454];
+      const forehead = lms[10];
+      const chin = lms[152];
       let yawRatio = 0;
+      let pitchRatio = 0;
       let noseProtrusionZ = 0;
       if (noseTip && leftCheek && rightCheek) {
         const midX = (leftCheek.x + rightCheek.x) / 2;
@@ -127,6 +132,11 @@ export async function detectMediaPipeFaceFrame(videoEl: HTMLVideoElement): Promi
         yawRatio = (noseTip.x - midX) / halfW;
         const cheekMidZ = (leftCheek.z + rightCheek.z) / 2;
         noseProtrusionZ = cheekMidZ - noseTip.z;
+      }
+      if (noseTip && forehead && chin) {
+        const midY = (forehead.y + chin.y) / 2;
+        const halfH = Math.max(0.01, Math.abs(chin.y - forehead.y) / 2);
+        pitchRatio = (noseTip.y - midY) / halfH;
       }
 
       const cats = rawBlendshapesList[idx]?.categories;
@@ -144,6 +154,7 @@ export async function detectMediaPipeFaceFrame(videoEl: HTMLVideoElement): Promi
         box: { x: minX * vw, y: minY * vh, width: normW * vw, height: normH * vh },
         faceSizeRatio: normW,
         yawRatio,
+        pitchRatio,
         noseProtrusionZ,
         blendshapes,
       };

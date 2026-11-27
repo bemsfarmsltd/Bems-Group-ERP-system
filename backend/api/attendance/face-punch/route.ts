@@ -46,6 +46,15 @@ export async function POST(request: Request) {
           openDelta?: number;
           endJaw?: number;
           closeDelta?: number;
+          // MediaPipe Nod (Down & Up) proof
+          startPitch?: number;
+          peakPitchDown?: number;
+          nodDownDelta?: number;
+          nodReturnDelta?: number;
+          // MediaPipe Head Turn (Left & Right) proof
+          minYaw?: number;
+          maxYaw?: number;
+          yawSweep?: number;
           // Neural PAD & Flash metadata
           neuralReady?: boolean;
           antispoofScore?: number;
@@ -57,8 +66,8 @@ export async function POST(request: Request) {
     const requestedAction = typeof body?.action === 'string' ? body.action.toUpperCase() : 'AUTO';
     const requestedStationCode = typeof body?.stationCode === 'string' ? body.stationCode.trim() : '';
 
-    // Strict Multi-Layer Anti-Spoofing Validation powered by Google MediaPipe 478-Point 3D Neural Blendshapes:
-    // Accepts ONLY genuine neural blendshape transitions (MEDIAPIPE_BLINK or MEDIAPIPE_JAW_CYCLE) + Neural PAD CNN.
+    // Strict Multi-Layer Anti-Spoofing Validation powered by Google MediaPipe 478-Point 3D Neural Blendshapes & 3D Pose:
+    // Accepts ONLY genuine dynamic interval challenges (BLINK, JAW_CYCLE, NOD, HEAD_TURN) + Neural PAD CNN.
     const validMediaPipeBlink =
       livenessProof?.method === 'MEDIAPIPE_BLINK' &&
       Number(livenessProof?.startBlink ?? 1) <= 0.24 &&
@@ -77,17 +86,40 @@ export async function POST(request: Request) {
       Number(livenessProof?.closeDelta ?? 0) >= 0.16 &&
       Number(livenessProof?.framesAnalyzed ?? 0) >= 3;
 
+    const validMediaPipeNod =
+      livenessProof?.method === 'MEDIAPIPE_NOD' &&
+      Number(livenessProof?.nodDownDelta ?? 0) >= 0.12 &&
+      Number(livenessProof?.nodReturnDelta ?? 0) >= 0.08 &&
+      Number(livenessProof?.framesAnalyzed ?? 0) >= 4;
+
+    const validMediaPipeHeadTurn =
+      livenessProof?.method === 'MEDIAPIPE_HEAD_TURN' &&
+      Number(livenessProof?.minYaw ?? 0) <= -0.22 &&
+      Number(livenessProof?.maxYaw ?? 0) >= 0.22 &&
+      Number(livenessProof?.yawSweep ?? 0) >= 0.48 &&
+      Number(livenessProof?.framesAnalyzed ?? 0) >= 4;
+
+    const isPoseChallenge = validMediaPipeNod || validMediaPipeHeadTurn;
     const neuralReady = livenessProof?.neuralReady === true;
     const antispoofScore = Number(livenessProof?.antispoofScore ?? 0);
     const livenessScore = Number(livenessProof?.livenessScore ?? 0);
-    const neuralPadPassed = !neuralReady || antispoofScore >= 0.40 || livenessScore >= 0.42;
+    // Pose challenges require slightly stricter Neural PAD CNN pass to keep tilted phone screens blocked
+    const neuralPadPassed = !neuralReady
+      ? true
+      : isPoseChallenge
+      ? antispoofScore >= 0.46 || livenessScore >= 0.48
+      : antispoofScore >= 0.38 || livenessScore >= 0.40;
 
-    if (!livenessVerified || (!validMediaPipeBlink && !validMediaPipeJawCycle) || !neuralPadPassed) {
+    if (
+      !livenessVerified ||
+      (!validMediaPipeBlink && !validMediaPipeJawCycle && !validMediaPipeNod && !validMediaPipeHeadTurn) ||
+      !neuralPadPassed
+    ) {
       return NextResponse.json(
         {
           error: !neuralPadPassed
-            ? 'Neural Anti-Spoofing Blocked: Phone screen or printed photo detected. Please step up in person.'
-            : 'Anti-Spoofing Challenge Failed: Photos and phone screens cannot clock in. Please follow the live prompt in person.',
+            ? 'Anti-Spoofing Guard: Phone screen or photo detected. Please step up to the kiosk in person.'
+            : 'Liveness Check Incomplete: Please follow the on-screen step calmly in person.',
           spoofBlocked: true,
         },
         { status: 403 }
