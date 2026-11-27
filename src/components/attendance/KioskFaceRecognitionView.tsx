@@ -269,6 +269,7 @@ export function KioskFaceRecognitionView({
       let antispoofScores: number[] = [];
       let livenessScores: number[] = [];
       let stage2MissedFrames = 0;
+      let consecutiveSlowDetectFrames = 0;
 
       const resetLivenessBuffer = () => {
         flowStage = 'SCANNING';
@@ -319,11 +320,19 @@ export function KioskFaceRecognitionView({
 
       const tick = async () => {
         if (!activeRef.current || !videoRef.current) return;
-        const tickStart = performance.now();
+        let detectMs = 30;
 
         try {
           // Adaptive-paced Google MediaPipe 478-point 3D tracking & 52 neural blendshapes
+          const detectStart = performance.now();
           const mpFrame = await detectMediaPipeFaceFrame(videoRef.current);
+          detectMs = performance.now() - detectStart;
+          if (detectMs > 160) {
+            consecutiveSlowDetectFrames++;
+            if (consecutiveSlowDetectFrames >= 5) slowDeviceRef.current = true;
+          } else {
+            consecutiveSlowDetectFrames = 0;
+          }
           latestFacesRef.current = mpFrame.faces;
 
           // Clean cooldown between scans — never rushes or double-fires
@@ -859,9 +868,7 @@ export function KioskFaceRecognitionView({
         }
 
         if (activeRef.current) {
-          const frameElapsed = performance.now() - tickStart;
-          if (frameElapsed > 95) slowDeviceRef.current = true;
-          const nextDelay = Math.max(75, Math.min(240, Math.round(frameElapsed * 1.35)));
+          const nextDelay = Math.max(70, Math.min(220, Math.round(detectMs * 1.35)));
           setTimeout(tick, nextDelay);
         }
       };
