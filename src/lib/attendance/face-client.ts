@@ -65,7 +65,105 @@ export interface LiveFaceFrameAnalysis {
   ear: number; // Eye Aspect Ratio (blink when drops below ~0.21 after being > 0.25)
   yawRatio: number; // Negative = turned left, 0 = straight, Positive = turned right (in mirrored selfie view)
   faceSizeRatio: number;
+  centerOffsetX: number; // -0.5..+0.5 relative to video center (in raw video coords)
+  centerOffsetY: number; // -0.5..+0.5 relative to video center
+  faceBrightness: number; // 0..255 average luminance on the face box
+  detectionScore: number; // 0..1 detector confidence
   box?: { x: number; y: number; width: number; height: number };
+}
+
+let lumaCanvas: HTMLCanvasElement | null = null;
+function measureBoxBrightness(
+  videoEl: HTMLVideoElement,
+  box: { x: number; y: number; width: number; height: number }
+): number {
+  try {
+    if (!lumaCanvas) {
+      lumaCanvas = document.createElement('canvas');
+      lumaCanvas.width = 32;
+      lumaCanvas.height = 32;
+    }
+    const ctx = lumaCanvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return 128;
+    const sx = Math.max(0, Math.floor(box.x));
+    const sy = Math.max(0, Math.floor(box.y));
+    const sw = Math.max(8, Math.min(videoEl.videoWidth - sx, Math.floor(box.width)));
+    const sh = Math.max(8, Math.min(videoEl.videoHeight - sy, Math.floor(box.height)));
+    ctx.drawImage(videoEl, sx, sy, sw, sh, 0, 0, 32, 32);
+    const data = ctx.getImageData(0, 0, 32, 32).data;
+    let sum = 0;
+    const pixels = 32 * 32;
+    for (let i = 0; i < data.length; i += 4) {
+      sum += 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+    }
+    return Math.round(sum / pixels);
+  } catch {
+    return 128;
+  }
+}
+
+/**
+ * Computes the element-wise mean (centroid) of multiple 128-d face embeddings
+ * to cancel out single-frame motion blur and lighting variance.
+ */
+export function averageFaceDescriptors(samples: number[][]): number[] {
+  if (!samples || samples.length === 0) return [];
+  if (samples.length === 1) return samples[0];
+  const dim = samples[0].length;
+  const out = new Array<number>(dim).fill(0);
+  for (const s of samples) {
+    for (let i = 0; i < dim; i++) {
+      out[i] += s[i];
+    }
+  }
+  const n = samples.length;
+  return out.map((v) => Number((v / n).toFixed(6)));
+}
+
+/**
+ * Plays a crisp, unobtrusive Web Audio API chime for kiosk biometric feedback.
+ */
+export function playKioskChime(kind: 'lock' | 'success' | 'warning' | 'error'): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const now = ctx.currentTime;
+
+    const tone = (freq: number, startOffset: number, duration: number, gainPeak = 0.08) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = kind === 'error' ? 'triangle' : 'sine';
+      osc.frequency.setValueAtTime(freq, now + startOffset);
+      gain.gain.setValueAtTime(0.0001, now + startOffset);
+      gain.gain.exponentialRampToValueAtTime(gainPeak, now + startOffset + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + startOffset + duration);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now + startOffset);
+      osc.stop(now + startOffset + duration + 0.02);
+    };
+
+    if (kind === 'lock') {
+      tone(660, 0, 0.09, 0.05);
+    } else if (kind === 'success') {
+      tone(587.33, 0, 0.12, 0.09); // D5
+      tone(880, 0.11, 0.22, 0.1); // A5
+    } else if (kind === 'warning') {
+      tone(440, 0, 0.14, 0.08);
+      tone(392, 0.15, 0.18, 0.08);
+    } else {
+      tone(310, 0, 0.16, 0.09);
+      tone(245, 0.17, 0.24, 0.09);
+    }
+
+    setTimeout(() => {
+      ctx.close().catch(() => {});
+    }, 650);
+  } catch {
+    // ignore Web Audio restrictions
+  }
 }
 
 function dist2D(a: { x: number; y: number }, b: { x: number; y: number }): number {
@@ -98,12 +196,16 @@ export async function analyzeVideoFaceFrame(
       ear: 0.3,
       yawRatio: 0,
       faceSizeRatio: 0,
+      centerOffsetX: 0,
+      centerOffsetY: 0,
+      faceBrightness: 128,
+      detectionScore: 0,
     };
   }
 
   const options = new faceapi.TinyFaceDetectorOptions({
-    inputSize: 320,
-    scoreThreshold: 0.5,
+    inputSize: 416,
+    scoreThreshold: 0.45,
   });
 
   if (includeDescriptor) {
@@ -120,6 +222,10 @@ export async function analyzeVideoFaceFrame(
         ear: 0.3,
         yawRatio: 0,
         faceSizeRatio: 0,
+        centerOffsetX: 0,
+        centerOffsetY: 0,
+        faceBrightness: 128,
+        detectionScore: 0,
       };
     }
 
@@ -131,6 +237,10 @@ export async function analyzeVideoFaceFrame(
         ear: 0.3,
         yawRatio: 0,
         faceSizeRatio: 0,
+        centerOffsetX: 0,
+        centerOffsetY: 0,
+        faceBrightness: 128,
+        detectionScore: 0,
       };
     }
 
@@ -155,7 +265,13 @@ export async function analyzeVideoFaceFrame(
     }
 
     const box = det.detection.box;
-    const faceSizeRatio = box.width / Math.max(1, videoEl.videoWidth);
+    const vw = Math.max(1, videoEl.videoWidth);
+    const vh = Math.max(1, videoEl.videoHeight);
+    const faceSizeRatio = box.width / vw;
+    const centerOffsetX = (box.x + box.width / 2 - vw / 2) / vw;
+    const centerOffsetY = (box.y + box.height / 2 - vh / 2) / vh;
+    const faceBrightness = measureBoxBrightness(videoEl, box);
+    const detectionScore = Number(det.detection.score || 0);
     const descriptor = det.descriptor ? Array.from(det.descriptor as Float32Array).map((n) => Number(n.toFixed(6))) : null;
 
     return {
@@ -165,6 +281,10 @@ export async function analyzeVideoFaceFrame(
       ear,
       yawRatio,
       faceSizeRatio,
+      centerOffsetX,
+      centerOffsetY,
+      faceBrightness,
+      detectionScore,
       box: { x: box.x, y: box.y, width: box.width, height: box.height },
     };
   } else {
@@ -177,6 +297,10 @@ export async function analyzeVideoFaceFrame(
         ear: 0.3,
         yawRatio: 0,
         faceSizeRatio: 0,
+        centerOffsetX: 0,
+        centerOffsetY: 0,
+        faceBrightness: 128,
+        detectionScore: 0,
       };
     }
     const det = detections[0];
@@ -195,13 +319,19 @@ export async function analyzeVideoFaceFrame(
       yawRatio = (noseTip.x - midX) / (faceWidth / 2);
     }
     const box = det.detection.box;
+    const vw = Math.max(1, videoEl.videoWidth);
+    const vh = Math.max(1, videoEl.videoHeight);
     return {
       detected: true,
       multipleFaces: false,
       descriptor: null,
       ear,
       yawRatio,
-      faceSizeRatio: box.width / Math.max(1, videoEl.videoWidth),
+      faceSizeRatio: box.width / vw,
+      centerOffsetX: (box.x + box.width / 2 - vw / 2) / vw,
+      centerOffsetY: (box.y + box.height / 2 - vh / 2) / vh,
+      faceBrightness: measureBoxBrightness(videoEl, box),
+      detectionScore: Number(det.detection.score || 0),
       box: { x: box.x, y: box.y, width: box.width, height: box.height },
     };
   }

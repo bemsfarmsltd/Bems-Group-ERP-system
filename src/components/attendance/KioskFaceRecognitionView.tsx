@@ -17,7 +17,9 @@ import {
 } from 'lucide-react';
 import {
   analyzeVideoFaceFrame,
+  averageFaceDescriptors,
   loadFaceApiModels,
+  playKioskChime,
   speakFaceVoicePrompt,
   stopFaceVoicePrompt,
 } from '@/lib/attendance/face-client';
@@ -57,6 +59,8 @@ export function KioskFaceRecognitionView({
   const [faceDetected, setFaceDetected] = useState(false);
   const [livenessReady, setLivenessReady] = useState(false);
   const [verifying, setVerifying] = useState(false);
+  const [scanProgress, setScanProgress] = useState(0); // 0..100 live biometric lock progress
+  const [lightingAlert, setLightingAlert] = useState<string | null>(null);
   const [internalFullscreen, setInternalFullscreen] = useState(false);
   const [popup, setPopup] = useState<PopupModalState | null>(null);
   const [isEveningShift, setIsEveningShift] = useState(false);
@@ -152,6 +156,19 @@ export function KioskFaceRecognitionView({
       let baselineYaw: number | null = null;
       let seenFrames = 0;
       let noFaceStreak = 0;
+      let capturedDescriptors: number[][] = [];
+
+      // Auto-recover if the camera track stops unexpectedly
+      stream.getVideoTracks().forEach((track) => {
+        track.onended = () => {
+          if (activeRef.current) {
+            setStatusText('Camera interrupted — reconnecting automatically...');
+            setTimeout(() => {
+              if (activeRef.current) startScanner();
+            }, 1800);
+          }
+        };
+      });
 
       speakFaceVoicePrompt(
         `BEMS Face Recognition Kiosk is ready for ${isEveningShiftRef.current ? 'evening sign-out' : 'morning check-in'}. Please step up and look at the camera.`,
@@ -162,7 +179,7 @@ export function KioskFaceRecognitionView({
         if (!activeRef.current || !videoRef.current) return;
 
         if (Date.now() < cooldownUntilRef.current) {
-          setTimeout(tick, 400);
+          setTimeout(tick, 350);
           return;
         }
 
@@ -171,9 +188,12 @@ export function KioskFaceRecognitionView({
           if (frame.multipleFaces) {
             setFaceDetected(false);
             setLivenessReady(false);
+            setScanProgress(0);
+            setLightingAlert(null);
             seenFrames = 0;
             noFaceStreak = 0;
             baselineYaw = null;
+            capturedDescriptors = [];
             setStatusText('One person at a time — multiple faces detected in frame');
             speakFaceVoicePrompt(
               'One person at a time please. Step back so only your face is in the camera.',
@@ -182,74 +202,149 @@ export function KioskFaceRecognitionView({
           } else if (!frame.detected || !frame.descriptor) {
             setFaceDetected(false);
             setLivenessReady(false);
+            setScanProgress(0);
+            setLightingAlert(null);
             seenFrames = 0;
             baselineYaw = null;
+            capturedDescriptors = [];
             noFaceStreak++;
             setStatusText('Step up & center your face inside the oval guide');
-            if (noFaceStreak === 25) {
+            if (noFaceStreak === 28) {
               speakFaceVoicePrompt(
                 'Center your face inside the oval guide in clear front lighting.',
-                { muted: false, minIntervalMs: 12000 }
+                { muted: false, minIntervalMs: 14000 }
               );
             }
-          } else if (frame.faceSizeRatio < 0.18) {
+          } else if (frame.faceSizeRatio < 0.16) {
             setFaceDetected(true);
             setLivenessReady(false);
+            setScanProgress(15);
+            setLightingAlert(null);
             noFaceStreak = 0;
-            setStatusText('Move slightly closer to the kiosk camera');
+            capturedDescriptors = [];
+            setStatusText('Step a little closer to the kiosk camera');
             speakFaceVoicePrompt(
-              'Please move a little closer to the kiosk camera.',
-              { muted: false, minIntervalMs: 5500 }
+              'Please step a little closer to the kiosk camera.',
+              { muted: false, minIntervalMs: 5000 }
             );
+          } else if (frame.faceSizeRatio > 0.65) {
+            setFaceDetected(true);
+            setLivenessReady(false);
+            setScanProgress(15);
+            setLightingAlert(null);
+            noFaceStreak = 0;
+            capturedDescriptors = [];
+            setStatusText('Step back slightly so your full face fits inside the oval');
+            speakFaceVoicePrompt(
+              'You are a little too close. Please step back slightly.',
+              { muted: false, minIntervalMs: 5000 }
+            );
+          } else if (Math.abs(frame.centerOffsetX) > 0.23 || Math.abs(frame.centerOffsetY) > 0.24) {
+            setFaceDetected(true);
+            setLivenessReady(false);
+            setScanProgress(25);
+            noFaceStreak = 0;
+            capturedDescriptors = [];
+            // Mirror-adjusted horizontal coaching (video is horizontally mirrored with scaleX(-1))
+            const dirHint =
+              frame.centerOffsetX > 0.23
+                ? 'Move slightly to your right to center your face'
+                : frame.centerOffsetX < -0.23
+                ? 'Move slightly to your left to center your face'
+                : frame.centerOffsetY > 0.24
+                ? 'Raise your head slightly into the oval'
+                : 'Lower your head slightly into the oval';
+            setStatusText(dirHint);
+            speakFaceVoicePrompt(dirHint, { muted: false, minIntervalMs: 4500 });
+          } else if (Math.abs(frame.yawRatio) > 0.32) {
+            setFaceDetected(true);
+            setLivenessReady(false);
+            setScanProgress(30);
+            noFaceStreak = 0;
+            capturedDescriptors = [];
+            setStatusText('Please look straight toward the camera');
+            speakFaceVoicePrompt('Please look straight at the camera.', {
+              muted: false,
+              minIntervalMs: 4500,
+            });
           } else {
             setFaceDetected(true);
             noFaceStreak = 0;
+
+            if (frame.faceBrightness < 48) {
+              setLightingAlert('Low light detected — face the light for fastest match');
+              speakFaceVoicePrompt('Lighting is a bit dim. Please face the light.', {
+                muted: false,
+                minIntervalMs: 8000,
+              });
+            } else if (frame.faceBrightness > 232) {
+              setLightingAlert('Strong glare detected — adjust angle slightly');
+            } else {
+              setLightingAlert(null);
+            }
+
+            // Collect high-confidence frames for multi-frame biometric centroid fusion
+            if (frame.descriptor && frame.detectionScore >= 0.45) {
+              capturedDescriptors.push(frame.descriptor);
+              if (capturedDescriptors.length > 4) capturedDescriptors.shift();
+            }
+
             seenFrames++;
             if (seenFrames === 1) {
               baselineEar = Math.max(0.24, frame.ear);
               baselineYaw = frame.yawRatio;
-              setStatusText('Face locked — blink naturally or slightly nod to verify');
-              speakFaceVoicePrompt('Face detected. Please blink naturally or nod slightly to verify.', {
+              setScanProgress(45);
+              playKioskChime('lock');
+              setStatusText('Face locked — hold still & blink naturally to verify');
+              speakFaceVoicePrompt('Face locked. Blink naturally or nod slightly to verify.', {
                 muted: false,
                 minIntervalMs: 5000,
               });
             } else {
-              const blinked = frame.ear < Math.min(0.22, baselineEar * 0.84);
-              const turned = baselineYaw !== null && Math.abs(frame.yawRatio - baselineYaw) >= 0.09;
-              if (blinked || turned || seenFrames >= 4) {
+              const blinked = frame.ear < Math.min(0.22, baselineEar * 0.85);
+              const turned = baselineYaw !== null && Math.abs(frame.yawRatio - baselineYaw) >= 0.08;
+              const progressPct = Math.min(90, 45 + seenFrames * 15);
+              setScanProgress(progressPct);
+
+              if ((blinked || turned || seenFrames >= 3) && capturedDescriptors.length >= 2) {
                 setLivenessReady(true);
                 setVerifying(true);
-                setStatusText('Verifying Face ID against BEMS staff roster...');
-                cooldownUntilRef.current = Date.now() + 5200;
+                setScanProgress(100);
+                setStatusText('Verifying multi-frame Face ID against BEMS staff roster...');
+                cooldownUntilRef.current = Date.now() + 4800;
 
+                const fusedDescriptor = averageFaceDescriptors(capturedDescriptors);
                 const res = await fetch('/api/attendance/face-punch', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({
                     stationCode,
                     action: 'AUTO',
-                    descriptor: frame.descriptor,
+                    descriptor: fusedDescriptor,
                     livenessVerified: true,
                   }),
                 });
                 const json = await res.json();
                 setVerifying(false);
+                setScanProgress(0);
                 seenFrames = 0;
                 baselineYaw = null;
+                capturedDescriptors = [];
                 setLivenessReady(false);
 
                 if (res.ok && json.success) {
                   const firstName = String(json.employeeName || 'Staff').split(' ')[0];
                   const isNoticeOnly = Boolean(json.alreadyCheckedIn || json.alreadyCheckedOut);
+                  playKioskChime(isNoticeOnly ? 'warning' : 'success');
                   const spoken = json.alreadyCheckedIn
                     ? `Hello ${firstName}, you are already clocked in for today at ${json.timeStr}.`
                     : json.alreadyCheckedOut
                     ? `Hello ${firstName}, you already signed out today at ${json.timeStr}.`
                     : json.action === 'CHECK_OUT'
-                    ? `Goodbye ${firstName}! Signed out at ${json.timeStr}.`
+                    ? `Goodbye ${firstName}! Signed out at ${json.timeStr}. Have a wonderful evening.`
                     : json.status === 'LATE'
                     ? `Welcome ${firstName}! Clocked in late at ${json.timeStr}.`
-                    : `Welcome ${firstName}! Clocked in on time at ${json.timeStr}.`;
+                    : `Welcome ${firstName}! Clocked in on time at ${json.timeStr}. Have a productive day.`;
 
                   speakFaceVoicePrompt(spoken, { force: true, muted: false });
 
@@ -275,6 +370,7 @@ export function KioskFaceRecognitionView({
                   onSuccessPunchRef.current?.(json);
                 } else {
                   const isRecognizedWindowLock = Boolean(json?.employeeName);
+                  playKioskChime(isRecognizedWindowLock ? 'warning' : 'error');
                   speakFaceVoicePrompt(
                     json?.error || 'Face not recognized. Please look directly at the camera.',
                     { force: true, muted: false }
@@ -297,10 +393,11 @@ export function KioskFaceRecognitionView({
           }
         } catch {
           setVerifying(false);
+          setScanProgress(0);
         }
 
         if (activeRef.current) {
-          setTimeout(tick, 280);
+          setTimeout(tick, 240);
         }
       };
 
@@ -532,26 +629,53 @@ export function KioskFaceRecognitionView({
             }}
           />
 
-          {/* Overlaid Bottom Glass Instruction Bar */}
+          {/* Overlaid Bottom Glass Instruction Bar + Smart Progress Meter */}
           <div
             style={{
               position: 'absolute',
-              left: '12px',
-              right: '12px',
-              bottom: '12px',
-              padding: '9px 14px',
-              borderRadius: '12px',
-              background: 'rgba(255, 255, 255, 0.94)',
+              left: '14px',
+              right: '14px',
+              bottom: '14px',
+              padding: '10px 16px',
+              borderRadius: '14px',
+              background: 'rgba(255, 255, 255, 0.95)',
               backdropFilter: 'blur(8px)',
               border: `1px solid ${faceDetected ? '#a7f3d0' : '#fed7aa'}`,
               color: faceDetected ? '#065f46' : '#9a3412',
               fontSize: isFullscreen ? '15.5px' : '12px',
               fontWeight: 800,
               textAlign: 'center',
-              boxShadow: '0 4px 14px rgba(15, 23, 42, 0.10)',
+              boxShadow: '0 4px 14px rgba(15, 23, 42, 0.12)',
             }}
           >
-            {verifying ? 'Matching your Face ID...' : statusText}
+            <div>{verifying ? 'Matching multi-frame Face ID...' : statusText}</div>
+            {lightingAlert && !verifying && (
+              <div style={{ fontSize: '11.5px', fontWeight: 700, color: '#b45309', marginTop: '3px' }}>
+                {lightingAlert}
+              </div>
+            )}
+            {scanProgress > 0 && (
+              <div
+                style={{
+                  marginTop: '7px',
+                  width: '100%',
+                  height: '5px',
+                  borderRadius: '999px',
+                  background: '#e2e8f0',
+                  overflow: 'hidden',
+                }}
+              >
+                <div
+                  style={{
+                    width: `${scanProgress}%`,
+                    height: '100%',
+                    borderRadius: '999px',
+                    background: scanProgress >= 90 ? '#10b981' : '#ea580c',
+                    transition: 'width 0.2s ease',
+                  }}
+                />
+              </div>
+            )}
           </div>
         </div>
       </div>

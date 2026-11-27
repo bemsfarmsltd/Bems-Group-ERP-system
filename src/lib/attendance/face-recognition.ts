@@ -236,10 +236,22 @@ export function matchFaceDescriptorAgainstRoster(
 
   for (const cand of candidates) {
     let empMinDist = Infinity;
+    const validDescs: number[][] = [];
     for (const desc of cand.descriptors) {
       if (!isValidFaceDescriptor(desc)) continue;
+      validDescs.push(desc);
       const dist = euclideanDistance128(probe, desc);
       if (dist < empMinDist) empMinDist = dist;
+    }
+    // Also compare against the candidate's multi-angle centroid for stronger lighting/pose invariance
+    if (validDescs.length >= 2) {
+      const centroid = new Array<number>(128).fill(0);
+      for (const d of validDescs) {
+        for (let i = 0; i < 128; i++) centroid[i] += d[i];
+      }
+      for (let i = 0; i < 128; i++) centroid[i] /= validDescs.length;
+      const centroidDist = euclideanDistance128(probe, centroid);
+      if (centroidDist < empMinDist) empMinDist = centroidDist;
     }
     if (empMinDist < bestDist) {
       secondBestDist = bestDist;
