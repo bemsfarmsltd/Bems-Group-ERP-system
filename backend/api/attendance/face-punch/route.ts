@@ -34,30 +34,42 @@ export async function POST(request: Request) {
     const livenessProof = body?.livenessProof as
       | {
           method?: string;
-          earDelta?: number;
-          yawDelta?: number;
+          startMar?: number;
+          peakMar?: number;
           marDelta?: number;
-          eyeSymDelta?: number;
+          startYaw?: number;
+          peakYaw?: number;
+          yawDelta?: number;
           framesAnalyzed?: number;
         }
       | undefined;
     const requestedAction = typeof body?.action === 'string' ? body.action.toUpperCase() : 'AUTO';
     const requestedStationCode = typeof body?.stationCode === 'string' ? body.stationCode.trim() : '';
 
-    const validBlinkProof =
-      livenessProof?.method === 'BLINK' && Number(livenessProof?.earDelta || 0) >= 0.025;
-    const valid3dTurnProof =
-      livenessProof?.method === 'HEAD_3D_TURN' &&
-      Number(livenessProof?.yawDelta || 0) >= 0.075 &&
-      Number(livenessProof?.eyeSymDelta || 0) >= 0.03;
-    const validExpressionProof =
-      livenessProof?.method === 'EXPRESSION' && Number(livenessProof?.marDelta || 0) >= 0.04;
+    // Strict Active Challenge-Response Liveness Validation (impossible for static photos or phone screens)
+    const validMouthChallenge =
+      livenessProof?.method === 'CHALLENGE_MOUTH_OPEN' &&
+      Number(livenessProof?.startMar ?? 1) <= 0.22 &&
+      Number(livenessProof?.peakMar ?? 0) >= 0.34 &&
+      Number(livenessProof?.marDelta ?? 0) >= 0.14;
 
-    if (!livenessVerified || (!validBlinkProof && !valid3dTurnProof && !validExpressionProof)) {
+    const validTurnLeftChallenge =
+      livenessProof?.method === 'CHALLENGE_TURN_LEFT' &&
+      Math.abs(Number(livenessProof?.startYaw ?? 1)) <= 0.18 &&
+      Number(livenessProof?.peakYaw ?? 0) <= -0.22 &&
+      Number(livenessProof?.yawDelta ?? 0) >= 0.16;
+
+    const validTurnRightChallenge =
+      livenessProof?.method === 'CHALLENGE_TURN_RIGHT' &&
+      Math.abs(Number(livenessProof?.startYaw ?? 1)) <= 0.18 &&
+      Number(livenessProof?.peakYaw ?? 0) >= 0.22 &&
+      Number(livenessProof?.yawDelta ?? 0) >= 0.16;
+
+    if (!livenessVerified || (!validMouthChallenge && !validTurnLeftChallenge && !validTurnRightChallenge)) {
       return NextResponse.json(
         {
           error:
-            'Anti-Spoofing Liveness Required: Static photos or phone screens cannot clock in. Please step up in person and blink naturally or turn your head slightly.',
+            'Anti-Spoofing Challenge Failed: Photos and phone screens cannot clock in. Please step up in person and follow the on-screen liveness prompt.',
           spoofBlocked: true,
         },
         { status: 403 }

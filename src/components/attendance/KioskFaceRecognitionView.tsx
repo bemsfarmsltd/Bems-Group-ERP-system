@@ -188,33 +188,41 @@ export function KioskFaceRecognitionView({
         await videoRef.current.play();
       }
 
+      type LivenessChallenge = 'CHALLENGE_MOUTH_OPEN' | 'CHALLENGE_TURN_LEFT' | 'CHALLENGE_TURN_RIGHT';
+      const CHALLENGE_PROMPTS: Record<LivenessChallenge, { banner: string; voice: string }> = {
+        CHALLENGE_MOUTH_OPEN: {
+          banner: 'Liveness Check: Please OPEN YOUR MOUTH slightly',
+          voice: 'Face locked. Please open your mouth slightly to verify.',
+        },
+        CHALLENGE_TURN_LEFT: {
+          banner: 'Liveness Check: Please TURN YOUR HEAD slightly LEFT',
+          voice: 'Face locked. Please turn your head slightly to the left to verify.',
+        },
+        CHALLENGE_TURN_RIGHT: {
+          banner: 'Liveness Check: Please TURN YOUR HEAD slightly RIGHT',
+          voice: 'Face locked. Please turn your head slightly to the right to verify.',
+        },
+      };
+
       activeRef.current = true;
       let capturedDescriptors: number[][] = [];
       let lockFrames = 0;
-      let maxEar = 0;
-      let minEar = 1;
-      let sawEyesOpen = false;
-      let sawBlinkDip = false;
-      let baselineYaw: number | null = null;
-      let maxYawDelta = 0;
-      let baselineEyeSym: number | null = null;
-      let maxEyeSymDelta = 0;
-      let baselineMar: number | null = null;
-      let maxMarDelta = 0;
+      let activeChallenge: LivenessChallenge | null = null;
+      let startMar: number | null = null;
+      let peakMar = 0;
+      let startYaw: number | null = null;
+      let peakYawLeft = 0;
+      let peakYawRight = 0;
 
       const resetLivenessBuffer = () => {
         capturedDescriptors = [];
         lockFrames = 0;
-        maxEar = 0;
-        minEar = 1;
-        sawEyesOpen = false;
-        sawBlinkDip = false;
-        baselineYaw = null;
-        maxYawDelta = 0;
-        baselineEyeSym = null;
-        maxEyeSymDelta = 0;
-        baselineMar = null;
-        maxMarDelta = 0;
+        activeChallenge = null;
+        startMar = null;
+        peakMar = 0;
+        startYaw = null;
+        peakYawLeft = 0;
+        peakYawRight = 0;
       };
 
       // Auto-recover if the camera track stops unexpectedly
@@ -230,7 +238,7 @@ export function KioskFaceRecognitionView({
       });
 
       speakFaceVoicePrompt(
-        `BEMS 3D Face Recognition Kiosk is active for ${isEveningShiftRef.current ? 'evening sign-out' : 'morning check-in'}. Look at the camera and blink naturally to verify.`,
+        `BEMS 3D Face Recognition Kiosk is active for ${isEveningShiftRef.current ? 'evening sign-out' : 'morning check-in'}. Look at the camera and follow the live prompt.`,
         { force: true, muted: false }
       );
 
@@ -238,7 +246,7 @@ export function KioskFaceRecognitionView({
         if (!activeRef.current || !videoRef.current) return;
 
         try {
-          // Continuous 3D radar tracks all faces in view, while strictly requiring real biological liveness before punching
+          // Continuous 3D radar tracks all faces in view, while strictly enforcing randomized Active Challenge-Response liveness
           const frame = await analyzeVideoFaceFrame(videoRef.current, true, {
             allowMultiple: true,
             longRange: true,
@@ -254,9 +262,9 @@ export function KioskFaceRecognitionView({
             (f) => f.descriptor && f.faceSizeRatio >= 0.05 && f.detectionScore >= 0.25
           );
 
-          // High-clarity faces eligible for biometric identity + liveness verification
+          // High-clarity faces eligible for biometric identity + active liveness challenge
           const matchableFaces = trackedFaces.filter(
-            (f) => f.faceSizeRatio >= 0.11 && f.detectionScore >= 0.45 && Math.abs(f.yawRatio) <= 0.36
+            (f) => f.faceSizeRatio >= 0.11 && f.detectionScore >= 0.45 && Math.abs(f.yawRatio) <= 0.45
           );
 
           if (trackedFaces.length === 0) {
@@ -273,9 +281,9 @@ export function KioskFaceRecognitionView({
             resetLivenessBuffer();
             const nearest = trackedFaces[0];
             if (nearest.faceSizeRatio < 0.11) {
-              setStatusText('3D Face Tracked — step slightly closer & blink to verify');
+              setStatusText('3D Face Tracked — step slightly closer to begin liveness check');
             } else {
-              setStatusText('3D Face Tracked — look toward camera & blink naturally');
+              setStatusText('3D Face Tracked — look straight at the camera');
             }
           } else {
             const primary = matchableFaces[0];
@@ -284,8 +292,8 @@ export function KioskFaceRecognitionView({
               frame.faceBrightness < 44 ? 'Low lighting detected — auto-exposure boost active' : null
             );
 
-            // Frame-to-frame stability check: reset if a different person enters frame
-            if (primary.descriptor) {
+            // Frame-to-frame identity stability check (only when looking straight)
+            if (primary.descriptor && Math.abs(primary.yawRatio) <= 0.22) {
               if (capturedDescriptors.length > 0) {
                 const prev = capturedDescriptors[capturedDescriptors.length - 1];
                 let sumSq = 0;
@@ -293,77 +301,110 @@ export function KioskFaceRecognitionView({
                   const diff = primary.descriptor[i] - prev[i];
                   sumSq += diff * diff;
                 }
-                if (Math.sqrt(sumSq) > 0.32) {
+                if (Math.sqrt(sumSq) > 0.34) {
                   resetLivenessBuffer();
                 }
               }
-              if (Math.abs(primary.yawRatio) <= 0.28) {
-                capturedDescriptors.push(primary.descriptor);
-                if (capturedDescriptors.length > 3) capturedDescriptors.shift();
-              }
+              capturedDescriptors.push(primary.descriptor);
+              if (capturedDescriptors.length > 3) capturedDescriptors.shift();
             }
 
-            lockFrames++;
-            if (lockFrames === 1) {
-              baselineYaw = primary.yawRatio;
-              baselineEyeSym = primary.eyeSymmetry;
-              baselineMar = primary.mar;
-              maxEar = primary.ear;
-              minEar = primary.ear;
-              if (primary.ear >= 0.22) sawEyesOpen = true;
-              setScanProgress(45);
-              playKioskChime('lock');
-              setStatusText('3D Face Locked — please blink your eyes or smile slightly to verify');
-              speakFaceVoicePrompt('Face detected. Please blink your eyes or turn your head slightly.', {
-                muted: false,
-                minIntervalMs: 5000,
-              });
+            // Wait for a clean straight-facing baseline frame before starting the randomized challenge
+            if (!activeChallenge) {
+              if (Math.abs(primary.yawRatio) > 0.16) {
+                setScanProgress(35);
+                setStatusText('Look straight at the camera to start verification...');
+              } else {
+                // Pick a random challenge that cannot be pre-staged by a photo:
+                // If mouth is already open (>0.20), force a head-turn challenge so open-mouth photos can't pass!
+                const pool: LivenessChallenge[] =
+                  primary.mar <= 0.20
+                    ? ['CHALLENGE_MOUTH_OPEN', 'CHALLENGE_TURN_LEFT', 'CHALLENGE_TURN_RIGHT']
+                    : ['CHALLENGE_TURN_LEFT', 'CHALLENGE_TURN_RIGHT'];
+                activeChallenge = pool[Math.floor(Math.random() * pool.length)];
+                startMar = primary.mar;
+                peakMar = primary.mar;
+                startYaw = primary.yawRatio;
+                peakYawLeft = primary.yawRatio;
+                peakYawRight = primary.yawRatio;
+                lockFrames = 1;
+                setScanProgress(50);
+                playKioskChime('lock');
+                setStatusText(CHALLENGE_PROMPTS[activeChallenge].banner);
+                speakFaceVoicePrompt(CHALLENGE_PROMPTS[activeChallenge].voice, {
+                  force: true,
+                  muted: false,
+                });
+              }
             } else {
-              // Update real biological liveness signals across frames
-              if (primary.ear > maxEar) maxEar = primary.ear;
-              if (primary.ear < minEar) minEar = primary.ear;
-              if (primary.ear >= 0.20) sawEyesOpen = true;
-              if (sawEyesOpen && primary.ear <= maxEar - 0.026) {
-                sawBlinkDip = true;
+              lockFrames++;
+              if (primary.mar > peakMar) peakMar = primary.mar;
+              if (primary.yawRatio < peakYawLeft) peakYawLeft = primary.yawRatio;
+              if (primary.yawRatio > peakYawRight) peakYawRight = primary.yawRatio;
+
+              const marDelta = startMar !== null ? Math.max(0, peakMar - startMar) : 0;
+              // Note: video is horizontally mirrored with scaleX(-1):
+              // User turning THEIR head LEFT moves nose toward positive yawRatio or negative depending on mirror,
+              // so we check the exact landmark yaw direction matching mirrored preview!
+              const leftYawDelta = startYaw !== null ? Math.max(0, startYaw - peakYawLeft) : 0;
+              const rightYawDelta = startYaw !== null ? Math.max(0, peakYawRight - startYaw) : 0;
+
+              let challengePassed = false;
+              let livenessProof: Record<string, any> | null = null;
+
+              if (
+                activeChallenge === 'CHALLENGE_MOUTH_OPEN' &&
+                startMar !== null &&
+                startMar <= 0.22 &&
+                peakMar >= 0.34 &&
+                marDelta >= 0.14
+              ) {
+                challengePassed = true;
+                livenessProof = {
+                  method: 'CHALLENGE_MOUTH_OPEN',
+                  startMar: Number(startMar.toFixed(4)),
+                  peakMar: Number(peakMar.toFixed(4)),
+                  marDelta: Number(marDelta.toFixed(4)),
+                  framesAnalyzed: lockFrames,
+                };
+              } else if (
+                activeChallenge === 'CHALLENGE_TURN_LEFT' &&
+                startYaw !== null &&
+                peakYawLeft <= -0.22 &&
+                leftYawDelta >= 0.16
+              ) {
+                challengePassed = true;
+                livenessProof = {
+                  method: 'CHALLENGE_TURN_LEFT',
+                  startYaw: Number(startYaw.toFixed(4)),
+                  peakYaw: Number(peakYawLeft.toFixed(4)),
+                  yawDelta: Number(leftYawDelta.toFixed(4)),
+                  framesAnalyzed: lockFrames,
+                };
+              } else if (
+                activeChallenge === 'CHALLENGE_TURN_RIGHT' &&
+                startYaw !== null &&
+                peakYawRight >= 0.22 &&
+                rightYawDelta >= 0.16
+              ) {
+                challengePassed = true;
+                livenessProof = {
+                  method: 'CHALLENGE_TURN_RIGHT',
+                  startYaw: Number(startYaw.toFixed(4)),
+                  peakYaw: Number(peakYawRight.toFixed(4)),
+                  yawDelta: Number(rightYawDelta.toFixed(4)),
+                  framesAnalyzed: lockFrames,
+                };
               }
 
-              const earDelta = Math.max(0, maxEar - minEar);
-              const yawDelta = baselineYaw !== null ? Math.abs(primary.yawRatio - baselineYaw) : 0;
-              const eyeSymDelta = baselineEyeSym !== null ? Math.abs(primary.eyeSymmetry - baselineEyeSym) : 0;
-              const marDelta = baselineMar !== null ? Math.abs(primary.mar - baselineMar) : 0;
-              if (yawDelta > maxYawDelta) maxYawDelta = yawDelta;
-              if (eyeSymDelta > maxEyeSymDelta) maxEyeSymDelta = eyeSymDelta;
-              if (marDelta > maxMarDelta) maxMarDelta = marDelta;
-
-              // Balanced Biological Liveness Proof: effortless for real staff, still blocks static photos/screens
-              const blinkVerified = sawBlinkDip && earDelta >= 0.028;
-              const head3dVerified = maxYawDelta >= 0.08 && maxEyeSymDelta >= 0.035;
-              const expressionVerified = maxMarDelta >= 0.045;
-
-              const livenessMethod = blinkVerified
-                ? 'BLINK'
-                : head3dVerified
-                ? 'HEAD_3D_TURN'
-                : expressionVerified
-                ? 'EXPRESSION'
-                : null;
-
-              if (livenessMethod && capturedDescriptors.length >= 2) {
+              if (challengePassed && livenessProof && capturedDescriptors.length >= 1) {
                 setLivenessReady(true);
                 setVerifying(true);
                 setScanProgress(100);
-                setStatusText('Live person verified — matching 3D Face ID...');
+                setStatusText('Live challenge passed — matching 3D Face ID...');
                 cooldownUntilRef.current = Date.now() + 4500;
 
                 const fusedDescriptor = averageFaceDescriptors(capturedDescriptors);
-                const livenessProof = {
-                  method: livenessMethod,
-                  earDelta: Number(earDelta.toFixed(4)),
-                  yawDelta: Number(maxYawDelta.toFixed(4)),
-                  eyeSymDelta: Number(maxEyeSymDelta.toFixed(4)),
-                  marDelta: Number(maxMarDelta.toFixed(4)),
-                  framesAnalyzed: lockFrames,
-                };
 
                 const res = await fetch('/api/attendance/face-punch', {
                   method: 'POST',
@@ -440,25 +481,25 @@ export function KioskFaceRecognitionView({
                       'Could not verify Face ID. Ensure your Face ID is registered on the Staff Portal and look toward the kiosk camera.',
                   });
                 }
-              } else if (lockFrames >= 32) {
-                // Held up a static photo / phone screen for >6 seconds with ZERO blink, ZERO 3D turn, ZERO expression!
+              } else if (lockFrames >= 34) {
+                // Failed to perform the requested physical challenge within ~6.5 seconds (photo / phone screen!)
                 cooldownUntilRef.current = Date.now() + 4200;
                 resetLivenessBuffer();
                 setScanProgress(0);
                 playKioskChime('error');
                 speakFaceVoicePrompt(
-                  'Photo or static screen detected. Live person required. Please step up in person and blink naturally.',
+                  'Liveness challenge failed. Photos and phone screens are blocked. Please step up in person and follow the prompt.',
                   { force: true, muted: false }
                 );
                 setPopup({
                   variant: 'error',
-                  badgeText: 'SPOOF BLOCKED · PHOTO / SCREEN DETECTED',
+                  badgeText: 'SPOOF BLOCKED · LIVENESS CHALLENGE FAILED',
                   message:
-                    'No live blink or 3D facial movement detected. Photos and phone screens are strictly blocked. Please step up in person and blink naturally.',
+                    'The requested live facial action was not completed. Photos and phone screens are strictly blocked. Please step up in person and follow the prompt.',
                 });
               } else {
-                setScanProgress(Math.min(82, 45 + Math.round(lockFrames * 2)));
-                setStatusText('Anti-Spoofing Check — blink your eyes naturally or turn head slightly');
+                setScanProgress(Math.min(86, 50 + Math.round(lockFrames * 1.1)));
+                setStatusText(CHALLENGE_PROMPTS[activeChallenge].banner);
               }
             }
           }
