@@ -6273,6 +6273,23 @@ class _StaffMainScreenState extends State<StaffMainScreen> {
                   width: 38,
                   height: 38,
                   decoration: const BoxDecoration(color: Color(0xFFFFF7ED), shape: BoxShape.circle),
+                  child: Icon(Icons.face_retouching_natural_rounded, color: SubsidiaryTheme.current.color, size: 20),
+                ),
+                title: const Text('Office Kiosk Face ID', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: Color(0xFF0F172A))),
+                subtitle: const Text('Enroll or update your Face ID for reception kiosk attendance', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                trailing: const Icon(Icons.chevron_right_rounded, color: Color(0xFF94A3B8)),
+                onTap: () => launchUrl(
+                  Uri.parse('https://bemserp.work/attendance/face-enroll?autostart=1'),
+                  mode: LaunchMode.externalApplication,
+                ),
+              ),
+              const Divider(color: Color(0xFFF1F5F9)),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Container(
+                  width: 38,
+                  height: 38,
+                  decoration: const BoxDecoration(color: Color(0xFFFFF7ED), shape: BoxShape.circle),
                   child: Icon(Icons.support_agent_rounded, color: SubsidiaryTheme.current.color, size: 20),
                 ),
                 title: const Text('Finance & Admin Helpdesk Chat', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: Color(0xFF0F172A))),

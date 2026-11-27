@@ -71,27 +71,19 @@
       });
     })();
   </script>
-  <a
-    id="bems-face-enroll-pill"
-    href="/attendance/face-enroll?autostart=1"
-    style="display:none;position:fixed;left:16px;bottom:16px;z-index:99998;background:#ffffff;border:1.5px solid #ea580c;border-radius:999px;padding:8px 14px;box-shadow:0 8px 24px rgba(15,23,42,0.12);font-family:system-ui,-apple-system,sans-serif;text-decoration:none;align-items:center;gap:8px;color:#0f172a;font-size:12px;font-weight:800;"
-  >
-    <span id="bems-face-pill-dot" style="width:8px;height:8px;border-radius:50%;background:#ea580c;display:inline-block;"></span>
-    <span id="bems-face-pill-text">Register Kiosk Face ID</span>
-  </a>
   <div
     id="bems-face-enroll-modal"
     style="display:none;position:fixed;inset:0;z-index:100000;background:rgba(15,23,42,0.48);backdrop-filter:blur(4px);align-items:center;justify-content:center;padding:16px;font-family:system-ui,-apple-system,sans-serif;"
   >
     <div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:20px;max-width:420px;width:100%;padding:24px;box-shadow:0 20px 50px rgba(15,23,42,0.2);text-align:center;">
       <div style="display:inline-block;padding:4px 10px;border-radius:999px;background:#fff7ed;border:1px solid #fed7aa;color:#ea580c;font-size:10.5px;font-weight:800;margin-bottom:10px;">
-        MANDATORY COMPLIANCE · FACE ID REQUIRED
+        ACTION REQUIRED · ATTENDANCE SETUP
       </div>
       <h3 id="bems-face-modal-title" style="margin:0 0 8px;font-size:18px;font-weight:900;color:#0f172a;">
-        Mandatory Kiosk Face ID Registration
+        Register Your Kiosk Face ID
       </h3>
       <p id="bems-face-modal-desc" style="margin:0 0 18px;font-size:13px;color:#475569;line-height:1.55;">
-        All BEMS Group staff are required to enroll their Face ID. Please take 15 seconds to register your face now so the Office Reception Kiosk camera can identify and clock you in automatically.
+        Please take 15 seconds to enroll your Face ID now so the Office Reception Kiosk camera can identify and clock you in automatically.
       </p>
       <div style="display:flex;flex-direction:column;gap:8px;">
         <a
@@ -112,9 +104,6 @@
   </div>
   <script>
     (function() {
-      var pill = document.getElementById('bems-face-enroll-pill');
-      var dot = document.getElementById('bems-face-pill-dot');
-      var txt = document.getElementById('bems-face-pill-text');
       var modal = document.getElementById('bems-face-enroll-modal');
       var modalTitle = document.getElementById('bems-face-modal-title');
       var modalDesc = document.getElementById('bems-face-modal-desc');
@@ -126,7 +115,6 @@
           setTimeout(checkFaceStatus, 5000);
         });
       }
-      if (!pill) return;
       function getStaffHeaders() {
         var hdrs = {};
         try {
@@ -144,20 +132,12 @@
           .then(function(r) { return r.ok ? r.json() : null; })
           .then(function(data) {
             if (!data || data.isExecutiveExempt || data.status === 'EXEMPT') {
-              pill.style.display = 'none';
               if (modal) modal.style.display = 'none';
               return;
             }
-            pill.style.display = 'inline-flex';
             if (data.status === 'APPROVED' || data.status === 'PENDING_APPROVAL') {
-              pill.style.borderColor = '#10b981';
-              if (dot) dot.style.background = '#10b981';
-              if (txt) txt.textContent = 'Face ID Active ✓';
               if (modal) modal.style.display = 'none';
             } else if (data.status === 'REJECTED') {
-              pill.style.borderColor = '#ef4444';
-              if (dot) dot.style.background = '#ef4444';
-              if (txt) txt.textContent = 'Re-Register Face ID';
               if (modal && data.shouldPromptEnrollment) {
                 if (modalTitle) modalTitle.textContent = 'Re-Register Your Kiosk Face ID';
                 if (modalDesc && data.profile && data.profile.rejectionReason) {
@@ -166,9 +146,6 @@
                 modal.style.display = 'flex';
               }
             } else {
-              pill.style.borderColor = '#ea580c';
-              if (dot) dot.style.background = '#ea580c';
-              if (txt) txt.textContent = 'Register Kiosk Face ID';
               if (modal && data.shouldPromptEnrollment) {
                 modal.style.display = 'flex';
               }
