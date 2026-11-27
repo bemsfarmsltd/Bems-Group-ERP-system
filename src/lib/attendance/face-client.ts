@@ -58,6 +58,17 @@ export async function loadFaceApiModels(): Promise<any> {
   return loadPromise;
 }
 
+export interface DetectedFace3D {
+  descriptor: number[] | null;
+  ear: number;
+  yawRatio: number;
+  faceSizeRatio: number;
+  detectionScore: number;
+  box: { x: number; y: number; width: number; height: number };
+  normBox: { x: number; y: number; width: number; height: number };
+  normLandmarks: Array<{ x: number; y: number }>;
+}
+
 export interface LiveFaceFrameAnalysis {
   detected: boolean;
   multipleFaces: boolean;
@@ -73,6 +84,8 @@ export interface LiveFaceFrameAnalysis {
   /** Normalized 0..1 box & 68-point facial landmarks for live 3D biometric wireframe rendering */
   normBox?: { x: number; y: number; width: number; height: number };
   normLandmarks?: Array<{ x: number; y: number }>;
+  /** All simultaneously detected faces (sorted largest/closest first) for multi-person walk-by 3D tracking */
+  allFaces?: DetectedFace3D[];
 }
 
 let lumaCanvas: HTMLCanvasElement | null = null;
@@ -262,7 +275,32 @@ export function draw3dBiometricFaceMesh(
   }
   ctx.clearRect(0, 0, cw, ch);
 
-  if (!frame?.detected || !frame.normLandmarks || frame.normLandmarks.length < 68 || !frame.normBox) {
+  const facesToDraw: Array<{
+    normBox: { x: number; y: number; width: number; height: number };
+    normLandmarks: Array<{ x: number; y: number }>;
+  }> =
+    frame?.allFaces && frame.allFaces.length > 0
+      ? frame.allFaces.filter((f) => f.normLandmarks && f.normLandmarks.length >= 68)
+      : frame?.detected && frame.normLandmarks && frame.normLandmarks.length >= 68 && frame.normBox
+      ? [{ normBox: frame.normBox, normLandmarks: frame.normLandmarks }]
+      : [];
+
+  if (facesToDraw.length === 0) {
+    // Subtle ambient radar sweep line when actively hunting for walk-by faces
+    const tIdle = (Date.now() % 2800) / 2800;
+    const idleY = (tIdle < 0.5 ? tIdle * 2 : (1 - tIdle) * 2) * ch;
+    const idleGrad = ctx.createLinearGradient(0, idleY - 24, 0, idleY + 24);
+    idleGrad.addColorStop(0, 'rgba(234, 88, 12, 0)');
+    idleGrad.addColorStop(0.5, 'rgba(234, 88, 12, 0.16)');
+    idleGrad.addColorStop(1, 'rgba(234, 88, 12, 0)');
+    ctx.fillStyle = idleGrad;
+    ctx.fillRect(0, idleY - 24, cw, 48);
+    ctx.strokeStyle = 'rgba(234, 88, 12, 0.35)';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(0, idleY);
+    ctx.lineTo(cw, idleY);
+    ctx.stroke();
     return;
   }
 
@@ -286,115 +324,114 @@ export function draw3dBiometricFaceMesh(
     offsetY = (ch - drawH) / 2;
   }
 
-  const pts = frame.normLandmarks.map((p) => ({
-    x: offsetX + p.x * drawW,
-    y: offsetY + p.y * drawH,
-  }));
-
-  const bx = offsetX + frame.normBox.x * drawW;
-  const by = offsetY + frame.normBox.y * drawH;
-  const bw = frame.normBox.width * drawW;
-  const bh = frame.normBox.height * drawH;
-
   const isGreen = Boolean(options.locked || options.verifying);
-  const meshStroke = isGreen ? 'rgba(16, 235, 175, 0.42)' : 'rgba(251, 146, 60, 0.42)';
-  const contourStroke = isGreen ? 'rgba(52, 211, 153, 0.90)' : 'rgba(249, 115, 22, 0.88)';
+  const meshStroke = isGreen ? 'rgba(16, 235, 175, 0.44)' : 'rgba(251, 146, 60, 0.44)';
+  const contourStroke = isGreen ? 'rgba(52, 211, 153, 0.92)' : 'rgba(249, 115, 22, 0.90)';
   const nodeFill = isGreen ? '#6ee7b7' : '#fdba74';
 
-  ctx.save();
+  for (const faceItem of facesToDraw) {
+    const pts = faceItem.normLandmarks.map((p) => ({
+      x: offsetX + p.x * drawW,
+      y: offsetY + p.y * drawH,
+    }));
 
-  // 1. Triangulated 3D wireframe facets
-  ctx.strokeStyle = meshStroke;
-  ctx.lineWidth = 1.05;
-  ctx.beginPath();
-  for (const [a, b, c] of BIOMETRIC_MESH_TRIANGLES) {
-    const pa = pts[a];
-    const pb = pts[b];
-    const pc = pts[c];
-    if (!pa || !pb || !pc) continue;
-    ctx.moveTo(pa.x, pa.y);
-    ctx.lineTo(pb.x, pb.y);
-    ctx.lineTo(pc.x, pc.y);
-    ctx.closePath();
-  }
-  ctx.stroke();
+    const bx = offsetX + faceItem.normBox.x * drawW;
+    const by = offsetY + faceItem.normBox.y * drawH;
+    const bw = faceItem.normBox.width * drawW;
+    const bh = faceItem.normBox.height * drawH;
 
-  // 2. Crisp feature contour paths (jaw, brows, nose, eyes, lips)
-  const drawPath = (indices: number[], close = false) => {
+    ctx.save();
+
+    // 1. Triangulated 3D wireframe facets
+    ctx.strokeStyle = meshStroke;
+    ctx.lineWidth = Math.max(0.85, Math.min(1.25, bw / 180));
     ctx.beginPath();
-    indices.forEach((idx, i) => {
-      const p = pts[idx];
-      if (!p) return;
-      if (i === 0) ctx.moveTo(p.x, p.y);
-      else ctx.lineTo(p.x, p.y);
-    });
-    if (close) ctx.closePath();
+    for (const [a, b, c] of BIOMETRIC_MESH_TRIANGLES) {
+      const pa = pts[a];
+      const pb = pts[b];
+      const pc = pts[c];
+      if (!pa || !pb || !pc) continue;
+      ctx.moveTo(pa.x, pa.y);
+      ctx.lineTo(pb.x, pb.y);
+      ctx.lineTo(pc.x, pc.y);
+      ctx.closePath();
+    }
     ctx.stroke();
-  };
 
-  ctx.strokeStyle = contourStroke;
-  ctx.lineWidth = 1.65;
-  ctx.shadowColor = isGreen ? 'rgba(16, 185, 129, 0.65)' : 'rgba(234, 88, 12, 0.65)';
-  ctx.shadowBlur = 6;
-  drawPath([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]); // Jaw
-  drawPath([17, 18, 19, 20, 21]); // Left brow
-  drawPath([22, 23, 24, 25, 26]); // Right brow
-  drawPath([27, 28, 29, 30]); // Nose bridge
-  drawPath([31, 32, 33, 34, 35]); // Nose base
-  drawPath([36, 37, 38, 39, 40, 41], true); // Left eye
-  drawPath([42, 43, 44, 45, 46, 47], true); // Right eye
-  drawPath([48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59], true); // Outer lip
+    // 2. Crisp feature contour paths (jaw, brows, nose, eyes, lips)
+    const drawPath = (indices: number[], close = false) => {
+      ctx.beginPath();
+      indices.forEach((idx, i) => {
+        const p = pts[idx];
+        if (!p) return;
+        if (i === 0) ctx.moveTo(p.x, p.y);
+        else ctx.lineTo(p.x, p.y);
+      });
+      if (close) ctx.closePath();
+      ctx.stroke();
+    };
 
-  // 3. Glowing 3D landmark nodes
-  ctx.shadowBlur = 4;
-  ctx.fillStyle = nodeFill;
-  for (let i = 0; i < pts.length; i++) {
-    const p = pts[i];
-    const radius = i === 30 || i === 36 || i === 39 || i === 42 || i === 45 || i === 8 ? 2.4 : 1.5;
+    ctx.strokeStyle = contourStroke;
+    ctx.lineWidth = Math.max(1.2, Math.min(1.9, bw / 140));
+    ctx.shadowColor = isGreen ? 'rgba(16, 185, 129, 0.65)' : 'rgba(234, 88, 12, 0.65)';
+    ctx.shadowBlur = 6;
+    drawPath([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]); // Jaw
+    drawPath([17, 18, 19, 20, 21]); // Left brow
+    drawPath([22, 23, 24, 25, 26]); // Right brow
+    drawPath([27, 28, 29, 30]); // Nose bridge
+    drawPath([31, 32, 33, 34, 35]); // Nose base
+    drawPath([36, 37, 38, 39, 40, 41], true); // Left eye
+    drawPath([42, 43, 44, 45, 46, 47], true); // Right eye
+    drawPath([48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59], true); // Outer lip
+
+    // 3. Glowing 3D landmark nodes
+    ctx.shadowBlur = 4;
+    ctx.fillStyle = nodeFill;
+    const baseR = Math.max(1.1, Math.min(2.2, bw / 130));
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i];
+      const radius = i === 30 || i === 36 || i === 39 || i === 42 || i === 45 || i === 8 ? baseR * 1.45 : baseR;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // 4. Animated horizontal 3D laser sweep across the face bounding box
+    const t = (Date.now() % 1500) / 1500;
+    const sweepY = by + (t < 0.5 ? t * 2 : (1 - t) * 2) * bh;
+    const grad = ctx.createLinearGradient(bx, sweepY - 16, bx, sweepY + 16);
+    grad.addColorStop(0, 'rgba(16, 185, 129, 0)');
+    grad.addColorStop(0.5, isGreen ? 'rgba(52, 211, 153, 0.55)' : 'rgba(251, 146, 60, 0.45)');
+    grad.addColorStop(1, 'rgba(16, 185, 129, 0)');
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = grad;
+    ctx.fillRect(bx - 10, sweepY - 16, bw + 20, 32);
+
+    ctx.strokeStyle = isGreen ? 'rgba(110, 231, 183, 0.95)' : 'rgba(253, 186, 116, 0.95)';
+    ctx.lineWidth = 1.7;
     ctx.beginPath();
-    ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.moveTo(bx - 10, sweepY);
+    ctx.lineTo(bx + bw + 10, sweepY);
+    ctx.stroke();
+
+    // 5. Dynamic face-tracking corner brackets hugging each live face box
+    const pad = Math.max(6, Math.min(14, bw * 0.08));
+    const cl = Math.max(12, Math.min(26, bw * 0.2));
+    const x1 = bx - pad;
+    const y1 = by - pad;
+    const x2 = bx + bw + pad;
+    const y2 = by + bh + pad;
+    ctx.strokeStyle = isGreen ? '#34d399' : '#fb923c';
+    ctx.lineWidth = 2.4;
+    ctx.beginPath();
+    ctx.moveTo(x1, y1 + cl); ctx.lineTo(x1, y1); ctx.lineTo(x1 + cl, y1);
+    ctx.moveTo(x2 - cl, y1); ctx.lineTo(x2, y1); ctx.lineTo(x2, y1 + cl);
+    ctx.moveTo(x1, y2 - cl); ctx.lineTo(x1, y2); ctx.lineTo(x1 + cl, y2);
+    ctx.moveTo(x2 - cl, y2); ctx.lineTo(x2, y2); ctx.lineTo(x2, y2 - cl);
+    ctx.stroke();
+
+    ctx.restore();
   }
-
-  // 4. Animated horizontal 3D laser sweep across the face bounding box
-  const t = (Date.now() % 1800) / 1800;
-  const sweepY = by + (t < 0.5 ? t * 2 : (1 - t) * 2) * bh;
-  const grad = ctx.createLinearGradient(bx, sweepY - 18, bx, sweepY + 18);
-  grad.addColorStop(0, 'rgba(16, 185, 129, 0)');
-  grad.addColorStop(0.5, isGreen ? 'rgba(52, 211, 153, 0.55)' : 'rgba(251, 146, 60, 0.45)');
-  grad.addColorStop(1, 'rgba(16, 185, 129, 0)');
-  ctx.shadowBlur = 0;
-  ctx.fillStyle = grad;
-  ctx.fillRect(bx - 12, sweepY - 18, bw + 24, 36);
-
-  ctx.strokeStyle = isGreen ? 'rgba(110, 231, 183, 0.95)' : 'rgba(253, 186, 116, 0.95)';
-  ctx.lineWidth = 1.8;
-  ctx.beginPath();
-  ctx.moveTo(bx - 12, sweepY);
-  ctx.lineTo(bx + bw + 12, sweepY);
-  ctx.stroke();
-
-  // 5. Dynamic face-tracking corner brackets hugging the live face box
-  const pad = 12;
-  const cl = Math.min(26, bw * 0.18);
-  const x1 = bx - pad;
-  const y1 = by - pad;
-  const x2 = bx + bw + pad;
-  const y2 = by + bh + pad;
-  ctx.strokeStyle = isGreen ? '#34d399' : '#fb923c';
-  ctx.lineWidth = 2.6;
-  ctx.beginPath();
-  // Top-left
-  ctx.moveTo(x1, y1 + cl); ctx.lineTo(x1, y1); ctx.lineTo(x1 + cl, y1);
-  // Top-right
-  ctx.moveTo(x2 - cl, y1); ctx.lineTo(x2, y1); ctx.lineTo(x2, y1 + cl);
-  // Bottom-left
-  ctx.moveTo(x1, y2 - cl); ctx.lineTo(x1, y2); ctx.lineTo(x1 + cl, y2);
-  // Bottom-right
-  ctx.moveTo(x2 - cl, y2); ctx.lineTo(x2, y2); ctx.lineTo(x2, y2 - cl);
-  ctx.stroke();
-
-  ctx.restore();
 }
 
 /**
@@ -403,7 +440,8 @@ export function draw3dBiometricFaceMesh(
  */
 export async function analyzeVideoFaceFrame(
   videoEl: HTMLVideoElement,
-  includeDescriptor = true
+  includeDescriptor = true,
+  optionsOverride?: { allowMultiple?: boolean; longRange?: boolean }
 ): Promise<LiveFaceFrameAnalysis> {
   const faceapi = await loadFaceApiModels();
   if (!videoEl || videoEl.readyState < 2 || videoEl.videoWidth === 0) {
@@ -418,16 +456,17 @@ export async function analyzeVideoFaceFrame(
       centerOffsetY: 0,
       faceBrightness: 128,
       detectionScore: 0,
+      allFaces: [],
     };
   }
 
+  // Long-range walk-by mode uses 416px input & 0.25 threshold so distant/passing faces lock cleanly
   const options = new faceapi.TinyFaceDetectorOptions({
-    inputSize: 320,
-    scoreThreshold: 0.32,
+    inputSize: optionsOverride?.longRange ? 416 : 320,
+    scoreThreshold: optionsOverride?.longRange ? 0.25 : 0.32,
   });
 
   if (includeDescriptor) {
-    let sourceEl: HTMLVideoElement | HTMLCanvasElement = videoEl;
     let sourceWidth = Math.max(1, videoEl.videoWidth);
     let sourceHeight = Math.max(1, videoEl.videoHeight);
 
@@ -445,7 +484,6 @@ export async function analyzeVideoFaceFrame(
           .withFaceLandmarks(true)
           .withFaceDescriptors();
         if (detections && detections.length > 0) {
-          sourceEl = boosted;
           sourceWidth = boosted.width;
           sourceHeight = boosted.height;
         }
@@ -464,10 +502,11 @@ export async function analyzeVideoFaceFrame(
         centerOffsetY: 0,
         faceBrightness: 128,
         detectionScore: 0,
+        allFaces: [],
       };
     }
 
-    if (detections.length > 1) {
+    if (detections.length > 1 && !optionsOverride?.allowMultiple) {
       return {
         detected: false,
         multipleFaces: true,
@@ -479,65 +518,70 @@ export async function analyzeVideoFaceFrame(
         centerOffsetY: 0,
         faceBrightness: 128,
         detectionScore: 0,
+        allFaces: [],
       };
     }
 
-    const det = detections[0];
-    const landmarks = det.landmarks;
-    const leftEye = landmarks.getLeftEye();
-    const rightEye = landmarks.getRightEye();
-    const nose = landmarks.getNose();
-    const jaw = landmarks.getJawOutline();
-
-    const ear = (computeEyeAspectRatio(leftEye) + computeEyeAspectRatio(rightEye)) / 2;
-
-    // Yaw ratio: compare nose tip (index 3) horizontal position between left jaw (0) and right jaw (16)
-    const noseTip = nose[3] || nose[0];
-    const leftJaw = jaw[0];
-    const rightJaw = jaw[16];
-    let yawRatio = 0;
-    if (noseTip && leftJaw && rightJaw) {
-      const faceWidth = Math.max(1, dist2D(leftJaw, rightJaw));
-      const midX = (leftJaw.x + rightJaw.x) / 2;
-      yawRatio = (noseTip.x - midX) / (faceWidth / 2);
-    }
-
-    const box = det.detection.box;
     const vw = sourceWidth;
     const vh = sourceHeight;
-    const faceSizeRatio = box.width / vw;
-    const centerOffsetX = (box.x + box.width / 2 - vw / 2) / vw;
-    const centerOffsetY = (box.y + box.height / 2 - vh / 2) / vh;
     const scaleX = videoEl.videoWidth / vw;
     const scaleY = videoEl.videoHeight / vh;
-    const faceBrightness = measureBoxBrightness(videoEl, {
-      x: box.x * scaleX,
-      y: box.y * scaleY,
-      width: box.width * scaleX,
-      height: box.height * scaleY,
-    });
-    const detectionScore = Number(det.detection.score || 0);
-    const descriptor = det.descriptor ? Array.from(det.descriptor as Float32Array).map((n) => Number(n.toFixed(6))) : null;
 
-    const normLandmarks = (landmarks.positions || []).map((pt: { x: number; y: number }) => ({
-      x: pt.x / vw,
-      y: pt.y / vh,
-    }));
+    // Parse all detected faces and sort largest/most prominent first
+    const parsedFaces: DetectedFace3D[] = detections
+      .map((det: any) => {
+        const lm = det.landmarks;
+        const ear = (computeEyeAspectRatio(lm.getLeftEye()) + computeEyeAspectRatio(lm.getRightEye())) / 2;
+        const nose = lm.getNose();
+        const jaw = lm.getJawOutline();
+        const noseTip = nose[3] || nose[0];
+        const leftJaw = jaw[0];
+        const rightJaw = jaw[16];
+        let yawRatio = 0;
+        if (noseTip && leftJaw && rightJaw) {
+          const faceWidth = Math.max(1, dist2D(leftJaw, rightJaw));
+          const midX = (leftJaw.x + rightJaw.x) / 2;
+          yawRatio = (noseTip.x - midX) / (faceWidth / 2);
+        }
+        const b = det.detection.box;
+        return {
+          descriptor: det.descriptor
+            ? Array.from(det.descriptor as Float32Array).map((n) => Number(n.toFixed(6)))
+            : null,
+          ear,
+          yawRatio,
+          faceSizeRatio: b.width / vw,
+          detectionScore: Number(det.detection.score || 0),
+          box: { x: b.x * scaleX, y: b.y * scaleY, width: b.width * scaleX, height: b.height * scaleY },
+          normBox: { x: b.x / vw, y: b.y / vh, width: b.width / vw, height: b.height / vh },
+          normLandmarks: (lm.positions || []).map((pt: { x: number; y: number }) => ({
+            x: pt.x / vw,
+            y: pt.y / vh,
+          })),
+        };
+      })
+      .sort((a: DetectedFace3D, b: DetectedFace3D) => b.faceSizeRatio - a.faceSizeRatio);
+
+    const primary = parsedFaces[0];
+    const centerOffsetX = primary.normBox.x + primary.normBox.width / 2 - 0.5;
+    const centerOffsetY = primary.normBox.y + primary.normBox.height / 2 - 0.5;
+    const faceBrightness = measureBoxBrightness(videoEl, primary.box);
 
     return {
       detected: true,
-      multipleFaces: false,
-      descriptor,
-      ear,
-      yawRatio,
-      faceSizeRatio,
+      multipleFaces: parsedFaces.length > 1,
+      descriptor: primary.descriptor,
+      ear: primary.ear,
+      yawRatio: primary.yawRatio,
+      faceSizeRatio: primary.faceSizeRatio,
       centerOffsetX,
       centerOffsetY,
       faceBrightness,
-      detectionScore,
-      box: { x: box.x * scaleX, y: box.y * scaleY, width: box.width * scaleX, height: box.height * scaleY },
-      normBox: { x: box.x / vw, y: box.y / vh, width: box.width / vw, height: box.height / vh },
-      normLandmarks,
+      detectionScore: primary.detectionScore,
+      box: primary.box,
+      normBox: primary.normBox,
+      normLandmarks: primary.normLandmarks,
+      allFaces: parsedFaces,
     };
   } else {
     const detections = await faceapi.detectAllFaces(videoEl, options).withFaceLandmarks(true);
