@@ -1452,7 +1452,7 @@ export default function AttendanceDeskPage() {
                     <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b' }}>
                       <th style={{ padding: '12px 16px' }}>Employee</th>
                       <th style={{ padding: '12px 16px' }}>Subsidiary / Dept</th>
-                      <th style={{ padding: '12px 16px' }}>Scheduled Shift</th>
+                      <th style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>Date & Shift</th>
                       <th style={{ padding: '12px 16px' }}>Morning Resumption (AM)</th>
                       <th style={{ padding: '12px 16px' }}>Evening Closing (PM)</th>
                       <th style={{ padding: '12px 16px' }}>Hours Worked</th>
@@ -1522,11 +1522,26 @@ export default function AttendanceDeskPage() {
                               <div style={{ fontSize: '11px', color: '#64748b' }}>{r.department?.name || 'General Operations'}</div>
                             </td>
 
-                            {/* Shift */}
-                            <td style={{ padding: '12px 16px' }}>
-                              <span style={{ fontSize: '11px', color: '#475569', fontWeight: 600 }}>
-                                {r.scheduledShift || '08:00 - 17:00'}
-                              </span>
+                            {/* Date & Shift */}
+                            <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>
+                              <div style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a' }}>
+                                {(() => {
+                                  const rawDate = r.workDate || dailyDate;
+                                  if (!rawDate) return '—';
+                                  const dt = new Date(`${rawDate}T12:00:00Z`);
+                                  return isNaN(dt.getTime())
+                                    ? rawDate
+                                    : dt.toLocaleDateString('en-GB', {
+                                        weekday: 'short',
+                                        day: '2-digit',
+                                        month: 'short',
+                                        year: 'numeric',
+                                      });
+                                })()}
+                              </div>
+                              <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 600, marginTop: '2px' }}>
+                                {(r.scheduledShift || '08:00 - 17:00').replace('-', '–')}
+                              </div>
                             </td>
 
                             {/* Morning Resumption */}
