@@ -175,7 +175,7 @@ export function drawMediaPipe3dFaceMesh(
   canvas: HTMLCanvasElement,
   videoEl: HTMLVideoElement,
   faces: MediaPipeFace3D[],
-  options: { locked?: boolean; verifying?: boolean } = {}
+  options: { locked?: boolean; verifying?: boolean; liteMode?: boolean } = {}
 ): void {
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
@@ -252,8 +252,8 @@ export function drawMediaPipe3dFaceMesh(
 
     ctx.save();
 
-    // 1. 478-Point 3D Triangulated Wireframe Tessellation
-    if (tessEdges.length > 0) {
+    // 1. 478-Point 3D Triangulated Wireframe Tessellation (skipped in liteMode on slow GPUs to prevent freezing)
+    if (!options.liteMode && tessEdges.length > 0) {
       ctx.strokeStyle = tessStroke;
       ctx.lineWidth = 0.7;
       ctx.beginPath();
