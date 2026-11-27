@@ -205,7 +205,7 @@ export function StaffFaceEnrollmentCard({
               minIntervalMs: 4500,
             });
           } else if (currentStep === 'STRAIGHT') {
-            if (Math.abs(frame.yawRatio) <= 0.18) {
+            if (Math.abs(frame.yawRatio) <= 0.16 && frame.detectionScore >= 0.5) {
               samplesRef.current.push(frame.descriptor);
               baselineEarRef.current = Math.max(0.24, frame.ear);
               thumbnailRef.current = captureFaceThumbnailDataUrl(videoRef.current);
@@ -217,10 +217,10 @@ export function StaffFaceEnrollmentCard({
                 muted: voiceMutedRef.current,
               });
             } else {
-              setStatusHint('Step 1 of 3: Look straight at the camera.');
+              setStatusHint('Step 1 of 3: Look straight at the camera in clear lighting.');
             }
           } else if (currentStep === 'TURN_HEAD') {
-            if (Math.abs(frame.yawRatio) >= 0.2) {
+            if (Math.abs(frame.yawRatio) >= 0.16 && Math.abs(frame.yawRatio) <= 0.28 && frame.detectionScore >= 0.48) {
               samplesRef.current.push(frame.descriptor);
               currentStep = 'BLINK';
               setStep('BLINK');
@@ -230,13 +230,13 @@ export function StaffFaceEnrollmentCard({
                 { force: true, muted: voiceMutedRef.current }
               );
             } else {
-              setStatusHint('Step 2 of 3: Slightly turn your head left or right.');
+              setStatusHint('Step 2 of 3: Gently turn your head slightly left or right (keep both eyes visible).');
             }
           } else if (currentStep === 'BLINK') {
             if (frame.ear > 0.24) openEyeFrames++;
             const blinked = openEyeFrames >= 1 && frame.ear < Math.min(0.22, baselineEarRef.current * 0.82);
             const oppositeTurn = Math.abs(frame.yawRatio) <= 0.12 && openEyeFrames >= 4;
-            if (blinked || oppositeTurn) {
+            if ((blinked || oppositeTurn) && Math.abs(frame.yawRatio) <= 0.18 && frame.detectionScore >= 0.48) {
               samplesRef.current.push(frame.descriptor);
               loopActiveRef.current = false;
               await submitEnrollment();

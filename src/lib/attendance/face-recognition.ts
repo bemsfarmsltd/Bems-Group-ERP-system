@@ -209,15 +209,52 @@ export interface FaceMatchResult {
 }
 
 /**
+ * Filters out corrupted/blurry enrollment outlier vectors (e.g. from a steep side turn)
+ * and computes a clean biometric centroid for an employee's enrolled face profile.
+ */
+function buildCleanProfileSamples(descriptors: number[][]): { clean: number[][]; centroid: number[] } {
+  const valid = descriptors.filter((d) => isValidFaceDescriptor(d));
+  if (valid.length === 0) return { clean: [], centroid: [] };
+  if (valid.length <= 2) {
+    const centroid = new Array<number>(128).fill(0);
+    for (const d of valid) for (let i = 0; i < 128; i++) centroid[i] += d[i] / valid.length;
+    return { clean: valid, centroid };
+  }
+
+  // Keep samples that agree with at least one other sample (distance <= 0.52); always keep sample 0 (straight front)
+  const kept: number[][] = [];
+  for (let i = 0; i < valid.length; i++) {
+    let minPeer = Infinity;
+    for (let j = 0; j < valid.length; j++) {
+      if (i === j) continue;
+      const d = euclideanDistance128(valid[i], valid[j]);
+      if (d < minPeer) minPeer = d;
+    }
+    if (i === 0 || minPeer <= 0.52) {
+      kept.push(valid[i]);
+    }
+  }
+  const clean = kept.length > 0 ? kept : [valid[0]];
+  const centroid = new Array<number>(128).fill(0);
+  for (const d of clean) {
+    for (let i = 0; i < 128; i++) centroid[i] += d[i] / clean.length;
+  }
+  return { clean, centroid };
+}
+
+/**
  * Server-side 1:N biometric matching against approved employee face descriptors.
- * Enforces both an absolute distance threshold (<= 0.46) and a separation margin (>= 0.05)
- * over the second-closest employee when multiple candidates exist.
+ * Enforces:
+ * 1. Strict composite distance threshold (<= 0.38) combining clean centroid & closest sample
+ *    so an unenrolled person can NEVER falsely match an enrolled colleague.
+ * 2. Clean centroid verification (centroidDist <= 0.40) so a single noisy angle never triggers a match.
+ * 3. Separation margin (>= 0.06) over the second-closest employee when multiple candidates exist.
  */
 export function matchFaceDescriptorAgainstRoster(
   probe: number[],
   candidates: FaceCandidateProfile[],
-  maxThreshold = 0.46,
-  minMargin = 0.05
+  maxThreshold = 0.38,
+  minMargin = 0.06
 ): FaceMatchResult {
   if (!isValidFaceDescriptor(probe)) {
     return {
@@ -231,69 +268,66 @@ export function matchFaceDescriptorAgainstRoster(
   }
 
   let bestEmpId: string | null = null;
-  let bestDist = Infinity;
-  let secondBestDist = Infinity;
+  let bestScore = Infinity;
+  let bestCentroidDist = Infinity;
+  let secondBestScore = Infinity;
 
   for (const cand of candidates) {
+    const { clean, centroid } = buildCleanProfileSamples(cand.descriptors);
+    if (clean.length === 0 || centroid.length !== 128) continue;
+
     let empMinDist = Infinity;
-    const validDescs: number[][] = [];
-    for (const desc of cand.descriptors) {
-      if (!isValidFaceDescriptor(desc)) continue;
-      validDescs.push(desc);
+    for (const desc of clean) {
       const dist = euclideanDistance128(probe, desc);
       if (dist < empMinDist) empMinDist = dist;
     }
-    // Also compare against the candidate's multi-angle centroid for stronger lighting/pose invariance
-    if (validDescs.length >= 2) {
-      const centroid = new Array<number>(128).fill(0);
-      for (const d of validDescs) {
-        for (let i = 0; i < 128; i++) centroid[i] += d[i];
-      }
-      for (let i = 0; i < 128; i++) centroid[i] /= validDescs.length;
-      const centroidDist = euclideanDistance128(probe, centroid);
-      if (centroidDist < empMinDist) empMinDist = centroidDist;
-    }
-    if (empMinDist < bestDist) {
-      secondBestDist = bestDist;
-      bestDist = empMinDist;
+    const centroidDist = euclideanDistance128(probe, centroid);
+    // Weighted consensus score: 60% clean centroid + 40% best clean angle
+    const compositeScore = 0.6 * centroidDist + 0.4 * empMinDist;
+
+    if (compositeScore < bestScore) {
+      secondBestScore = bestScore;
+      bestScore = compositeScore;
+      bestCentroidDist = centroidDist;
       bestEmpId = cand.employeeId;
-    } else if (empMinDist < secondBestDist) {
-      secondBestDist = empMinDist;
+    } else if (compositeScore < secondBestScore) {
+      secondBestScore = compositeScore;
     }
   }
 
-  // Convert L2 distance [0..0.46] to human-readable confidence [99%..75%]
-  const confidencePercent = Number.isFinite(bestDist)
-    ? Math.max(0, Math.min(99, Math.round((1 - bestDist / 0.85) * 100)))
+  // Convert L2 distance [0..0.38] to human-readable confidence
+  const confidencePercent = Number.isFinite(bestScore)
+    ? Math.max(0, Math.min(99, Math.round((1 - bestScore / 0.75) * 100)))
     : 0;
 
-  if (!bestEmpId || bestDist > maxThreshold) {
+  if (!bestEmpId || bestScore > maxThreshold || bestCentroidDist > maxThreshold + 0.02) {
     return {
       matched: false,
       employeeId: null,
-      distance: Number(bestDist.toFixed(4)),
+      distance: Number(bestScore.toFixed(4)),
       confidencePercent,
-      secondBestDistance: Number.isFinite(secondBestDist) ? Number(secondBestDist.toFixed(4)) : Infinity,
-      reason: 'Face not recognized or not yet approved in the BEMS Face Registry.',
+      secondBestDistance: Number.isFinite(secondBestScore) ? Number(secondBestScore.toFixed(4)) : Infinity,
+      reason:
+        'Face not recognized. If you have not enrolled your Face ID yet, please register in the BEMS Staff App first.',
     };
   }
 
-  if (Number.isFinite(secondBestDist) && secondBestDist - bestDist < minMargin) {
+  if (Number.isFinite(secondBestScore) && secondBestScore - bestScore < minMargin) {
     return {
       matched: false,
       employeeId: null,
-      distance: Number(bestDist.toFixed(4)),
+      distance: Number(bestScore.toFixed(4)),
       confidencePercent,
-      secondBestDistance: Number(secondBestDist.toFixed(4)),
-      reason: 'Ambiguous face match detected. Please look directly at the camera in good lighting and try again.',
+      secondBestDistance: Number(secondBestScore.toFixed(4)),
+      reason: 'Match too close to confirm safely. Please look directly at the camera in clear lighting.',
     };
   }
 
   return {
     matched: true,
     employeeId: bestEmpId,
-    distance: Number(bestDist.toFixed(4)),
+    distance: Number(bestScore.toFixed(4)),
     confidencePercent,
-    secondBestDistance: Number.isFinite(secondBestDist) ? Number(secondBestDist.toFixed(4)) : Infinity,
+    secondBestDistance: Number.isFinite(secondBestScore) ? Number(secondBestScore.toFixed(4)) : Infinity,
   };
 }

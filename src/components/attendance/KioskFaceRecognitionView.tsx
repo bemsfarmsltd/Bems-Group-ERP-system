@@ -225,11 +225,16 @@ export function KioskFaceRecognitionView({
             return;
           }
 
-          const activeFaces = (frame.allFaces || []).filter(
+          const trackedFaces = (frame.allFaces || []).filter(
             (f) => f.descriptor && f.faceSizeRatio >= 0.05 && f.detectionScore >= 0.25
           );
 
-          if (activeFaces.length === 0) {
+          // High-clarity faces eligible for biometric identity matching (prevents false matches on blurry distant shadows)
+          const matchableFaces = trackedFaces.filter(
+            (f) => f.faceSizeRatio >= 0.11 && f.detectionScore >= 0.45 && Math.abs(f.yawRatio) <= 0.30
+          );
+
+          if (trackedFaces.length === 0) {
             setFaceDetected(false);
             setLivenessReady(false);
             setScanProgress(0);
@@ -237,15 +242,47 @@ export function KioskFaceRecognitionView({
             lockFrames = 0;
             capturedDescriptors = [];
             setStatusText('3D Radar Active — Scanning room for passing staff faces...');
+          } else if (matchableFaces.length === 0) {
+            setFaceDetected(true);
+            setLivenessReady(false);
+            setScanProgress(25);
+            lockFrames = 0;
+            capturedDescriptors = [];
+            const nearest = trackedFaces[0];
+            if (nearest.faceSizeRatio < 0.11) {
+              setStatusText('3D Face Tracked — step slightly closer so scanner can verify identity');
+            } else if (Math.abs(nearest.yawRatio) > 0.30) {
+              setStatusText('3D Face Tracked — glance toward the camera to verify identity');
+            } else {
+              setStatusText('3D Face Tracked — stabilizing focus for biometric verification...');
+            }
           } else {
-            const primary = activeFaces[0];
+            const primary = matchableFaces[0];
             setFaceDetected(true);
             setLightingAlert(
               frame.faceBrightness < 44 ? 'Low lighting detected — auto-exposure boost active' : null
             );
 
+            // Frame-to-frame stability check: only fuse descriptors that agree closely (< 0.28)
             if (primary.descriptor) {
-              capturedDescriptors.push(primary.descriptor);
+              if (capturedDescriptors.length > 0) {
+                const prev = capturedDescriptors[capturedDescriptors.length - 1];
+                let sumSq = 0;
+                for (let i = 0; i < 128; i++) {
+                  const diff = primary.descriptor[i] - prev[i];
+                  sumSq += diff * diff;
+                }
+                const frameDelta = Math.sqrt(sumSq);
+                if (frameDelta > 0.28) {
+                  // Person moved or someone else stepped in front — reset buffer cleanly
+                  capturedDescriptors = [primary.descriptor];
+                  lockFrames = 0;
+                } else {
+                  capturedDescriptors.push(primary.descriptor);
+                }
+              } else {
+                capturedDescriptors.push(primary.descriptor);
+              }
               if (capturedDescriptors.length > 3) capturedDescriptors.shift();
             }
 
@@ -254,14 +291,14 @@ export function KioskFaceRecognitionView({
               setScanProgress(55);
               playKioskChime('lock');
               setStatusText(
-                activeFaces.length > 1
-                  ? `3D Tracking ${activeFaces.length} faces — identifying instantaneously...`
-                  : '3D Face Mesh Locked — identifying automatically...'
+                trackedFaces.length > 1
+                  ? `3D Tracking ${trackedFaces.length} faces — verifying primary identity...`
+                  : '3D Face Mesh Locked — verifying identity...'
               );
             }
 
-            // Instant walk-by identification on frame 2 (or immediately if passing by!)
-            if (lockFrames >= 2 || capturedDescriptors.length >= 2) {
+            // Require at least 2 stable, consistent frames before matching
+            if (lockFrames >= 2 && capturedDescriptors.length >= 2) {
               setLivenessReady(true);
               setVerifying(true);
               setScanProgress(100);
