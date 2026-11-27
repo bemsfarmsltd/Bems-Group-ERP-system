@@ -34,11 +34,19 @@ export async function POST(request: Request) {
     const livenessProof = body?.livenessProof as
       | {
           method?: string;
-          startMar?: number;
-          peakMar?: number;
+          // MediaPipe Blink proof
+          startBlink?: number;
+          peakBlinkLeft?: number;
+          peakBlinkRight?: number;
+          blinkDelta?: number;
+          endBlink?: number;
+          // MediaPipe Jaw Cycle proof
+          startJaw?: number;
+          peakJaw?: number;
           openDelta?: number;
-          endMar?: number;
+          endJaw?: number;
           closeDelta?: number;
+          // Neural PAD & Flash metadata
           neuralReady?: boolean;
           antispoofScore?: number;
           livenessScore?: number;
@@ -49,27 +57,37 @@ export async function POST(request: Request) {
     const requestedAction = typeof body?.action === 'string' ? body.action.toUpperCase() : 'AUTO';
     const requestedStationCode = typeof body?.stationCode === 'string' ? body.stationCode.trim() : '';
 
-    // Strict Multi-Layer Anti-Spoofing Validation:
-    // 1. Only non-rigid bidirectional mouth articulation (Closed -> Open -> Closed) is accepted.
-    //    Head-turn challenges are permanently removed because tilting a phone can fake 2D yaw.
-    // 2. When Neural PAD CNN models are loaded in browser, require passing real-vs-spoof score.
-    const validMouthCycle =
-      livenessProof?.method === 'CHALLENGE_MOUTH_CYCLE' &&
-      Number(livenessProof?.openDelta ?? 0) >= 0.11 &&
-      Number(livenessProof?.closeDelta ?? 0) >= 0.08 &&
+    // Strict Multi-Layer Anti-Spoofing Validation powered by Google MediaPipe 478-Point 3D Neural Blendshapes:
+    // Accepts ONLY genuine neural blendshape transitions (MEDIAPIPE_BLINK or MEDIAPIPE_JAW_CYCLE) + Neural PAD CNN.
+    const validMediaPipeBlink =
+      livenessProof?.method === 'MEDIAPIPE_BLINK' &&
+      Number(livenessProof?.startBlink ?? 1) <= 0.24 &&
+      Number(livenessProof?.peakBlinkLeft ?? 0) >= 0.44 &&
+      Number(livenessProof?.peakBlinkRight ?? 0) >= 0.44 &&
+      Number(livenessProof?.blinkDelta ?? 0) >= 0.26 &&
+      Number(livenessProof?.endBlink ?? 1) <= 0.22 &&
+      Number(livenessProof?.framesAnalyzed ?? 0) >= 3;
+
+    const validMediaPipeJawCycle =
+      livenessProof?.method === 'MEDIAPIPE_JAW_CYCLE' &&
+      Number(livenessProof?.startJaw ?? 1) <= 0.14 &&
+      Number(livenessProof?.peakJaw ?? 0) >= 0.28 &&
+      Number(livenessProof?.openDelta ?? 0) >= 0.20 &&
+      Number(livenessProof?.endJaw ?? 1) <= 0.12 &&
+      Number(livenessProof?.closeDelta ?? 0) >= 0.16 &&
       Number(livenessProof?.framesAnalyzed ?? 0) >= 3;
 
     const neuralReady = livenessProof?.neuralReady === true;
     const antispoofScore = Number(livenessProof?.antispoofScore ?? 0);
     const livenessScore = Number(livenessProof?.livenessScore ?? 0);
-    const neuralPadPassed = !neuralReady || antispoofScore >= 0.42 || livenessScore >= 0.45;
+    const neuralPadPassed = !neuralReady || antispoofScore >= 0.40 || livenessScore >= 0.42;
 
-    if (!livenessVerified || !validMouthCycle || !neuralPadPassed) {
+    if (!livenessVerified || (!validMediaPipeBlink && !validMediaPipeJawCycle) || !neuralPadPassed) {
       return NextResponse.json(
         {
           error: !neuralPadPassed
             ? 'Neural Anti-Spoofing Blocked: Phone screen or printed photo detected. Please step up in person.'
-            : 'Anti-Spoofing Challenge Failed: Photos and phone screens cannot clock in. Please open and close your mouth in person.',
+            : 'Anti-Spoofing Challenge Failed: Photos and phone screens cannot clock in. Please follow the live prompt in person.',
           spoofBlocked: true,
         },
         { status: 403 }
