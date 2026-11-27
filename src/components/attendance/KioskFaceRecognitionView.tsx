@@ -216,6 +216,24 @@ export function KioskFaceRecognitionView({
       // Stage 1 Recognized Staff State (Face ONLY locks when confirmed in BEMS!)
       let identifiedEmployeeId: string | null = null;
       let identifiedFirstName: string | null = null;
+      let stage1Descriptor: number[] | null = null;
+
+      const fetchJsonWithTimeout = async (url: string, bodyObj: Record<string, any>, timeoutMs = 8500) => {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+          const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(bodyObj),
+            signal: controller.signal,
+          });
+          const json = await res.json().catch(() => ({}));
+          return { ok: res.ok, status: res.status, json };
+        } finally {
+          clearTimeout(timer);
+        }
+      };
 
       // Blink metrics
       let startBlink = 0;
@@ -254,6 +272,7 @@ export function KioskFaceRecognitionView({
         activeChallenge = null;
         identifiedEmployeeId = null;
         identifiedFirstName = null;
+        stage1Descriptor = null;
         startBlink = 0;
         peakBlinkLeft = 0;
         peakBlinkRight = 0;
@@ -405,18 +424,14 @@ export function KioskFaceRecognitionView({
                   }
 
                   const probeDescriptor = averageFaceDescriptors(idSamples);
-                  const idRes = await fetch('/api/attendance/face-punch', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      stationCode,
-                      mode: 'IDENTIFY_ONLY',
-                      descriptor: probeDescriptor,
-                    }),
+                  const idResp = await fetchJsonWithTimeout('/api/attendance/face-punch', {
+                    stationCode,
+                    mode: 'IDENTIFY_ONLY',
+                    descriptor: probeDescriptor,
                   });
-                  const idJson = await idRes.json().catch(() => ({}));
+                  const idJson = idResp.json;
 
-                  if (!idRes.ok || !idJson?.recognized || !idJson?.employeeId) {
+                  if (!idResp.ok || !idJson?.recognized || !idJson?.employeeId) {
                     // Person does NOT exist in BEMS — NO face lock, NO liveness check!
                     cooldownUntilRef.current = Date.now() + 3600;
                     resetLivenessBuffer();
@@ -437,6 +452,7 @@ export function KioskFaceRecognitionView({
                   // Person CONFIRMED in BEMS! NOW lock the face (green mesh) & pause calmly before Stage 2
                   identifiedEmployeeId = idJson.employeeId;
                   identifiedFirstName = idJson.firstName || 'Staff';
+                  stage1Descriptor = probeDescriptor;
                   setFaceDetected(true);
                   flowStage = 'LOCK_PAUSE';
                   lockPauseUntil = Date.now() + 500;
@@ -699,41 +715,38 @@ export function KioskFaceRecognitionView({
                 setStatusText(`Liveness verified ✓ Recording attendance for ${identifiedFirstName || 'Staff'}...`);
                 cooldownUntilRef.current = Date.now() + 5500;
 
-                await new Promise((r) => setTimeout(r, 180));
+                try {
+                  // Try 1 fast post-liveness descriptor (1.5s cap), cleanly falling back to Stage 1 descriptor so WebGL never hangs
+                  let freshDescriptor: number[] | null = null;
+                  if (videoRef.current) {
+                    const quickFrame = await Promise.race([
+                      analyzeVideoFaceFrame(videoRef.current, true, {
+                        allowMultiple: true,
+                        longRange: true,
+                      }).catch(() => null),
+                      new Promise<null>((resolve) => setTimeout(() => resolve(null), 1500)),
+                    ]);
+                    if (quickFrame?.descriptor) freshDescriptor = quickFrame.descriptor;
+                  }
 
-                const descriptors: number[][] = [];
-                for (let attempt = 0; attempt < 2; attempt++) {
-                  if (!videoRef.current) break;
-                  const idFrame = await analyzeVideoFaceFrame(videoRef.current, true, {
-                    allowMultiple: true,
-                    longRange: true,
-                  });
-                  if (idFrame.descriptor) descriptors.push(idFrame.descriptor);
-                }
+                  const finalDescriptor =
+                    freshDescriptor && stage1Descriptor
+                      ? averageFaceDescriptors([stage1Descriptor, freshDescriptor])
+                      : freshDescriptor || stage1Descriptor;
 
-                if (descriptors.length === 0) {
-                  setVerifying(false);
-                  setScanProgress(0);
-                  resetLivenessBuffer();
-                  setLivenessReady(false);
-                  cooldownUntilRef.current = Date.now() + 1800;
-                  setStatusText('Look straight at the camera briefly to complete verification...');
-                  if (activeRef.current) setTimeout(tick, 140);
-                  return;
-                }
+                  if (!finalDescriptor) {
+                    cooldownUntilRef.current = Date.now() + 1800;
+                    setStatusText('Look straight at the camera briefly to complete verification...');
+                    return;
+                  }
 
-                setScanProgress(100);
-                const fusedDescriptor = averageFaceDescriptors(descriptors);
-
-                const res = await fetch('/api/attendance/face-punch', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
+                  setScanProgress(100);
+                  const punchResp = await fetchJsonWithTimeout('/api/attendance/face-punch', {
                     stationCode,
                     mode: 'PUNCH',
                     expectedEmployeeId: identifiedEmployeeId || undefined,
                     action: 'AUTO',
-                    descriptor: fusedDescriptor,
+                    descriptor: finalDescriptor,
                     livenessVerified: true,
                     livenessProof: {
                       ...livenessProof,
@@ -742,71 +755,79 @@ export function KioskFaceRecognitionView({
                       livenessScore: Number(avgLiveness.toFixed(3)),
                       flashReflectionDelta: Number(maxFlashRgbDelta.toFixed(2)),
                     },
-                  }),
-                });
-                const json = await res.json();
-                setVerifying(false);
-                setScanProgress(0);
-                resetLivenessBuffer();
-                setLivenessReady(false);
+                  });
+                  const json = punchResp.json;
 
-                if (res.ok && json.success) {
-                  const firstName = String(json.employeeName || 'Staff').split(' ')[0];
-                  const isNoticeOnly = Boolean(json.alreadyCheckedIn || json.alreadyCheckedOut);
-                  playKioskChime(isNoticeOnly ? 'warning' : 'success');
-                  const spoken = json.alreadyCheckedIn
-                    ? `Hello ${firstName}, you are already clocked in for today at ${json.timeStr}.`
-                    : json.alreadyCheckedOut
-                    ? `Hello ${firstName}, you already signed out today at ${json.timeStr}.`
-                    : json.action === 'CHECK_OUT'
-                    ? `Goodbye ${firstName}! Signed out at ${json.timeStr}. Have a wonderful evening.`
-                    : json.status === 'LATE'
-                    ? `Welcome ${firstName}! Clocked in late at ${json.timeStr}.`
-                    : `Welcome ${firstName}! Clocked in on time at ${json.timeStr}. Have a productive day.`;
-
-                  speakFaceVoicePrompt(spoken, { force: true, muted: false });
-
-                  setPopup({
-                    variant: isNoticeOnly ? 'warning' : 'success',
-                    badgeText: json.alreadyCheckedIn
-                      ? 'ALREADY CLOCKED IN TODAY'
+                  if (punchResp.ok && json.success) {
+                    const firstName = String(json.employeeName || 'Staff').split(' ')[0];
+                    const isNoticeOnly = Boolean(json.alreadyCheckedIn || json.alreadyCheckedOut);
+                    playKioskChime(isNoticeOnly ? 'warning' : 'success');
+                    const spoken = json.alreadyCheckedIn
+                      ? `Hello ${firstName}, you are already clocked in for today at ${json.timeStr}.`
                       : json.alreadyCheckedOut
-                      ? 'SHIFT ALREADY COMPLETED'
+                      ? `Hello ${firstName}, you already signed out today at ${json.timeStr}.`
                       : json.action === 'CHECK_OUT'
-                      ? 'EVENING SIGN-OUT VERIFIED'
+                      ? `Goodbye ${firstName}! Signed out at ${json.timeStr}. Have a wonderful evening.`
                       : json.status === 'LATE'
-                      ? 'MORNING CHECK-IN · LATE'
-                      : 'MORNING CHECK-IN · ON TIME',
-                    employeeName: json.employeeName,
-                    employeeNumber: json.employeeNumber,
-                    department: json.department,
-                    subsidiary: json.subsidiary,
-                    timeStr: json.timeStr,
-                    confidence: json.confidencePercent,
-                    message: json.message,
-                  });
-                  onSuccessPunchRef.current?.(json);
-                } else {
-                  const isRecognizedWindowLock = Boolean(json?.employeeName);
-                  playKioskChime(isRecognizedWindowLock ? 'warning' : 'error');
-                  speakFaceVoicePrompt(
-                    json?.error || 'Face not recognized. Please ensure your Face ID is registered.',
-                    { force: true, muted: false }
-                  );
+                      ? `Welcome ${firstName}! Clocked in late at ${json.timeStr}.`
+                      : `Welcome ${firstName}! Clocked in on time at ${json.timeStr}. Have a productive day.`;
+
+                    speakFaceVoicePrompt(spoken, { force: true, muted: false });
+
+                    setPopup({
+                      variant: isNoticeOnly ? 'warning' : 'success',
+                      badgeText: json.alreadyCheckedIn
+                        ? 'ALREADY CLOCKED IN TODAY'
+                        : json.alreadyCheckedOut
+                        ? 'SHIFT ALREADY COMPLETED'
+                        : json.action === 'CHECK_OUT'
+                        ? 'EVENING SIGN-OUT VERIFIED'
+                        : json.status === 'LATE'
+                        ? 'MORNING CHECK-IN · LATE'
+                        : 'MORNING CHECK-IN · ON TIME',
+                      employeeName: json.employeeName,
+                      employeeNumber: json.employeeNumber,
+                      department: json.department,
+                      subsidiary: json.subsidiary,
+                      timeStr: json.timeStr,
+                      confidence: json.confidencePercent,
+                      message: json.message,
+                    });
+                    onSuccessPunchRef.current?.(json);
+                  } else {
+                    const isRecognizedWindowLock = Boolean(json?.employeeName);
+                    playKioskChime(isRecognizedWindowLock ? 'warning' : 'error');
+                    speakFaceVoicePrompt(
+                      json?.error || 'Face not recognized. Please ensure your Face ID is registered.',
+                      { force: true, muted: false }
+                    );
+                    setPopup({
+                      variant: isRecognizedWindowLock ? 'warning' : 'error',
+                      badgeText: json?.spoofBlocked
+                        ? 'ANTI-SPOOFING BLOCKED'
+                        : isRecognizedWindowLock
+                        ? 'TIME WINDOW LOCKED'
+                        : 'BIOMETRIC MATCH NOT FOUND',
+                      employeeName: json?.employeeName || null,
+                      employeeNumber: json?.employeeNumber || null,
+                      confidence: json?.confidencePercent,
+                      message:
+                        json?.error ||
+                        'Could not verify Face ID. Ensure your Face ID is registered on the Staff Portal and look toward the kiosk camera.',
+                    });
+                  }
+                } catch {
+                  playKioskChime('warning');
                   setPopup({
-                    variant: isRecognizedWindowLock ? 'warning' : 'error',
-                    badgeText: json?.spoofBlocked
-                      ? 'ANTI-SPOOFING BLOCKED'
-                      : isRecognizedWindowLock
-                      ? 'TIME WINDOW LOCKED'
-                      : 'BIOMETRIC MATCH NOT FOUND',
-                    employeeName: json?.employeeName || null,
-                    employeeNumber: json?.employeeNumber || null,
-                    confidence: json?.confidencePercent,
-                    message:
-                      json?.error ||
-                      'Could not verify Face ID. Ensure your Face ID is registered on the Staff Portal and look toward the kiosk camera.',
+                    variant: 'warning',
+                    badgeText: 'CONNECTION TIMEOUT · RETRY',
+                    message: 'Network took too long to respond. Please step up again to clock in.',
                   });
+                } finally {
+                  setVerifying(false);
+                  setScanProgress(0);
+                  resetLivenessBuffer();
+                  setLivenessReady(false);
                 }
               } else if (elapsedMs >= 8500) {
                 cooldownUntilRef.current = Date.now() + 5000;
