@@ -159,8 +159,9 @@ model Employee {
   highestEducation      String?   // SSCE | OND | HND | BSC | MSC | PHD
 
   // Offline / Field Staff Support (HR Manual Enrollment)
-  isOfflineStaff        Boolean   @default(false)
-  isAttendanceExempt    Boolean   @default(false) // When true, staff is exempt from signing attendance and excluded from daily roster
+  isOfflineStaff              Boolean   @default(false)
+  isAttendanceExempt          Boolean   @default(false) // When true, staff is exempt from signing attendance and excluded from daily roster
+  attendanceTrackingStartDate String?   // YYYY-MM-DD (Africa/Lagos): date attendance tracking began (set when exemption is turned off)
   kioskPin              String?   // 4-digit PIN for /attendance/kiosk check-in without a smartphone
   onboardedById         String?
 

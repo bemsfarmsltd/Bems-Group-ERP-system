@@ -54,7 +54,7 @@ export async function queryDailyAttendanceRoster(
       : []
     : hrScope.subsidiaryIds;
 
-  const [employees, records, rawPolicies, rawSubsidiaries] = await Promise.all([
+  const [employees, records, rawPolicies, rawSubsidiaries, earliestRecords] = await Promise.all([
     prisma.employee.findMany({
       where: {
         status: 'ACTIVE',
@@ -89,7 +89,15 @@ export async function queryDailyAttendanceRoster(
       select: { id: true, legalName: true, code: true },
       orderBy: { legalName: 'asc' },
     }),
+    prisma.attendanceRecord.groupBy({
+      by: ['employeeId'],
+      _min: { workDate: true },
+    }),
   ]);
+  const earliestWorkDateMap = new Map<string, string>();
+  for (const row of earliestRecords) {
+    if (row._min.workDate) earliestWorkDateMap.set(row.employeeId, row._min.workDate);
+  }
 
   const policyMap = new Map(rawPolicies.map((p) => [p.organizationId, p]));
   const policy = rawPolicies[0] || {
@@ -183,6 +191,9 @@ export async function queryDailyAttendanceRoster(
     } else if (rec) {
       if (rec.status === 'EXCUSED') {
         morningStatus = 'EXCUSED';
+      } else if (rec.status === 'ABSENT' || !rec.checkInTime) {
+        morningStatus = 'ABSENT';
+        absentCount++;
       } else if (rec.status === 'LATE') {
         morningStatus = 'LATE';
         lateCount++;
@@ -191,7 +202,9 @@ export async function queryDailyAttendanceRoster(
         onTimeCount++;
       }
 
-      if (outHHMM) {
+      if (morningStatus === 'ABSENT') {
+        eveningStatus = 'N/A';
+      } else if (outHHMM) {
         checkedOutCount++;
         const [outH, outM] = outHHMM.split(':').map(Number);
         const outMinutes = outH * 60 + outM;
@@ -210,9 +223,9 @@ export async function queryDailyAttendanceRoster(
             hoursWorkedText = `${h}h ${m}m`;
           }
         }
-      } else {
+      } else if (inHHMM) {
         eveningStatus = isTargetToday ? 'STILL_WORKING' : 'NOT_CHECKED_OUT';
-        if (inHHMM && isTargetToday) {
+        if (isTargetToday) {
           const [inH, inM] = inHHMM.split(':').map(Number);
           const [curH, curM] = currentTimeStr.split(':').map(Number);
           const diffMin = curH * 60 + curM - (inH * 60 + inM);
@@ -222,9 +235,19 @@ export async function queryDailyAttendanceRoster(
             hoursWorkedText = `${h}h ${m}m (Active)`;
           }
         }
+      } else {
+        eveningStatus = 'N/A';
       }
     } else {
-      if (targetDate < '2026-11-03') {
+      const effectiveStartDate =
+        emp.attendanceTrackingStartDate || earliestWorkDateMap.get(emp.id) || null;
+      const createdDateStr = emp.createdAt ? emp.createdAt.toISOString().slice(0, 10) : null;
+      const isBeforeTrackingStarted =
+        targetDate < '2026-11-03' ||
+        (Boolean(effectiveStartDate) && targetDate < (effectiveStartDate as string)) ||
+        (Boolean(createdDateStr) && targetDate < (createdDateStr as string));
+
+      if (isBeforeTrackingStarted) {
         morningStatus = 'EXCUSED';
       } else if (isTargetPast || (isTargetToday && currentTimeStr > (policy.closingTime || '17:00'))) {
         morningStatus = 'ABSENT';

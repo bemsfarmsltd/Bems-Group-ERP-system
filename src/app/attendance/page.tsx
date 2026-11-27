@@ -1470,6 +1470,7 @@ export default function AttendanceDeskPage() {
                         const isAbs = r.morningStatus === 'ABSENT';
                         const isLate = r.morningStatus === 'LATE';
                         const isOnTime = r.morningStatus === 'ON_TIME';
+                        const isExcused = r.morningStatus === 'EXCUSED';
 
                         return (
                           <tr
@@ -1532,6 +1533,10 @@ export default function AttendanceDeskPage() {
                                     <AlertTriangle size={12} /> {r.checkInTimeStr} · LATE
                                   </div>
                                 </div>
+                              ) : isExcused ? (
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '3px 8px', borderRadius: '6px', background: '#eff6ff', color: '#1d4ed8', fontWeight: 700, fontSize: '11px' }}>
+                                  {r.checkInTimeStr ? `${r.checkInTimeStr} · EXCUSED` : 'EXCUSED / EXEMPT'}
+                                </span>
                               ) : isOff ? (
                                 <span style={{ display: 'inline-flex', padding: '3px 8px', borderRadius: '6px', background: '#f1f5f9', color: '#64748b', fontWeight: 700, fontSize: '11px' }}>
                                   OFF-DUTY
@@ -1551,9 +1556,13 @@ export default function AttendanceDeskPage() {
                                 <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '3px 8px', borderRadius: '6px', background: '#eff6ff', color: '#2563eb', fontWeight: 800, fontSize: '11px' }}>
                                   <Moon size={12} /> {r.checkOutTimeStr} · {r.eveningStatus === 'EARLY_DEPARTURE' ? 'EARLY EXIT' : 'CLOSED'}
                                 </div>
-                              ) : isOnTime || isLate ? (
+                              ) : r.eveningStatus === 'STILL_WORKING' ? (
                                 <span style={{ display: 'inline-flex', padding: '3px 8px', borderRadius: '6px', background: '#f0fdf4', color: '#16a34a', fontWeight: 700, fontSize: '11px' }}>
                                   ● Shift In Progress
+                                </span>
+                              ) : r.eveningStatus === 'NOT_CHECKED_OUT' ? (
+                                <span style={{ display: 'inline-flex', padding: '3px 8px', borderRadius: '6px', background: '#fff7ed', color: '#c2410c', fontWeight: 700, fontSize: '11px' }}>
+                                  Missed Sign-Out
                                 </span>
                               ) : (
                                 <span style={{ color: '#94a3b8', fontSize: '11px' }}>—</span>

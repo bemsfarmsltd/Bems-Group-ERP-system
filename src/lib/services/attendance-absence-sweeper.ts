@@ -127,6 +127,9 @@ export async function markDailyAbsences(params: MarkDailyAbsencesParams = {}) {
     const createdDateStr = emp.createdAt.toISOString().slice(0, 10);
     if (createdDateStr > targetDate) continue;
 
+    // Skip if employee's attendance exemption was only turned off after targetDate
+    if (emp.attendanceTrackingStartDate && targetDate < emp.attendanceTrackingStartDate) continue;
+
     // Skip if scheduled weekly off-day
     const offDayIndices = (emp.workSchedule?.weeklyOffDays || '0,6')
       .split(',')
