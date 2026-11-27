@@ -639,15 +639,25 @@ export default function AttendanceDeskPage() {
   };
 
   useEffect(() => {
+    let active = true;
     if (isEmbedded) {
+      fetch('/api/auth/session?_t=' + Date.now(), { credentials: 'include', cache: 'no-store' })
+        .then(res => res.json())
+        .then(data => {
+          if (active && data?.user) {
+            setAuthenticatedUser(data.user);
+          }
+        })
+        .catch(() => {});
       loadDailyRoster();
       loadTimesheet();
       loadRoster();
       loadPolicy();
       loadStation();
-      return;
+      return () => {
+        active = false;
+      };
     }
-    let active = true;
     fetch('/api/auth/session?_t=' + Date.now(), { credentials: 'include', cache: 'no-store' })
       .then(res => res.json())
       .then(data => {
