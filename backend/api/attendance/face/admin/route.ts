@@ -52,17 +52,11 @@ export async function GET(request: Request) {
       ),
     ]);
 
-    const enrolledIds = faceRows.map((r) => r.employeeId);
     const employees = await prisma.employee.findMany({
       where: {
         status: 'ACTIVE',
-        OR: [
-          {
-            role: { in: ['STAFF', 'CUSTOM_ADMIN'] },
-            isAttendanceExempt: false,
-          },
-          ...(enrolledIds.length > 0 ? [{ id: { in: enrolledIds } }] : []),
-        ],
+        role: { in: ['STAFF', 'CUSTOM_ADMIN'] },
+        isAttendanceExempt: false,
       },
       select: {
         id: true,

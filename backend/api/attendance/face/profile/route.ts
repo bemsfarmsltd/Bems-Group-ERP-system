@@ -46,14 +46,24 @@ export async function GET(request: Request) {
     ]);
 
     const profile = profileRows[0] || null;
+    const isExecutiveRole =
+      empRecord?.role === 'SYSTEM_ADMIN' ||
+      empRecord?.role === 'SUPER_ADMIN' ||
+      empRecord?.role === 'GMD';
     const isAttendanceTracked =
       Boolean(empRecord) &&
+      !isExecutiveRole &&
       !empRecord?.isAttendanceExempt &&
       (empRecord?.role === 'STAFF' || empRecord?.role === 'CUSTOM_ADMIN');
 
     return NextResponse.json({
-      enrolled: Boolean(profile),
-      status: profile?.status === 'PENDING_APPROVAL' ? 'APPROVED' : profile?.status || 'NOT_ENROLLED',
+      enrolled: !isExecutiveRole && Boolean(profile),
+      isExecutiveExempt: isExecutiveRole || Boolean(empRecord?.isAttendanceExempt),
+      status: isExecutiveRole
+        ? 'EXEMPT'
+        : profile?.status === 'PENDING_APPROVAL'
+        ? 'APPROVED'
+        : profile?.status || 'NOT_ENROLLED',
       shouldPromptEnrollment:
         isAttendanceTracked && (!profile || profile.status === 'NOT_ENROLLED' || profile.status === 'REJECTED'),
       employee: empRecord

@@ -378,12 +378,14 @@ export function EnterpriseModulesScreen({ user }: { user: EnterpriseUserSummary 
                 >
                   Open Staff Portal →
                 </a>
-                <Link
-                  href="/attendance/face-enroll"
-                  className="inline-flex items-center justify-center gap-2 rounded-2xl border border-orange-200 bg-orange-50/70 px-4 py-2 text-xs font-bold text-orange-700 hover:bg-orange-100 transition"
-                >
-                  Register Kiosk Face ID →
-                </Link>
+                {(isStaff || user?.role === 'CUSTOM_ADMIN') && (
+                  <Link
+                    href="/attendance/face-enroll"
+                    className="inline-flex items-center justify-center gap-2 rounded-2xl border border-orange-200 bg-orange-50/70 px-4 py-2 text-xs font-bold text-orange-700 hover:bg-orange-100 transition"
+                  >
+                    Register Kiosk Face ID →
+                  </Link>
+                )}
               </div>
             </div>
 

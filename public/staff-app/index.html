@@ -142,7 +142,11 @@
         fetch('/api/attendance/face/profile', { credentials: 'include', cache: 'no-store', headers: getStaffHeaders() })
           .then(function(r) { return r.ok ? r.json() : null; })
           .then(function(data) {
-            if (!data) return;
+            if (!data || data.isExecutiveExempt || data.status === 'EXEMPT') {
+              pill.style.display = 'none';
+              if (modal) modal.style.display = 'none';
+              return;
+            }
             pill.style.display = 'inline-flex';
             if (data.status === 'APPROVED' || data.status === 'PENDING_APPROVAL') {
               pill.style.borderColor = '#10b981';

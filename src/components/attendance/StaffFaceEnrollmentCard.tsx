@@ -13,7 +13,8 @@ import {
 
 interface FaceProfileResponse {
   enrolled: boolean;
-  status: 'NOT_ENROLLED' | 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED';
+  isExecutiveExempt?: boolean;
+  status: 'NOT_ENROLLED' | 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED' | 'EXEMPT';
   shouldPromptEnrollment?: boolean;
   profile: {
     id: string;
@@ -265,6 +266,9 @@ export function StaffFaceEnrollmentCard({
   };
 
   const status = data?.status || 'NOT_ENROLLED';
+  if (data?.isExecutiveExempt || status === 'EXEMPT') {
+    return null;
+  }
   const canEnroll = status === 'NOT_ENROLLED' || status === 'REJECTED' || status === 'PENDING_APPROVAL';
 
   return (

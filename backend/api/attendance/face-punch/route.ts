@@ -71,7 +71,9 @@ export async function POST(request: Request) {
        FROM "EmployeeFaceProfile" fp
        INNER JOIN "Employee" e ON e."id" = fp."employeeId"
        WHERE fp."status" IN ('APPROVED', 'PENDING_APPROVAL')
-         AND e."status" = 'ACTIVE'`
+         AND e."status" = 'ACTIVE'
+         AND e."isAttendanceExempt" = false
+         AND e."role" IN ('STAFF', 'CUSTOM_ADMIN')`
     );
 
     if (approvedProfiles.length === 0) {
