@@ -331,7 +331,7 @@ export function KioskFaceRecognitionView({
         alignItems: 'center',
         justifyContent: 'space-between',
         width: '100%',
-        maxWidth: isFullscreen ? '640px' : '100%',
+        maxWidth: isFullscreen ? '860px' : '100%',
         margin: '0 auto',
       }}
     >
@@ -396,7 +396,7 @@ export function KioskFaceRecognitionView({
         style={{
           position: 'relative',
           width: '100%',
-          maxWidth: isFullscreen ? '560px' : '370px',
+          maxWidth: isFullscreen ? '780px' : '370px',
           aspectRatio: '4 / 3.2',
           padding: '10px',
           display: 'flex',
@@ -545,7 +545,7 @@ export function KioskFaceRecognitionView({
               backdropFilter: 'blur(8px)',
               border: `1px solid ${faceDetected ? '#a7f3d0' : '#fed7aa'}`,
               color: faceDetected ? '#065f46' : '#9a3412',
-              fontSize: isFullscreen ? '13.5px' : '12px',
+              fontSize: isFullscreen ? '15.5px' : '12px',
               fontWeight: 800,
               textAlign: 'center',
               boxShadow: '0 4px 14px rgba(15, 23, 42, 0.10)',
@@ -916,8 +916,8 @@ export function KioskFaceRecognitionView({
             padding: '28px 32px',
             boxShadow: '0 20px 50px rgba(15, 23, 42, 0.07)',
             width: '100%',
-            maxWidth: '680px',
-            marginTop: '48px',
+            maxWidth: '920px',
+            marginTop: '64px',
           }}
         >
           {content}
