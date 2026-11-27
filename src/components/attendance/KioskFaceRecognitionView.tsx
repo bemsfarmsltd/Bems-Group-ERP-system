@@ -243,6 +243,7 @@ export function KioskFaceRecognitionView({
       let neuralReadyFlag = false;
       let antispoofScores: number[] = [];
       let livenessScores: number[] = [];
+      let stage2MissedFrames = 0;
 
       const resetLivenessBuffer = () => {
         flowStage = 'SCANNING';
@@ -269,6 +270,7 @@ export function KioskFaceRecognitionView({
         maxFlashRgbDelta = 0;
         antispoofScores = [];
         livenessScores = [];
+        stage2MissedFrames = 0;
         setFaceDetected(false);
         setFlashPhase('idle');
       };
@@ -303,44 +305,50 @@ export function KioskFaceRecognitionView({
             return;
           }
 
+          const inStage2 = flowStage !== 'SCANNING';
           const trackedFaces = mpFrame.faces.filter((f) => f.faceSizeRatio >= 0.06);
+          // Wide yaw allowance (0.85) in Stage 2 so turning left/right or nodding NEVER drops back to Step 1
           const matchableFaces = trackedFaces.filter(
-            (f) => f.faceSizeRatio >= 0.11 && Math.abs(f.yawRatio) <= 0.55
+            (f) => f.faceSizeRatio >= 0.10 && Math.abs(f.yawRatio) <= (inStage2 ? 0.85 : 0.55)
           );
 
-          if (trackedFaces.length === 0) {
+          if (trackedFaces.length === 0 || matchableFaces.length === 0) {
+            if (inStage2) {
+              // Grace buffer (~600ms / 12 frames) during Stage 2 so brief profile/nod frames never reset to Step 1
+              stage2MissedFrames++;
+              if (stage2MissedFrames < 12) {
+                if (activeRef.current) setTimeout(tick, 50);
+                return;
+              }
+            }
             setFaceDetected(false);
             setLivenessReady(false);
-            setScanProgress(0);
+            setScanProgress(trackedFaces.length > 0 ? 12 : 0);
             setLightingAlert(null);
             resetLivenessBuffer();
-            setStatusText('3D Radar Active — Step up and look at the camera...');
-          } else if (matchableFaces.length === 0) {
-            setFaceDetected(false);
-            setLivenessReady(false);
-            setScanProgress(12);
-            resetLivenessBuffer();
-            const nearest = trackedFaces[0];
-            if (nearest.faceSizeRatio < 0.11) {
+            if (trackedFaces.length === 0) {
+              setStatusText('3D Radar Active — Center your face inside the circle...');
+            } else if (trackedFaces[0].faceSizeRatio < 0.10) {
               setStatusText('Face in view — step slightly closer to identify');
             } else {
               setStatusText('Face in view — look straight at the camera');
             }
           } else {
+            stage2MissedFrames = 0;
             const primary = matchableFaces[0];
             const { eyeBlinkLeft, eyeBlinkRight, jawOpen } = primary.blendshapes;
             const blinkAvg = (eyeBlinkLeft + eyeBlinkRight) / 2;
 
-            // Anti-Photo-Swap Guard during Stage 2 (after face is locked)
+            // Anti-Photo-Swap Guard during Stage 2 (tuned so natural nods & head turns never reset)
             const curCx = primary.normBox.x + primary.normBox.width / 2;
             const curCy = primary.normBox.y + primary.normBox.height / 2;
             const curW = Math.max(0.05, primary.normBox.width);
             if (prevBox && flowStage !== 'SCANNING') {
               const jumpDist = Math.hypot(curCx - prevBox.cx, curCy - prevBox.cy);
               const scaleDiff = Math.abs(curW - prevBox.w) / prevBox.w;
-              if (jumpDist > prevBox.w * 0.28 || scaleDiff > 0.28) {
+              if (jumpDist > prevBox.w * 0.55 || scaleDiff > 0.45) {
                 resetLivenessBuffer();
-                setStatusText('Hold steady and look straight at the camera...');
+                setStatusText('Hold steady inside the circle to restart...');
                 if (activeRef.current) setTimeout(tick, 60);
                 return;
               }
@@ -1037,6 +1045,34 @@ export function KioskFaceRecognitionView({
               transform: 'scaleX(-1)',
             }}
           />
+
+          {/* Centered Face Alignment Guide Circle/Oval (visual convenience guide — scanning still works outside it) */}
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              pointerEvents: 'none',
+              paddingBottom: '26px',
+            }}
+          >
+            <div
+              style={{
+                width: isFullscreen ? '250px' : '168px',
+                height: isFullscreen ? '315px' : '212px',
+                borderRadius: '50%',
+                border: faceDetected
+                  ? '3px solid rgba(16, 185, 129, 0.88)'
+                  : '2.5px dashed rgba(234, 88, 12, 0.72)',
+                boxShadow: faceDetected
+                  ? '0 0 0 4px rgba(16, 185, 129, 0.16), inset 0 0 18px rgba(16, 185, 129, 0.12)'
+                  : '0 0 0 3px rgba(255, 255, 255, 0.28)',
+                transition: 'border-color 0.25s ease, box-shadow 0.25s ease',
+              }}
+            />
+          </div>
 
           {/* Top Floating Camera Pill */}
           <div
