@@ -88,22 +88,20 @@ export function StaffFaceEnrollmentCard({
   }, [fetchProfile]);
 
   useEffect(() => {
-    if (!data || autoPromptTriggeredRef.current) return;
+    if (!data) return;
     const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
     const wantsAutoStart = autoStartCamera || params?.get('autostart') === '1';
-    if (wantsAutoStart && (data.status === 'NOT_ENROLLED' || data.status === 'REJECTED')) {
+    if (!autoPromptTriggeredRef.current && wantsAutoStart && (data.status === 'NOT_ENROLLED' || data.status === 'REJECTED')) {
       autoPromptTriggeredRef.current = true;
       startEnrollmentWizard();
       return;
     }
-    if (
-      autoPromptIfUnenrolled &&
-      data.shouldPromptEnrollment &&
-      typeof window !== 'undefined' &&
-      sessionStorage.getItem('bems_face_prompt_dismissed') !== '1'
-    ) {
-      autoPromptTriggeredRef.current = true;
+    if (autoPromptIfUnenrolled && data.shouldPromptEnrollment) {
       setPromptBannerOpen(true);
+      const interval = setInterval(() => {
+        setPromptBannerOpen((prev) => (prev ? prev : true));
+      }, 5000);
+      return () => clearInterval(interval);
     }
   }, [autoPromptIfUnenrolled, autoStartCamera, data]);
 
@@ -506,7 +504,6 @@ export function StaffFaceEnrollmentCard({
               <button
                 type="button"
                 onClick={() => {
-                  sessionStorage.setItem('bems_face_prompt_dismissed', '1');
                   setPromptBannerOpen(false);
                 }}
                 style={{
