@@ -76,6 +76,25 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Attendance timekeeping is exclusively for general staff personnel.' }, { status: 403 });
     }
 
+    // 1b. Mandatory Face ID Enrollment Check for all non-exempt online staff
+    if (!employee.isAttendanceExempt && !employee.isOfflineStaff) {
+      const faceRows = await prisma.$queryRawUnsafe<Array<{ status: string }>>(
+        `SELECT "status" FROM "EmployeeFaceProfile" WHERE "employeeId" = $1 LIMIT 1`,
+        employee.id
+      ).catch(() => []);
+      const faceStatus = faceRows[0]?.status;
+      if (!faceStatus || (faceStatus !== 'APPROVED' && faceStatus !== 'PENDING_APPROVAL')) {
+        return NextResponse.json(
+          {
+            error: 'Mandatory Face ID Enrollment Required: Please register your Face ID in your Staff App first before clocking in.',
+            requireFaceEnrollment: true,
+            enrollUrl: '/attendance/face-enroll?autostart=1',
+          },
+          { status: 403 }
+        );
+      }
+    }
+
     // 2. Parse and Validate Station & Dynamic QR Token
     const parts = qrToken.split(':');
     if (parts.length !== 4 || parts[0] !== 'BEMSQR') {

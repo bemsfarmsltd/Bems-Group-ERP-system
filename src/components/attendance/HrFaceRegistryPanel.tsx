@@ -279,6 +279,45 @@ export function HrFaceRegistryPanel({ onModeChanged }: HrFaceRegistryPanelProps)
 
           <button
             type="button"
+            disabled={busyId === 'ENFORCE'}
+            onClick={async () => {
+              try {
+                setBusyId('ENFORCE');
+                setFeedback(null);
+                const res = await fetch('/api/attendance/face/admin', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ action: 'ENFORCE_ALL_UNENROLLED' }),
+                });
+                const json = await res.json();
+                if (res.ok) {
+                  setFeedback(json.message || 'Mandatory Face ID enforcement sent to all unenrolled staff.');
+                  await loadData();
+                }
+              } finally {
+                setBusyId(null);
+              }
+            }}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '8px 13px',
+              borderRadius: '10px',
+              border: '1px solid #ea580c',
+              background: '#fff7ed',
+              color: '#ea580c',
+              fontSize: '12px',
+              fontWeight: 800,
+              cursor: busyId === 'ENFORCE' ? 'wait' : 'pointer',
+            }}
+          >
+            <ShieldCheck size={14} />
+            {busyId === 'ENFORCE' ? 'Sending Compliance Alerts...' : `Enforce All Unenrolled (${counts.notEnrolled})`}
+          </button>
+
+          <button
+            type="button"
             onClick={loadData}
             style={{
               display: 'inline-flex',

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getAuthenticatedEmployee, getHrAuthorizationScope, hasAnyRole } from '@/lib/auth';
+import { sendEmail } from '@/lib/email';
 import {
   ensureFaceAttendanceSchema,
   getFaceAttendanceModeConfig,
@@ -175,6 +176,93 @@ export async function POST(request: Request) {
         success: true,
         modeConfig: updated,
         message: `Attendance system mode updated (Global: ${updated.globalMode === 'FACE' ? 'Face Recognition Kiosk' : 'QR Code + GPS'}).`,
+      });
+    }
+
+    if (action === 'ENFORCE_ALL_UNENROLLED') {
+      const [activeStaff, faceRows] = await Promise.all([
+        prisma.employee.findMany({
+          where: {
+            status: 'ACTIVE',
+            role: { in: ['STAFF', 'CUSTOM_ADMIN'] },
+            isAttendanceExempt: false,
+          },
+          select: {
+            id: true,
+            legalName: true,
+            employeeNumber: true,
+            workEmail: true,
+            isOfflineStaff: true,
+          },
+        }),
+        prisma.$queryRawUnsafe<Array<{ employeeId: string; status: string }>>(
+          `SELECT "employeeId", "status" FROM "EmployeeFaceProfile"`
+        ),
+      ]);
+
+      const enrolledIds = new Set(
+        faceRows
+          .filter((r) => r.status === 'APPROVED' || r.status === 'PENDING_APPROVAL')
+          .map((r) => r.employeeId)
+      );
+
+      const unenrolled = activeStaff.filter((s) => !enrolledIds.has(s.id));
+
+      if (unenrolled.length > 0) {
+        await prisma.systemNotification.createMany({
+          data: unenrolled.map((s) => ({
+            employeeId: s.id,
+            kind: 'ALERT',
+            title: 'MANDATORY: Enroll Your Kiosk Face ID Now',
+            body: 'BEMS Management requires all active staff to register their Face ID immediately for reception kiosk attendance. Tap to enroll in 15 seconds.',
+            linkUrl: '/attendance/face-enroll?autostart=1',
+          })),
+        });
+      }
+
+      let emailsSent = 0;
+      const enrollUrl = 'https://bemserp.work/attendance/face-enroll?autostart=1';
+      for (const s of unenrolled) {
+        if (!s.workEmail || s.workEmail.endsWith('@bems.internal') || s.isOfflineStaff) continue;
+        const res = await sendEmail({
+          to: s.workEmail,
+          subject: 'MANDATORY ACTION REQUIRED: Enroll Your BEMS Kiosk Face ID Now',
+          html: `
+            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px; background: #f8fafc; border-radius: 16px;">
+              <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 28px;">
+                <div style="display:inline-block;padding:4px 10px;border-radius:999px;background:#fff7ed;border:1px solid #fed7aa;color:#ea580c;font-size:10.5px;font-weight:800;letter-spacing:0.06em;">
+                  BEMS GROUP · MANDATORY ATTENDANCE COMPLIANCE
+                </div>
+                <h2 style="margin: 12px 0 10px; color: #0f172a; font-size: 20px;">Hello ${s.legalName},</h2>
+                <p style="color: #334155; font-size: 14px; line-height: 1.6;">
+                  Management has enforced <strong>Mandatory Kiosk Face ID Enrollment</strong> for all BEMS Group staff (Staff ID: <strong>${s.employeeNumber}</strong>).
+                </p>
+                <p style="color: #475569; font-size: 13.5px; line-height: 1.6;">
+                  You must complete your 15-second voice-guided Face ID registration immediately so the Office Reception Kiosk camera can identify and clock you in and out automatically. Attendance clock-in requires an active Face ID profile.
+                </p>
+                <div style="margin: 24px 0;">
+                  <a href="${enrollUrl}" style="display: inline-block; background: #ea580c; color: #ffffff; text-decoration: none; font-weight: 800; font-size: 13.5px; padding: 12px 22px; border-radius: 10px;">
+                    Enroll My Face ID Now (15 Seconds) →
+                  </a>
+                </div>
+                <p style="color: #94a3b8; font-size: 11.5px; margin: 0;">
+                  Or open your BEMS Staff App and tap "Enroll My Face ID Now" on the pop-up prompt: ${enrollUrl}
+                </p>
+              </div>
+            </div>
+          `,
+          text: `Hello ${s.legalName}, BEMS Management has enforced Mandatory Kiosk Face ID Enrollment for all active staff. Please register your Face ID now (takes 15 seconds): ${enrollUrl}`,
+          eventType: 'FACE_ID_ENFORCEMENT_ALERT',
+        }).catch(() => ({ success: false }));
+        if (res && res.success) emailsSent++;
+      }
+
+      return NextResponse.json({
+        success: true,
+        unenrolledCount: unenrolled.length,
+        notificationsCreated: unenrolled.length,
+        emailsSent,
+        message: `Mandatory Face ID enforcement dispatched to ${unenrolled.length} unenrolled staff (${emailsSent} compliance emails sent + in-app pop-up alerts activated).`,
       });
     }
 

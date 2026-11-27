@@ -468,16 +468,16 @@ export function StaffFaceEnrollmentCard({
                 marginBottom: '8px',
               }}
             >
-              ACTION REQUIRED · ATTENDANCE SETUP
+              MANDATORY COMPLIANCE · FACE ID REQUIRED
             </div>
             <h3 style={{ margin: '0 0 8px', fontSize: '18px', fontWeight: 900, color: '#0f172a' }}>
-              {status === 'REJECTED' ? 'Re-Register Your Kiosk Face ID' : 'Register Your Kiosk Face ID'}
+              {status === 'REJECTED' ? 'Re-Register Your Kiosk Face ID' : 'Mandatory Kiosk Face ID Registration'}
             </h3>
             <p style={{ margin: '0 0 18px', fontSize: '13px', color: '#475569', lineHeight: 1.55 }}>
               {status === 'REJECTED'
                 ? data?.profile?.rejectionReason ||
                   'Your previous Face ID enrollment needs to be retaken in clear front lighting.'
-                : 'Welcome to BEMS! Please take 15 seconds to enroll your Face ID now so the Office Reception Kiosk camera can clock you in and out automatically.'}
+                : 'All BEMS Group staff are required to enroll their Face ID. Please take 15 seconds to register your face now so the Office Reception Kiosk camera can clock you in and out automatically.'}
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <button
