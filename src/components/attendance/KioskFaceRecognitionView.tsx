@@ -358,15 +358,13 @@ export function KioskFaceRecognitionView({
               if (capturedDescriptors.length > 3) capturedDescriptors.shift();
             }
 
-            // Layer 2 & 3: Non-Rigid Bidirectional Mouth Cycle (Closed -> Open -> Closed) + Active Screen-Flash Sensing
+            // Layer 2 & 3: Self-Calibrating Non-Rigid Bidirectional Mouth Cycle (Open -> Close) + Active Screen-Flash Sensing
+            // Uses relative openDelta & closeDelta from each person's live resting baseline (works for all lip shapes & lighting,
+            // while remaining 100% impossible for any static photo — closed OR open — since photos have delta = 0).
             if (stage === 'IDLE') {
-              if (Math.abs(primary.yawRatio) > 0.20) {
+              if (Math.abs(primary.yawRatio) > 0.22) {
                 setScanProgress(35);
                 setStatusText('Look straight at the camera to begin verification...');
-              } else if (primary.mar > 0.16) {
-                // Blocks pre-opened-mouth photos from ever starting the challenge!
-                setScanProgress(38);
-                setStatusText('Keep your mouth closed briefly, then follow the prompt...');
               } else {
                 stage = 'WAIT_OPEN';
                 startMar = primary.mar;
@@ -385,6 +383,9 @@ export function KioskFaceRecognitionView({
               }
             } else {
               lockFrames++;
+              if (stage === 'WAIT_OPEN' && startMar !== null && primary.mar < startMar) {
+                startMar = primary.mar;
+              }
               if (primary.mar > peakMar) peakMar = primary.mar;
 
               // Alternate subtle light-theme screen-flash ring (warm orange <-> cool sky) and measure skin RGB reflection
@@ -403,7 +404,7 @@ export function KioskFaceRecognitionView({
               const openDelta = startMar !== null ? Math.max(0, peakMar - startMar) : 0;
 
               if (stage === 'WAIT_OPEN') {
-                if (peakMar >= 0.24 && openDelta >= 0.10) {
+                if (openDelta >= 0.11) {
                   stage = 'WAIT_CLOSE';
                   setFlashPhase('cool');
                   setScanProgress(82);
@@ -420,7 +421,7 @@ export function KioskFaceRecognitionView({
 
               if (stage === 'WAIT_CLOSE') {
                 const closeDelta = Math.max(0, peakMar - primary.mar);
-                if (primary.mar <= 0.16 && closeDelta >= 0.08 && lockFrames >= 3) {
+                if (closeDelta >= 0.08 && lockFrames >= 3) {
                   const avgAntispoof =
                     antispoofScores.length > 0
                       ? antispoofScores.reduce((a, b) => a + b, 0) / antispoofScores.length

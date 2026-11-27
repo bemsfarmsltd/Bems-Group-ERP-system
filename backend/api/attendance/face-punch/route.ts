@@ -55,10 +55,7 @@ export async function POST(request: Request) {
     // 2. When Neural PAD CNN models are loaded in browser, require passing real-vs-spoof score.
     const validMouthCycle =
       livenessProof?.method === 'CHALLENGE_MOUTH_CYCLE' &&
-      Number(livenessProof?.startMar ?? 1) <= 0.16 &&
-      Number(livenessProof?.peakMar ?? 0) >= 0.24 &&
-      Number(livenessProof?.openDelta ?? 0) >= 0.10 &&
-      Number(livenessProof?.endMar ?? 1) <= 0.16 &&
+      Number(livenessProof?.openDelta ?? 0) >= 0.11 &&
       Number(livenessProof?.closeDelta ?? 0) >= 0.08 &&
       Number(livenessProof?.framesAnalyzed ?? 0) >= 3;
 
