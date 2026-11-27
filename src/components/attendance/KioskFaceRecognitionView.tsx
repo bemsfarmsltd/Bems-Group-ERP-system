@@ -13,8 +13,6 @@ import {
   Sparkles,
   Sun,
   Sunset,
-  Volume2,
-  VolumeX,
   X,
 } from 'lucide-react';
 import {
@@ -59,7 +57,6 @@ export function KioskFaceRecognitionView({
   const [faceDetected, setFaceDetected] = useState(false);
   const [livenessReady, setLivenessReady] = useState(false);
   const [verifying, setVerifying] = useState(false);
-  const [voiceMuted, setVoiceMuted] = useState(false);
   const [internalFullscreen, setInternalFullscreen] = useState(false);
   const [popup, setPopup] = useState<PopupModalState | null>(null);
   const [isEveningShift, setIsEveningShift] = useState(false);
@@ -70,17 +67,16 @@ export function KioskFaceRecognitionView({
   const streamRef = useRef<MediaStream | null>(null);
   const activeRef = useRef<boolean>(false);
   const cooldownUntilRef = useRef<number>(0);
-  const voiceMutedRef = useRef(false);
   const onSuccessPunchRef = useRef(onSuccessPunch);
+  const isEveningShiftRef = useRef(isEveningShift);
 
   useEffect(() => {
     onSuccessPunchRef.current = onSuccessPunch;
   }, [onSuccessPunch]);
 
   useEffect(() => {
-    voiceMutedRef.current = voiceMuted;
-    if (voiceMuted) stopFaceVoicePrompt();
-  }, [voiceMuted]);
+    isEveningShiftRef.current = isEveningShift;
+  }, [isEveningShift]);
 
   // Automatically determine whether current Lagos WAT time is Morning Check-In or Evening Sign-Out (>= closingTime)
   useEffect(() => {
@@ -155,6 +151,12 @@ export function KioskFaceRecognitionView({
       let baselineEar = 0.28;
       let baselineYaw: number | null = null;
       let seenFrames = 0;
+      let noFaceStreak = 0;
+
+      speakFaceVoicePrompt(
+        `BEMS Face Recognition Kiosk is ready for ${isEveningShiftRef.current ? 'evening sign-out' : 'morning check-in'}. Please step up and look at the camera.`,
+        { force: true, muted: false }
+      );
 
       const tick = async () => {
         if (!activeRef.current || !videoRef.current) return;
@@ -170,28 +172,46 @@ export function KioskFaceRecognitionView({
             setFaceDetected(false);
             setLivenessReady(false);
             seenFrames = 0;
+            noFaceStreak = 0;
             baselineYaw = null;
             setStatusText('One person at a time — multiple faces detected in frame');
+            speakFaceVoicePrompt(
+              'One person at a time please. Step back so only your face is in the camera.',
+              { muted: false, minIntervalMs: 5500 }
+            );
           } else if (!frame.detected || !frame.descriptor) {
             setFaceDetected(false);
             setLivenessReady(false);
             seenFrames = 0;
             baselineYaw = null;
+            noFaceStreak++;
             setStatusText('Step up & center your face inside the oval guide');
+            if (noFaceStreak === 25) {
+              speakFaceVoicePrompt(
+                'Center your face inside the oval guide in clear front lighting.',
+                { muted: false, minIntervalMs: 12000 }
+              );
+            }
           } else if (frame.faceSizeRatio < 0.18) {
             setFaceDetected(true);
             setLivenessReady(false);
+            noFaceStreak = 0;
             setStatusText('Move slightly closer to the kiosk camera');
+            speakFaceVoicePrompt(
+              'Please move a little closer to the kiosk camera.',
+              { muted: false, minIntervalMs: 5500 }
+            );
           } else {
             setFaceDetected(true);
+            noFaceStreak = 0;
             seenFrames++;
             if (seenFrames === 1) {
               baselineEar = Math.max(0.24, frame.ear);
               baselineYaw = frame.yawRatio;
               setStatusText('Face locked — blink naturally or slightly nod to verify');
-              speakFaceVoicePrompt('Face detected. Please blink naturally or nod slightly.', {
-                muted: voiceMutedRef.current,
-                minIntervalMs: 5500,
+              speakFaceVoicePrompt('Face detected. Please blink naturally or nod slightly to verify.', {
+                muted: false,
+                minIntervalMs: 5000,
               });
             } else {
               const blinked = frame.ear < Math.min(0.22, baselineEar * 0.84);
@@ -231,7 +251,7 @@ export function KioskFaceRecognitionView({
                     ? `Welcome ${firstName}! Clocked in late at ${json.timeStr}.`
                     : `Welcome ${firstName}! Clocked in on time at ${json.timeStr}.`;
 
-                  speakFaceVoicePrompt(spoken, { force: true, muted: voiceMutedRef.current });
+                  speakFaceVoicePrompt(spoken, { force: true, muted: false });
 
                   setPopup({
                     variant: isNoticeOnly ? 'warning' : 'success',
@@ -257,7 +277,7 @@ export function KioskFaceRecognitionView({
                   const isRecognizedWindowLock = Boolean(json?.employeeName);
                   speakFaceVoicePrompt(
                     json?.error || 'Face not recognized. Please look directly at the camera.',
-                    { force: true, muted: voiceMutedRef.current }
+                    { force: true, muted: false }
                   );
                   setPopup({
                     variant: isRecognizedWindowLock ? 'warning' : 'error',
@@ -536,7 +556,7 @@ export function KioskFaceRecognitionView({
         </div>
       </div>
 
-      {/* Bottom Action Controls (Voice, Restart, Fullscreen) */}
+      {/* Bottom Action Controls */}
       <div
         style={{
           display: 'flex',
@@ -550,33 +570,12 @@ export function KioskFaceRecognitionView({
       >
         <button
           type="button"
-          onClick={() => setVoiceMuted((m) => !m)}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '6px',
-            padding: '8px 13px',
-            borderRadius: '10px',
-            border: '1px solid #e2e8f0',
-            background: voiceMuted ? '#f8fafc' : '#fff7ed',
-            color: voiceMuted ? '#64748b' : '#ea580c',
-            fontSize: '12px',
-            fontWeight: 700,
-            cursor: 'pointer',
-          }}
-        >
-          {voiceMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}
-          <span>{voiceMuted ? 'Voice Off' : 'Voice Guide On'}</span>
-        </button>
-
-        <button
-          type="button"
           onClick={startScanner}
           style={{
             display: 'inline-flex',
             alignItems: 'center',
             gap: '6px',
-            padding: '8px 13px',
+            padding: '8px 14px',
             borderRadius: '10px',
             border: '1px solid #e2e8f0',
             background: '#ffffff',
@@ -590,33 +589,28 @@ export function KioskFaceRecognitionView({
           <span>Restart Camera</span>
         </button>
 
-        <button
-          type="button"
-          onClick={() => {
-            if (isFullscreen) {
-              setInternalFullscreen(false);
-              onCloseExternalFullscreen?.();
-            } else {
-              setInternalFullscreen(true);
-            }
-          }}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '6px',
-            padding: '8px 14px',
-            borderRadius: '10px',
-            border: '1px solid #fed7aa',
-            background: '#fff7ed',
-            color: '#ea580c',
-            fontSize: '12px',
-            fontWeight: 800,
-            cursor: 'pointer',
-          }}
-        >
-          {isFullscreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
-          <span>{isFullscreen ? 'Exit Fullscreen' : 'Fullscreen Face Kiosk'}</span>
-        </button>
+        {!isFullscreen && (
+          <button
+            type="button"
+            onClick={() => setInternalFullscreen(true)}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '8px 14px',
+              borderRadius: '10px',
+              border: '1px solid #fed7aa',
+              background: '#fff7ed',
+              color: '#ea580c',
+              fontSize: '12px',
+              fontWeight: 800,
+              cursor: 'pointer',
+            }}
+          >
+            <Maximize2 size={13} />
+            <span>Fullscreen Face Kiosk</span>
+          </button>
+        )}
       </div>
 
       {/* NEAT POP-UP MODAL FOR CHECK-IN / SIGN-OUT / TIME-WINDOW LOCK / ERROR */}
