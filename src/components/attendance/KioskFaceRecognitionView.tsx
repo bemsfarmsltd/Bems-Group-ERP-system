@@ -41,6 +41,11 @@ export function KioskFaceRecognitionView({
   const activeRef = useRef<boolean>(false);
   const cooldownUntilRef = useRef<number>(0);
   const actionRef = useRef<'CHECK_IN' | 'CHECK_OUT'>(action);
+  const onSuccessPunchRef = useRef(onSuccessPunch);
+
+  useEffect(() => {
+    onSuccessPunchRef.current = onSuccessPunch;
+  }, [onSuccessPunch]);
 
   useEffect(() => {
     actionRef.current = action;
@@ -162,15 +167,18 @@ export function KioskFaceRecognitionView({
                     message: json.message,
                     confidence: json.confidencePercent,
                   });
-                  onSuccessPunch?.(json);
+                  onSuccessPunchRef.current?.(json);
                 } else {
+                  const matchedTitle = json?.employeeName
+                    ? `Recognized: ${json.employeeName} (${json.confidencePercent || 95}% match)`
+                    : 'Face ID Check-In Not Completed';
                   speakFaceVoicePrompt(
                     json?.error || 'Face not recognized. Please look directly at the camera.',
                     { force: true, muted: voiceMutedRef.current }
                   );
                   setBanner({
                     type: 'error',
-                    title: 'Face ID Check-In Not Completed',
+                    title: matchedTitle,
                     message: json?.error || 'Could not verify Face ID. Please face the camera clearly.',
                   });
                 }
@@ -192,7 +200,7 @@ export function KioskFaceRecognitionView({
         err?.message || 'Camera access blocked. Please allow camera permission on this kiosk browser.'
       );
     }
-  }, [onSuccessPunch, stationCode, stopCamera]);
+  }, [stationCode, stopCamera]);
 
   useEffect(() => {
     startScanner();

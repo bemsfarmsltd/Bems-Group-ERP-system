@@ -155,7 +155,12 @@ export async function POST(request: Request) {
     if (action === 'CHECK_OUT') {
       if (!existing || !existing.checkInTime) {
         return NextResponse.json(
-          { error: `${matched.legalName} has not checked in yet today (${workDate}).` },
+          {
+            error: `Hello ${matched.legalName} — you have not checked in yet today (${workDate}).`,
+            employeeName: matched.legalName,
+            employeeNumber: matched.employeeNumber,
+            confidencePercent: matchResult.confidencePercent,
+          },
           { status: 400 }
         );
       }
@@ -183,6 +188,9 @@ export async function POST(request: Request) {
           {
             error: `Sign-out is locked until ${closingTime} (5:00 PM). ${matched.legalName} cannot check out early (current time: ${currentTimeStr}).`,
             lockedUntil: closingTime,
+            employeeName: matched.legalName,
+            employeeNumber: matched.employeeNumber,
+            confidencePercent: matchResult.confidencePercent,
           },
           { status: 400 }
         );
@@ -239,7 +247,15 @@ export async function POST(request: Request) {
 
     const windowCheck = validateCheckInTimeWindow(currentTimeStr, earliestCheckInTime);
     if (!windowCheck.allowed) {
-      return NextResponse.json({ error: windowCheck.reason }, { status: 400 });
+      return NextResponse.json(
+        {
+          error: `Hello ${matched.legalName} — ${windowCheck.reason}`,
+          employeeName: matched.legalName,
+          employeeNumber: matched.employeeNumber,
+          confidencePercent: matchResult.confidencePercent,
+        },
+        { status: 400 }
+      );
     }
 
     const [rH, rM] = resumptionTime.split(':').map(Number);
