@@ -70,6 +70,9 @@ export interface LiveFaceFrameAnalysis {
   faceBrightness: number; // 0..255 average luminance on the face box
   detectionScore: number; // 0..1 detector confidence
   box?: { x: number; y: number; width: number; height: number };
+  /** Normalized 0..1 box & 68-point facial landmarks for live 3D biometric wireframe rendering */
+  normBox?: { x: number; y: number; width: number; height: number };
+  normLandmarks?: Array<{ x: number; y: number }>;
 }
 
 let lumaCanvas: HTMLCanvasElement | null = null;
@@ -180,24 +183,218 @@ function computeEyeAspectRatio(eye: Array<{ x: number; y: number }>): number {
 }
 
 let boostCanvas: HTMLCanvasElement | null = null;
+const GAMMA_LUT = new Uint8ClampedArray(256);
+for (let i = 0; i < 256; i++) {
+  // Fast gamma lift (gamma = 0.58) that brightens shadowed faces in strong backlight across ALL browsers (including Safari)
+  GAMMA_LUT[i] = Math.min(255, Math.round(Math.pow(i / 255, 0.58) * 255));
+}
+
 function buildExposureBoostedCanvas(videoEl: HTMLVideoElement): HTMLCanvasElement | null {
   try {
-    const w = Math.min(480, videoEl.videoWidth || 480);
-    const h = Math.round((w * (videoEl.videoHeight || 360)) / Math.max(1, videoEl.videoWidth || 480));
+    const w = Math.min(360, videoEl.videoWidth || 360);
+    const h = Math.round((w * (videoEl.videoHeight || 270)) / Math.max(1, videoEl.videoWidth || 360));
     if (!boostCanvas) boostCanvas = document.createElement('canvas');
     if (boostCanvas.width !== w || boostCanvas.height !== h) {
       boostCanvas.width = w;
       boostCanvas.height = h;
     }
-    const ctx = boostCanvas.getContext('2d');
+    const ctx = boostCanvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) return null;
-    ctx.filter = 'brightness(1.45) contrast(1.18)';
     ctx.drawImage(videoEl, 0, 0, w, h);
-    ctx.filter = 'none';
+    const img = ctx.getImageData(0, 0, w, h);
+    const d = img.data;
+    for (let i = 0; i < d.length; i += 4) {
+      d[i] = GAMMA_LUT[d[i]];
+      d[i + 1] = GAMMA_LUT[d[i + 1]];
+      d[i + 2] = GAMMA_LUT[d[i + 2]];
+    }
+    ctx.putImageData(img, 0, 0);
     return boostCanvas;
   } catch {
     return null;
   }
+}
+
+/**
+ * Triangulated 3D biometric wireframe mesh edges connecting the 68-point facial landmarks
+ * (jawline, cheekbones, forehead, eye sockets, nose bridge, and mouth).
+ */
+const BIOMETRIC_MESH_TRIANGLES: Array<[number, number, number]> = [
+  // Left cheek & jaw lattice
+  [0, 1, 36], [1, 2, 31], [1, 36, 31], [2, 3, 48], [2, 31, 48],
+  [3, 4, 48], [4, 5, 48], [5, 6, 59], [5, 48, 59], [6, 7, 58], [6, 59, 58], [7, 8, 57], [7, 58, 57],
+  // Right cheek & jaw lattice
+  [16, 15, 45], [15, 14, 35], [15, 45, 35], [14, 13, 54], [14, 35, 54],
+  [13, 12, 54], [12, 11, 54], [11, 10, 55], [11, 54, 55], [10, 9, 56], [10, 55, 56], [9, 8, 57], [9, 56, 57],
+  // Eyebrow to eye & nose bridge 3D facets
+  [17, 18, 36], [18, 19, 37], [18, 36, 37], [19, 20, 38], [19, 37, 38], [20, 21, 39], [20, 38, 39],
+  [21, 27, 39], [21, 22, 27], [22, 23, 42], [22, 27, 42], [23, 24, 43], [23, 42, 43],
+  [24, 25, 44], [24, 43, 44], [25, 26, 45], [25, 44, 45],
+  // Mid-face cheekbones & nose 3D facets
+  [36, 41, 31], [41, 40, 31], [40, 39, 28], [40, 28, 31], [39, 27, 28], [28, 29, 31], [29, 30, 31],
+  [45, 46, 35], [46, 47, 35], [47, 42, 28], [47, 28, 35], [42, 27, 28], [28, 29, 35], [29, 30, 35],
+  [30, 31, 32], [30, 32, 33], [30, 33, 34], [30, 34, 35],
+  // Nose to mouth 3D facets
+  [31, 48, 49], [31, 49, 32], [32, 49, 50], [32, 50, 33], [33, 50, 51],
+  [33, 51, 52], [33, 52, 34], [34, 52, 53], [34, 53, 35], [35, 53, 54],
+  // Mouth to chin 3D facets
+  [48, 59, 60], [59, 58, 67], [58, 57, 66], [57, 56, 66], [56, 55, 65], [55, 54, 64],
+];
+
+/**
+ * Draws a high-precision movie-style 3D biometric face wireframe mesh, glowing tracking corners,
+ * and animated laser scan beam directly onto an overlay canvas aligned with the video feed.
+ */
+export function draw3dBiometricFaceMesh(
+  canvas: HTMLCanvasElement,
+  videoEl: HTMLVideoElement,
+  frame: LiveFaceFrameAnalysis | null,
+  options: { verifying?: boolean; locked?: boolean; progress?: number } = {}
+): void {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+
+  const cw = canvas.clientWidth || 640;
+  const ch = canvas.clientHeight || 480;
+  if (canvas.width !== cw || canvas.height !== ch) {
+    canvas.width = cw;
+    canvas.height = ch;
+  }
+  ctx.clearRect(0, 0, cw, ch);
+
+  if (!frame?.detected || !frame.normLandmarks || frame.normLandmarks.length < 68 || !frame.normBox) {
+    return;
+  }
+
+  // Compute exact object-fit: cover mapping from normalized video coords to canvas pixels
+  const vw = Math.max(1, videoEl.videoWidth || cw);
+  const vh = Math.max(1, videoEl.videoHeight || ch);
+  const videoAspect = vw / vh;
+  const canvasAspect = cw / ch;
+
+  let drawW = cw;
+  let drawH = ch;
+  let offsetX = 0;
+  let offsetY = 0;
+  if (videoAspect > canvasAspect) {
+    drawH = ch;
+    drawW = ch * videoAspect;
+    offsetX = (cw - drawW) / 2;
+  } else {
+    drawW = cw;
+    drawH = cw / videoAspect;
+    offsetY = (ch - drawH) / 2;
+  }
+
+  const pts = frame.normLandmarks.map((p) => ({
+    x: offsetX + p.x * drawW,
+    y: offsetY + p.y * drawH,
+  }));
+
+  const bx = offsetX + frame.normBox.x * drawW;
+  const by = offsetY + frame.normBox.y * drawH;
+  const bw = frame.normBox.width * drawW;
+  const bh = frame.normBox.height * drawH;
+
+  const isGreen = Boolean(options.locked || options.verifying);
+  const meshStroke = isGreen ? 'rgba(16, 235, 175, 0.42)' : 'rgba(251, 146, 60, 0.42)';
+  const contourStroke = isGreen ? 'rgba(52, 211, 153, 0.90)' : 'rgba(249, 115, 22, 0.88)';
+  const nodeFill = isGreen ? '#6ee7b7' : '#fdba74';
+
+  ctx.save();
+
+  // 1. Triangulated 3D wireframe facets
+  ctx.strokeStyle = meshStroke;
+  ctx.lineWidth = 1.05;
+  ctx.beginPath();
+  for (const [a, b, c] of BIOMETRIC_MESH_TRIANGLES) {
+    const pa = pts[a];
+    const pb = pts[b];
+    const pc = pts[c];
+    if (!pa || !pb || !pc) continue;
+    ctx.moveTo(pa.x, pa.y);
+    ctx.lineTo(pb.x, pb.y);
+    ctx.lineTo(pc.x, pc.y);
+    ctx.closePath();
+  }
+  ctx.stroke();
+
+  // 2. Crisp feature contour paths (jaw, brows, nose, eyes, lips)
+  const drawPath = (indices: number[], close = false) => {
+    ctx.beginPath();
+    indices.forEach((idx, i) => {
+      const p = pts[idx];
+      if (!p) return;
+      if (i === 0) ctx.moveTo(p.x, p.y);
+      else ctx.lineTo(p.x, p.y);
+    });
+    if (close) ctx.closePath();
+    ctx.stroke();
+  };
+
+  ctx.strokeStyle = contourStroke;
+  ctx.lineWidth = 1.65;
+  ctx.shadowColor = isGreen ? 'rgba(16, 185, 129, 0.65)' : 'rgba(234, 88, 12, 0.65)';
+  ctx.shadowBlur = 6;
+  drawPath([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]); // Jaw
+  drawPath([17, 18, 19, 20, 21]); // Left brow
+  drawPath([22, 23, 24, 25, 26]); // Right brow
+  drawPath([27, 28, 29, 30]); // Nose bridge
+  drawPath([31, 32, 33, 34, 35]); // Nose base
+  drawPath([36, 37, 38, 39, 40, 41], true); // Left eye
+  drawPath([42, 43, 44, 45, 46, 47], true); // Right eye
+  drawPath([48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59], true); // Outer lip
+
+  // 3. Glowing 3D landmark nodes
+  ctx.shadowBlur = 4;
+  ctx.fillStyle = nodeFill;
+  for (let i = 0; i < pts.length; i++) {
+    const p = pts[i];
+    const radius = i === 30 || i === 36 || i === 39 || i === 42 || i === 45 || i === 8 ? 2.4 : 1.5;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // 4. Animated horizontal 3D laser sweep across the face bounding box
+  const t = (Date.now() % 1800) / 1800;
+  const sweepY = by + (t < 0.5 ? t * 2 : (1 - t) * 2) * bh;
+  const grad = ctx.createLinearGradient(bx, sweepY - 18, bx, sweepY + 18);
+  grad.addColorStop(0, 'rgba(16, 185, 129, 0)');
+  grad.addColorStop(0.5, isGreen ? 'rgba(52, 211, 153, 0.55)' : 'rgba(251, 146, 60, 0.45)');
+  grad.addColorStop(1, 'rgba(16, 185, 129, 0)');
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = grad;
+  ctx.fillRect(bx - 12, sweepY - 18, bw + 24, 36);
+
+  ctx.strokeStyle = isGreen ? 'rgba(110, 231, 183, 0.95)' : 'rgba(253, 186, 116, 0.95)';
+  ctx.lineWidth = 1.8;
+  ctx.beginPath();
+  ctx.moveTo(bx - 12, sweepY);
+  ctx.lineTo(bx + bw + 12, sweepY);
+  ctx.stroke();
+
+  // 5. Dynamic face-tracking corner brackets hugging the live face box
+  const pad = 12;
+  const cl = Math.min(26, bw * 0.18);
+  const x1 = bx - pad;
+  const y1 = by - pad;
+  const x2 = bx + bw + pad;
+  const y2 = by + bh + pad;
+  ctx.strokeStyle = isGreen ? '#34d399' : '#fb923c';
+  ctx.lineWidth = 2.6;
+  ctx.beginPath();
+  // Top-left
+  ctx.moveTo(x1, y1 + cl); ctx.lineTo(x1, y1); ctx.lineTo(x1 + cl, y1);
+  // Top-right
+  ctx.moveTo(x2 - cl, y1); ctx.lineTo(x2, y1); ctx.lineTo(x2, y1 + cl);
+  // Bottom-left
+  ctx.moveTo(x1, y2 - cl); ctx.lineTo(x1, y2); ctx.lineTo(x1 + cl, y2);
+  // Bottom-right
+  ctx.moveTo(x2 - cl, y2); ctx.lineTo(x2, y2); ctx.lineTo(x2, y2 - cl);
+  ctx.stroke();
+
+  ctx.restore();
 }
 
 /**
@@ -322,6 +519,11 @@ export async function analyzeVideoFaceFrame(
     const detectionScore = Number(det.detection.score || 0);
     const descriptor = det.descriptor ? Array.from(det.descriptor as Float32Array).map((n) => Number(n.toFixed(6))) : null;
 
+    const normLandmarks = (landmarks.positions || []).map((pt: { x: number; y: number }) => ({
+      x: pt.x / vw,
+      y: pt.y / vh,
+    }));
+
     return {
       detected: true,
       multipleFaces: false,
@@ -334,6 +536,8 @@ export async function analyzeVideoFaceFrame(
       faceBrightness,
       detectionScore,
       box: { x: box.x * scaleX, y: box.y * scaleY, width: box.width * scaleX, height: box.height * scaleY },
+      normBox: { x: box.x / vw, y: box.y / vh, width: box.width / vw, height: box.height / vh },
+      normLandmarks,
     };
   } else {
     const detections = await faceapi.detectAllFaces(videoEl, options).withFaceLandmarks(true);

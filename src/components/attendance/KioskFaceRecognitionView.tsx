@@ -18,6 +18,7 @@ import {
 import {
   analyzeVideoFaceFrame,
   averageFaceDescriptors,
+  draw3dBiometricFaceMesh,
   loadFaceApiModels,
   playKioskChime,
   speakFaceVoicePrompt,
@@ -68,11 +69,47 @@ export function KioskFaceRecognitionView({
   const isFullscreen = externalFullscreen || internalFullscreen;
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const meshCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const latestFrameRef = useRef<import('@/lib/attendance/face-client').LiveFaceFrameAnalysis | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const activeRef = useRef<boolean>(false);
   const cooldownUntilRef = useRef<number>(0);
   const onSuccessPunchRef = useRef(onSuccessPunch);
   const isEveningShiftRef = useRef(isEveningShift);
+  const verifyingRef = useRef(false);
+  const faceDetectedRef = useRef(false);
+
+  useEffect(() => {
+    verifyingRef.current = verifying;
+  }, [verifying]);
+
+  useEffect(() => {
+    faceDetectedRef.current = faceDetected;
+  }, [faceDetected]);
+
+  // Keep camera stream attached seamlessly when toggling between card view and fullscreen view
+  useEffect(() => {
+    if (videoRef.current && streamRef.current && videoRef.current.srcObject !== streamRef.current) {
+      videoRef.current.srcObject = streamRef.current;
+      videoRef.current.play().catch(() => {});
+    }
+  }, [isFullscreen]);
+
+  // Smooth 60fps animation loop for the 3D biometric face wireframe mesh & scanning laser
+  useEffect(() => {
+    let rafId = 0;
+    const renderMesh = () => {
+      if (meshCanvasRef.current && videoRef.current) {
+        draw3dBiometricFaceMesh(meshCanvasRef.current, videoRef.current, latestFrameRef.current, {
+          locked: faceDetectedRef.current,
+          verifying: verifyingRef.current,
+        });
+      }
+      rafId = requestAnimationFrame(renderMesh);
+    };
+    rafId = requestAnimationFrame(renderMesh);
+    return () => cancelAnimationFrame(rafId);
+  }, []);
 
   useEffect(() => {
     onSuccessPunchRef.current = onSuccessPunch;
@@ -185,6 +222,7 @@ export function KioskFaceRecognitionView({
 
         try {
           const frame = await analyzeVideoFaceFrame(videoRef.current, true);
+          latestFrameRef.current = frame;
           if (frame.multipleFaces) {
             setFaceDetected(false);
             setLivenessReady(false);
@@ -239,7 +277,7 @@ export function KioskFaceRecognitionView({
               'You are a little too close. Please step back slightly.',
               { muted: false, minIntervalMs: 5000 }
             );
-          } else if (Math.abs(frame.centerOffsetX) > 0.23 || Math.abs(frame.centerOffsetY) > 0.24) {
+          } else if (Math.abs(frame.centerOffsetX) > 0.30 || Math.abs(frame.centerOffsetY) > 0.30) {
             setFaceDetected(true);
             setLivenessReady(false);
             setScanProgress(25);
@@ -247,16 +285,16 @@ export function KioskFaceRecognitionView({
             capturedDescriptors = [];
             // Mirror-adjusted horizontal coaching (video is horizontally mirrored with scaleX(-1))
             const dirHint =
-              frame.centerOffsetX > 0.23
+              frame.centerOffsetX > 0.30
                 ? 'Move slightly to your right to center your face'
-                : frame.centerOffsetX < -0.23
+                : frame.centerOffsetX < -0.30
                 ? 'Move slightly to your left to center your face'
-                : frame.centerOffsetY > 0.24
+                : frame.centerOffsetY > 0.30
                 ? 'Raise your head slightly into the oval'
                 : 'Lower your head slightly into the oval';
             setStatusText(dirHint);
             speakFaceVoicePrompt(dirHint, { muted: false, minIntervalMs: 4500 });
-          } else if (Math.abs(frame.yawRatio) > 0.32) {
+          } else if (Math.abs(frame.yawRatio) > 0.38) {
             setFaceDetected(true);
             setLivenessReady(false);
             setScanProgress(30);
@@ -580,6 +618,19 @@ export function KioskFaceRecognitionView({
               width: '100%',
               height: '100%',
               objectFit: 'cover',
+              transform: 'scaleX(-1)',
+            }}
+          />
+
+          {/* Live 3D Biometric Wireframe Face Mesh & Laser Scan Overlay */}
+          <canvas
+            ref={meshCanvasRef}
+            style={{
+              position: 'absolute',
+              inset: 0,
+              width: '100%',
+              height: '100%',
+              pointerEvents: 'none',
               transform: 'scaleX(-1)',
             }}
           />
