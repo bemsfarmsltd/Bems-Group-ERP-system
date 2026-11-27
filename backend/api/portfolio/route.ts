@@ -105,7 +105,7 @@ export async function GET(request: Request) {
       }),
       prisma.employee.findMany({
         where: {
-          role: 'STAFF',
+          role: { in: ['STAFF', 'CUSTOM_ADMIN'] },
           status: 'ACTIVE',
         },
         select: {
@@ -188,7 +188,7 @@ export async function GET(request: Request) {
 
       const seenOrgEmpIds = new Set<string>();
       const orgStaff = assignments
-        .filter((a) => a.subsidiaryId === org.id && a.employee.role === 'STAFF')
+        .filter((a) => a.subsidiaryId === org.id && ['STAFF', 'CUSTOM_ADMIN'].includes(a.employee.role))
         .filter((a) => {
           if (seenOrgEmpIds.has(a.employee.id)) return false;
           seenOrgEmpIds.add(a.employee.id);
@@ -216,7 +216,7 @@ export async function GET(request: Request) {
 
       const seenOrgLeaderIds = new Set<string>();
       const orgLeadership = assignments
-        .filter((a) => a.subsidiaryId === org.id && a.employee.role !== 'STAFF')
+        .filter((a) => a.subsidiaryId === org.id && !['STAFF', 'CUSTOM_ADMIN'].includes(a.employee.role))
         .filter((a) => {
           if (seenOrgLeaderIds.has(a.employee.id)) return false;
           seenOrgLeaderIds.add(a.employee.id);
@@ -360,7 +360,7 @@ export async function GET(request: Request) {
     const totalGroupBudget = portfolio.reduce((acc, p) => acc + p.budget, 0);
     const totalGroupSpent = portfolio.reduce((acc, p) => acc + p.spent, 0);
     const totalGroupHeadcount = portfolio.reduce((acc, p) => acc + p.headcount, 0);
-    const totalExecutiveAdmins = assignments.filter((a) => a.employee.role !== 'STAFF').length;
+    const totalExecutiveAdmins = assignments.filter((a) => !['STAFF', 'CUSTOM_ADMIN'].includes(a.employee.role)).length;
     const totalIntercompanyVolume = serializedNotes.reduce((acc, n) => acc + n.amountNaira, 0);
 
     const payload = {

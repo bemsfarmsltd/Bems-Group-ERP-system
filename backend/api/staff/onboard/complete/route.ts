@@ -77,7 +77,7 @@ export async function POST(request: Request) {
     if (!isCustomAdmin && (!resolvedLegalName || resolvedLegalName.length < 2)) {
       return NextResponse.json({ error: 'Please enter your full legal name.' }, { status: 400 });
     }
-    const staffAccount = accountsForEmail.find(account => account.role === 'STAFF' && account.status === 'ACTIVE' && account.approvalStatus === 'APPROVED');
+    const staffAccount = accountsForEmail.find(account => (account.role === 'STAFF' || account.role === 'CUSTOM_ADMIN') && account.status === 'ACTIVE' && account.approvalStatus === 'APPROVED');
     if (isCustomAdmin) {
       if (!staffAccount || accountsForEmail.length !== 1 || !invitation.customAdminProfileId) {
         throw new LifecycleAuthorizationError('Custom Admin access requires one active staff account and an assigned permission profile. Existing duplicate accounts must be reviewed first.', 409);
@@ -137,7 +137,7 @@ export async function POST(request: Request) {
       if (invitation.role === 'SYSTEM_ADMIN' || invitation.role === 'SUPER_ADMIN') await assertSingleActiveSystemAdmin(existing?.id, tx);
       if (isCustomAdmin) {
         const changed = await tx.employee.updateMany({
-          where: { id: staffAccount!.id, role: 'STAFF', status: 'ACTIVE', approvalStatus: 'APPROVED', passwordHash: staffAccount!.passwordHash },
+          where: { id: staffAccount!.id, role: { in: ['STAFF', 'CUSTOM_ADMIN'] }, status: 'ACTIVE', approvalStatus: 'APPROVED', passwordHash: staffAccount!.passwordHash },
           data: { role: 'CUSTOM_ADMIN', customAdminProfileId: invitation.customAdminProfileId, customAdminTitle: invitation.customAdminTitle },
         });
         if (changed.count !== 1) throw new LifecycleAuthorizationError('The staff account changed. Ask for a new invitation.', 409);

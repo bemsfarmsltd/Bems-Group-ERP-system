@@ -69,7 +69,7 @@ export function AiAccessControlPanel({
       const roleUpper = String(a.role).toUpperCase();
       const isExec = ['GMD', 'SUPER_ADMIN', 'SYSTEM_ADMIN'].includes(roleUpper);
       if (filterGroup === 'admins' && !isExec) return false;
-      if (filterGroup === 'all' && roleUpper !== 'STAFF') return false;
+      if (filterGroup === 'all' && !['STAFF', 'CUSTOM_ADMIN'].includes(roleUpper)) return false;
       if (!q) return true;
       return (
         a.legalName.toLowerCase().includes(q) ||

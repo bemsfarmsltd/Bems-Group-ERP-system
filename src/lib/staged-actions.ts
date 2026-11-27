@@ -2891,7 +2891,7 @@ export async function executeBusinessCommand(tx: Prisma.TransactionClient, input
       } else if (subAction === 'UPDATE_ROSTER') {
         const employeeId = materialPayload.employeeId || materialPayload.employee_id;
         if (!employeeId) throw new Error('employeeId is required to update staff work schedule roster.');
-        if (!await tx.employee.findFirst({ where: { id: employeeId, status: 'ACTIVE', approvalStatus: 'APPROVED', role: 'STAFF' } })) throw new Error('Choose an active approved staff member.');
+        if (!await tx.employee.findFirst({ where: { id: employeeId, status: 'ACTIVE', approvalStatus: 'APPROVED', role: { in: ['STAFF', 'CUSTOM_ADMIN'] } } })) throw new Error('Choose an active approved staff member.');
         const weeklyOffDays = String(materialPayload.weeklyOffDays ?? '0,6');
         const customShiftIn = String(materialPayload.customShiftIn || '08:00');
         const customShiftOut = String(materialPayload.customShiftOut || '17:00');

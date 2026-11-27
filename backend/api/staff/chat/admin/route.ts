@@ -84,10 +84,10 @@ export async function GET(req: Request) {
         channel: effectiveChannel,
       };
 
-      // Scope HR thread list strictly to STAFF in their authorized subsidiaries
+      // Scope HR thread list strictly to STAFF / CUSTOM_ADMIN in their authorized subsidiaries
       if (isHrOnly && !hrScope.isGlobal) {
         whereClause.employee = {
-          role: 'STAFF',
+          role: { in: ['STAFF', 'CUSTOM_ADMIN'] },
           assignments: {
             some: {
               subsidiaryId: { in: hrScope.subsidiaryIds },
@@ -182,9 +182,9 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: 'Target employee not found.' }, { status: 404 });
     }
 
-    // If HR-only admin is accessing a specific employee's thread, enforce STAFF role and subsidiary scope
+    // If HR-only admin is accessing a specific employee's thread, enforce STAFF / CUSTOM_ADMIN role and subsidiary scope
     if (isHrOnly && targetEmployeeId !== actor.id) {
-      if (targetEmployee.role !== 'STAFF') {
+      if (!['STAFF', 'CUSTOM_ADMIN'].includes(targetEmployee.role)) {
         return NextResponse.json({ error: 'Forbidden: HR cannot access executive helpdesk threads.' }, { status: 403 });
       }
       if (!hrScope.isGlobal) {
@@ -293,7 +293,7 @@ export async function POST(req: Request) {
 
     // Enforce HR target role & subsidiary scope
     if (isHrOnly && targetEmployeeId !== actor.id) {
-      if (employee.role !== 'STAFF') {
+      if (!['STAFF', 'CUSTOM_ADMIN'].includes(employee.role)) {
         return NextResponse.json({ error: 'Forbidden: HR cannot message executive accounts on the helpdesk.' }, { status: 403 });
       }
       if (!hrScope.isGlobal) {
@@ -416,7 +416,7 @@ export async function POST(req: Request) {
         const empSubIds = employee.assignments.map((a) => a.subsidiaryId);
         const hrCandidates = await prisma.employee.findMany({
           where: {
-            role: 'STAFF',
+            role: { in: ['STAFF', 'CUSTOM_ADMIN'] },
             status: 'ACTIVE',
             approvalStatus: 'APPROVED',
             assignments: {

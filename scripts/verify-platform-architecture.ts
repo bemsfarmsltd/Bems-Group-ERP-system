@@ -253,31 +253,31 @@ async function main() {
   // 8. Audit Item 08: Read Leakage Prevention, Delegated Scope Enforcement & Expiring Onboarding Invites
   console.log('[8/8] Verifying Audit Item 08 Read Leakage Prevention & Expiring Single-Use Onboarding...');
   const repoRoot = path.resolve(__dirname, '..');
-  const approvalsSource = fs.readFileSync(path.join(repoRoot, 'src/app/api/ai/tools/approvals/route.ts'), 'utf8');
+  const approvalsSource = fs.readFileSync(path.join(repoRoot, 'backend/api/ai/tools/approvals/route.ts'), 'utf8');
   assert.ok(approvalsSource.includes('resolveAuthorizedOrganizationScope'), 'Approvals GET must enforce entity scope');
   assert.ok(approvalsSource.includes('ALLOWED_APPROVAL_STATUS_FILTERS'), 'Approvals GET must validate status filter');
   assert.ok(approvalsSource.includes('maskIdentifierPii'), 'Approvals GET must mask bank account numbers');
   assert.ok(approvalsSource.includes('beneficiaryId'), 'Approvals GET must include exact beneficiaryId');
 
-  const vendorsSource = fs.readFileSync(path.join(repoRoot, 'src/app/api/ai/tools/vendors/route.ts'), 'utf8');
+  const vendorsSource = fs.readFileSync(path.join(repoRoot, 'backend/api/ai/tools/vendors/route.ts'), 'utf8');
   assert.ok(vendorsSource.includes('resolveAuthorizedOrganizationScope'), 'Vendors GET must enforce entity scope');
   assert.ok(vendorsSource.includes('includeFinancialDetails'), 'Vendors GET must gate financial details independently');
   assert.ok(vendorsSource.includes('DIRECTORY_RESTRICTED'), 'Vendors GET must use restricted projection by default');
 
-  const intercompanySource = fs.readFileSync(path.join(repoRoot, 'src/app/api/ai/tools/intercompany/route.ts'), 'utf8');
+  const intercompanySource = fs.readFileSync(path.join(repoRoot, 'backend/api/ai/tools/intercompany/route.ts'), 'utf8');
   assert.ok(intercompanySource.includes('resolveAuthorizedOrganizationScope'), 'Intercompany GET must enforce entity scope');
   assert.ok(intercompanySource.includes('scopedMatrix'), 'Intercompany GET must apply entity scope to matrix rows and totals');
 
-  const subsidiarySource = fs.readFileSync(path.join(repoRoot, 'src/app/api/ai/tools/subsidiary/route.ts'), 'utf8');
+  const subsidiarySource = fs.readFileSync(path.join(repoRoot, 'backend/api/ai/tools/subsidiary/route.ts'), 'utf8');
   assert.ok(subsidiarySource.includes('resolveAuthorizedOrganizationScope'), 'Subsidiary GET must scope to approved entities');
   assert.ok(subsidiarySource.includes('PUBLIC_DIRECTORY_METADATA'), 'Subsidiary GET must split public metadata from executive metrics');
 
-  const budgetsToolSource = fs.readFileSync(path.join(repoRoot, 'src/app/api/ai/tools/budgets/route.ts'), 'utf8');
-  const budgetsDashboardSource = fs.readFileSync(path.join(repoRoot, 'src/app/api/budgets/route.ts'), 'utf8');
+  const budgetsToolSource = fs.readFileSync(path.join(repoRoot, 'backend/api/ai/tools/budgets/route.ts'), 'utf8');
+  const budgetsDashboardSource = fs.readFileSync(path.join(repoRoot, 'backend/api/budgets/route.ts'), 'utf8');
   assert.ok(budgetsToolSource.includes('queryAuthorizedBudgets'), 'AI budgets GET must share queryAuthorizedBudgets');
   assert.ok(budgetsDashboardSource.includes('queryAuthorizedBudgets'), 'Dashboard budgets GET must share queryAuthorizedBudgets');
 
-  const onboardSource = fs.readFileSync(path.join(repoRoot, 'src/app/api/staff/onboard/route.ts'), 'utf8');
+  const onboardSource = fs.readFileSync(path.join(repoRoot, 'backend/api/staff/onboard/route.ts'), 'utf8');
   assert.ok(
     onboardSource.includes('adminInvitation.create') && onboardSource.includes('Caller-supplied initial passwords are not accepted'),
     'POST /api/staff/onboard must reject caller-supplied passwords and issue expiring single-use invitations'
@@ -319,7 +319,7 @@ async function main() {
 
   // 9b. Briefing Server Component & API share loadAuthorizedExecutiveBriefing and ConnectAppShell defaults to least privilege
   const briefingPageSource = fs.readFileSync(path.join(repoRoot, 'src/app/briefing/page.tsx'), 'utf8');
-  const briefingApiSource = fs.readFileSync(path.join(repoRoot, 'src/app/api/briefing/route.ts'), 'utf8');
+  const briefingApiSource = fs.readFileSync(path.join(repoRoot, 'backend/api/briefing/route.ts'), 'utf8');
   const appShellSource = fs.readFileSync(path.join(repoRoot, 'src/components/layout/ConnectAppShell.tsx'), 'utf8');
   assert.ok(briefingPageSource.includes('loadAuthorizedExecutiveBriefing'), 'Briefing page must use loadAuthorizedExecutiveBriefing');
   assert.ok(briefingApiSource.includes('loadAuthorizedExecutiveBriefing'), 'Briefing API must use loadAuthorizedExecutiveBriefing');
@@ -337,18 +337,18 @@ async function main() {
   assert.ok(!gmdLoginDart.includes("contains('gmd@')"), 'GMD mobile login must not infer executive status from gmd@ email substring');
 
   // 9e. S01–S07 Route Hardening Checks
-  const resetPasswordSource = fs.readFileSync(path.join(repoRoot, 'src/app/api/auth/reset-password/route.ts'), 'utf8');
+  const resetPasswordSource = fs.readFileSync(path.join(repoRoot, 'backend/api/auth/reset-password/route.ts'), 'utf8');
   assert.ok(resetPasswordSource.includes('emailVerificationToken') && resetPasswordSource.includes('invalidateSessionCache'), 'reset-password must verify single-use token and invalidate session cache');
 
-  const slackWebhookSource = fs.readFileSync(path.join(repoRoot, 'src/app/api/webhooks/slack/route.ts'), 'utf8');
-  const whatsappWebhookSource = fs.readFileSync(path.join(repoRoot, 'src/app/api/webhooks/whatsapp/route.ts'), 'utf8');
+  const slackWebhookSource = fs.readFileSync(path.join(repoRoot, 'backend/api/webhooks/slack/route.ts'), 'utf8');
+  const whatsappWebhookSource = fs.readFileSync(path.join(repoRoot, 'backend/api/webhooks/whatsapp/route.ts'), 'utf8');
   assert.ok(slackWebhookSource.includes('timingSafeEqual'), 'Slack webhook must verify HMAC signature with timingSafeEqual');
   assert.ok(whatsappWebhookSource.includes('timingSafeEqual') && !whatsappWebhookSource.includes('bems_group_webhook_secret'), 'WhatsApp webhook must verify HMAC signature and remove hardcoded fallback secret');
 
-  const disbursementsRouteSource = fs.readFileSync(path.join(repoRoot, 'src/app/api/disbursements/route.ts'), 'utf8');
+  const disbursementsRouteSource = fs.readFileSync(path.join(repoRoot, 'backend/api/disbursements/route.ts'), 'utf8');
   assert.ok(disbursementsRouteSource.includes('recordTransfer'), 'Dashboard payments must use the shared recording service');
 
-  const payrollPrepareSource = fs.readFileSync(path.join(repoRoot, 'src/app/api/payroll/prepare/route.ts'), 'utf8');
+  const payrollPrepareSource = fs.readFileSync(path.join(repoRoot, 'backend/api/payroll/prepare/route.ts'), 'utf8');
   assert.ok(payrollPrepareSource.includes('executeDashboardCommand') && fs.readFileSync(path.join(repoRoot, 'src/lib/staged-actions.ts'), 'utf8').includes("isolationLevel: 'Serializable'"), 'Payroll regeneration must use the shared serializable command transaction');
 
   console.log('  ✓ All Audit Item 09 & Part II Security/Financial Integrity Controls (S01–S08) verified.');
@@ -374,7 +374,7 @@ async function main() {
   assert.deepEqual(
     registeredRoutes,
     physicalRoutes,
-    'PART_III_API_ROUTE_INVENTORY must maintain 100% 1-to-1 coverage with all physical src/app/api/**/route.ts files'
+    'PART_III_API_ROUTE_INVENTORY must maintain 100% 1-to-1 coverage with all physical backend/api/**/route.ts files'
   );
 
   for (const entry of PART_III_API_ROUTE_INVENTORY) {
@@ -392,10 +392,10 @@ async function main() {
   }
 
   // Verify Part III analytics, leadership, station QR, accountability, and remaining group hardening
-  const analyticsSource = fs.readFileSync(path.join(repoRoot, 'src/app/api/analytics/route.ts'), 'utf8');
+  const analyticsSource = fs.readFileSync(path.join(repoRoot, 'backend/api/analytics/route.ts'), 'utf8');
   assert.ok(analyticsSource.includes('where: { ...subsidiaryFilter, ...staffFilter }'), 'Analytics availableCategories must include staffFilter');
 
-  const cashForecastSource = fs.readFileSync(path.join(repoRoot, 'src/app/api/analytics/cash-forecast/route.ts'), 'utf8');
+  const cashForecastSource = fs.readFileSync(path.join(repoRoot, 'backend/api/analytics/cash-forecast/route.ts'), 'utf8');
   assert.ok(
     cashForecastSource.includes('resolveAuthorizedOrganizationScope') &&
       cashForecastSource.includes('isRecurring: true') &&
@@ -404,13 +404,13 @@ async function main() {
     'Cash forecast route must use live recurring ExpenditureRequest and CompensationAgreement queries without hardcoded estimates'
   );
 
-  const leadershipSource = fs.readFileSync(path.join(repoRoot, 'src/app/api/admin/leadership/route.ts'), 'utf8');
+  const leadershipSource = fs.readFileSync(path.join(repoRoot, 'backend/api/admin/leadership/route.ts'), 'utf8');
   assert.ok(
     !leadershipSource.includes("'HR'") && !leadershipSource.includes("'HR_ADMIN'"),
     'Leadership route must strictly query 3-role executive roles without legacy HR role strings'
   );
 
-  const stationQrSource = fs.readFileSync(path.join(repoRoot, 'src/app/api/attendance/station/qr/route.ts'), 'utf8');
+  const stationQrSource = fs.readFileSync(path.join(repoRoot, 'backend/api/attendance/station/qr/route.ts'), 'utf8');
   assert.ok(
     stationQrSource.includes('checkRateLimit') && stationQrSource.includes('await getAuthenticatedStation(request)') &&
       fs.readFileSync(path.join(repoRoot, 'src/lib/attendance/station-auth.ts'), 'utf8').includes("status: 'ACTIVE'") &&
@@ -419,20 +419,20 @@ async function main() {
     'Station QR route must enforce rate limiting and active station status on explicit stationCode'
   );
 
-  const accountabilityListSource = fs.readFileSync(path.join(repoRoot, 'src/app/api/accountability/route.ts'), 'utf8');
+  const accountabilityListSource = fs.readFileSync(path.join(repoRoot, 'backend/api/accountability/route.ts'), 'utf8');
   assert.ok(
     accountabilityListSource.includes('ownerId: { in: caseIds }') &&
       accountabilityListSource.includes('resolveAuthorizedOrganizationScope'),
     'Accountability GET must scope cases by organization and restrict attachment query to loaded caseIds'
   );
 
-  const disbursementsAssigneesSource = fs.readFileSync(path.join(repoRoot, 'src/app/api/disbursements/assignees/route.ts'), 'utf8');
+  const disbursementsAssigneesSource = fs.readFileSync(path.join(repoRoot, 'backend/api/disbursements/assignees/route.ts'), 'utf8');
   assert.ok(
     !disbursementsAssigneesSource.includes("'FINANCE'") && disbursementsAssigneesSource.includes("'SUPER_ADMIN'"),
     'Disbursements assignees route must enforce strict 3-role architecture without legacy FINANCE role'
   );
 
-  const matchingVerifySource = fs.readFileSync(path.join(repoRoot, 'src/app/api/matching/verify/route.ts'), 'utf8');
+  const matchingVerifySource = fs.readFileSync(path.join(repoRoot, 'backend/api/matching/verify/route.ts'), 'utf8');
   assert.ok(
     matchingVerifySource.includes('resolveAuthorizedOrganizationScope') &&
       matchingVerifySource.includes('buildDatedRequestPrefix("GRN")') &&
@@ -440,14 +440,14 @@ async function main() {
     'Matching verify route must enforce organization/owner scope and dynamic GRN year prefix'
   );
 
-  const businessSearchSource = fs.readFileSync(path.join(repoRoot, 'src/app/api/businesses/[businessId]/search/route.ts'), 'utf8');
+  const businessSearchSource = fs.readFileSync(path.join(repoRoot, 'backend/api/businesses/[businessId]/search/route.ts'), 'utf8');
   assert.ok(
     businessSearchSource.includes('getAuthenticatedEmployee') &&
       businessSearchSource.includes('resolveAuthorizedOrganizationScope'),
     'Business search route must authenticate caller and enforce organization scope'
   );
 
-  const portfolioSource = fs.readFileSync(path.join(repoRoot, 'src/app/api/portfolio/route.ts'), 'utf8');
+  const portfolioSource = fs.readFileSync(path.join(repoRoot, 'backend/api/portfolio/route.ts'), 'utf8');
   assert.ok(
     portfolioSource.includes('companyBankAccount.findMany') &&
       !portfolioSource.includes('+234 800 000 0000') &&
@@ -455,32 +455,32 @@ async function main() {
     'Portfolio route must query real companyBankAccount records and canonical paymentStatus values without fake phone fallbacks'
   );
 
-  const requestsListSource = fs.readFileSync(path.join(repoRoot, 'src/app/api/requests/route.ts'), 'utf8');
+  const requestsListSource = fs.readFileSync(path.join(repoRoot, 'backend/api/requests/route.ts'), 'utf8');
   assert.ok(
     requestsListSource.includes('visibility: "GROUP"') && requestsListSource.includes('recipientId: actor.id'),
     'Requests list route must filter channel messages by visibility and participant ID (S02)'
   );
 
-  const receiptsListSource = fs.readFileSync(path.join(repoRoot, 'src/app/api/receipts/route.ts'), 'utf8');
+  const receiptsListSource = fs.readFileSync(path.join(repoRoot, 'backend/api/receipts/route.ts'), 'utf8');
   assert.ok(
     receiptsListSource.includes('resolveAuthorizedOrganizationScope'),
     'Receipts list route must enforce resolveAuthorizedOrganizationScope'
   );
 
-  const uploadRouteSource = fs.readFileSync(path.join(repoRoot, 'src/app/api/upload/route.ts'), 'utf8');
+  const uploadRouteSource = fs.readFileSync(path.join(repoRoot, 'backend/api/upload/route.ts'), 'utf8');
   assert.ok(
     !uploadRouteSource.includes('!actor || actor.id ===') &&
       uploadRouteSource.includes("hasAnyRole(actor, ['SYSTEM_ADMIN', 'SUPER_ADMIN', 'GMD'])"),
     'Upload route must require an authenticated owner or executive before mutating employee.avatarUrl'
   );
 
-  const settingsRouteSource = fs.readFileSync(path.join(repoRoot, 'src/app/api/settings/route.ts'), 'utf8');
+  const settingsRouteSource = fs.readFileSync(path.join(repoRoot, 'backend/api/settings/route.ts'), 'utf8');
   assert.ok(
     settingsRouteSource.includes('resolveAuthorizedOrganizationScope'),
     'Settings GET route must enforce resolveAuthorizedOrganizationScope'
   );
 
-  const vendorsGrnSource = fs.readFileSync(path.join(repoRoot, 'src/app/api/vendors/grn/route.ts'), 'utf8');
+  const vendorsGrnSource = fs.readFileSync(path.join(repoRoot, 'backend/api/vendors/grn/route.ts'), 'utf8');
   assert.ok(
     vendorsGrnSource.includes("buildDatedRequestPrefix('GRN')") &&
       vendorsGrnSource.includes('resolveAuthorizedOrganizationScope'),

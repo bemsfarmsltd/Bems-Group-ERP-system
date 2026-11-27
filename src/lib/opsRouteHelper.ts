@@ -64,7 +64,7 @@ export async function resolveOperationsContext(
   }
 
   const roleUpper = String(actor.role || 'STAFF').toUpperCase();
-  const isStaff = roleUpper === 'STAFF';
+  const isStaff = roleUpper === 'STAFF' || (roleUpper === 'CUSTOM_ADMIN' && Boolean(options.allowStaffApp) && !hasEmployeePermission(actor, 'operations'));
 
   if (isStaff) {
     if (!options.allowStaffApp) {

@@ -336,7 +336,7 @@ export function DisbursementsDeskView({
   };
 
   const openMakerModal = (req: RequestItem) => {
-    if (!req.vendor && req.requester?.role === 'STAFF') {
+    if (!req.vendor && (!req.requester?.role || ['STAFF', 'CUSTOM_ADMIN'].includes(req.requester.role))) {
       openStaffWalletModal(req);
       return;
     }
@@ -859,7 +859,7 @@ export function DisbursementsDeskView({
                       <div style={{ fontSize: '11px', fontWeight: 600, color: '#1e293b', marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         {req.title}
                       </div>
-                      {(!req.vendor && (!req.requester?.role || req.requester.role === 'STAFF')) ? (
+                      {(!req.vendor && (!req.requester?.role || ['STAFF', 'CUSTOM_ADMIN'].includes(req.requester.role))) ? (
                         <div style={{ fontSize: '9px', color: '#059669', fontWeight: 600, marginTop: '2px' }}>
                           Beneficiary: {req.requester.legalName} · Staff Wallet: WLT-{req.requester.employeeNumber || 'STAFF'} · {req.subsidiary.legalName}
                         </div>
@@ -881,22 +881,22 @@ export function DisbursementsDeskView({
                       borderRadius: '4px',
                       background: req.paymentStatus === 'PAUSED'
                         ? '#fef2f2'
-                        : (!req.vendor && (!req.requester?.role || req.requester.role === 'STAFF')) ? '#ecfdf5' : '#fef3c7',
+                        : (!req.vendor && (!req.requester?.role || ['STAFF', 'CUSTOM_ADMIN'].includes(req.requester.role))) ? '#ecfdf5' : '#fef3c7',
                       color: req.paymentStatus === 'PAUSED'
                         ? '#dc2626'
-                        : (!req.vendor && (!req.requester?.role || req.requester.role === 'STAFF')) ? '#059669' : '#b45309',
+                        : (!req.vendor && (!req.requester?.role || ['STAFF', 'CUSTOM_ADMIN'].includes(req.requester.role))) ? '#059669' : '#b45309',
                       border: req.paymentStatus === 'PAUSED' ? '1px solid #fecaca' : 'none',
                       display: 'inline-block',
                       marginTop: '3px'
                     }}>
                       {req.paymentStatus === 'PAUSED'
                         ? 'PAYOUT PAUSED (HOLD)'
-                        : (!req.vendor && (!req.requester?.role || req.requester.role === 'STAFF')) ? 'Approved · Ready for Wallet Credit' : 'Approved · Ready to Pay'}
+                        : (!req.vendor && (!req.requester?.role || ['STAFF', 'CUSTOM_ADMIN'].includes(req.requester.role))) ? 'Approved · Ready for Wallet Credit' : 'Approved · Ready to Pay'}
                     </span>
                   </div>
 
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
-                    {(!req.vendor && (!req.requester?.role || req.requester.role === 'STAFF')) ? (
+                    {(!req.vendor && (!req.requester?.role || ['STAFF', 'CUSTOM_ADMIN'].includes(req.requester.role))) ? (
                       <button
                         onClick={() => openStaffWalletModal(req)}
                         disabled={req.paymentStatus === 'PAUSED'}

@@ -705,7 +705,7 @@ title: "<Chart Title>"
       db.employee.count({
         where: {
           status: 'ACTIVE',
-          role: 'STAFF',
+          role: { in: ['STAFF', 'CUSTOM_ADMIN'] },
           ...(scopedOrgId ? { assignments: { some: { subsidiaryId: scopedOrgId } } } : {}),
         },
       }),
@@ -1594,7 +1594,7 @@ title: "<Chart Title>"
       const staffList = await db.employee.findMany({
         where: {
           status: 'ACTIVE',
-          role: 'STAFF',
+          role: { in: ['STAFF', 'CUSTOM_ADMIN'] },
           ...(scopedOrgId ? { assignments: { some: { subsidiaryId: scopedOrgId } } } : {}),
         },
         include: {

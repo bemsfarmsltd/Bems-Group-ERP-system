@@ -153,9 +153,9 @@ export async function verifyTargetEmployeeAccess(
   if (['SYSTEM_ADMIN', 'SUPER_ADMIN'].includes(target.role) && !hasAnyRole(actor, ['SYSTEM_ADMIN', 'SUPER_ADMIN'])) throw new LifecycleAuthorizationError('Only a Super Admin can modify a Super Admin account.', 403);
   if (target.role === 'GMD' && !hasAnyRole(actor, ['GMD', 'SYSTEM_ADMIN', 'SUPER_ADMIN'])) throw new LifecycleAuthorizationError('Only the active GMD can modify the GMD account.', 403);
 
-  // HR can NEVER mutate executive accounts
+  // HR can NEVER mutate executive accounts (GMD / Super Admin), but CAN manage STAFF and CUSTOM_ADMIN (who are Staff first)
   if (!isExecutive) {
-    if (isTargetExecutive || target.role !== 'STAFF') {
+    if (isTargetExecutive || !['STAFF', 'CUSTOM_ADMIN'].includes(target.role)) {
       throw new LifecycleAuthorizationError(
         'Forbidden: HR cannot modify executive or administrative accounts.',
         403

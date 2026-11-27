@@ -17,7 +17,7 @@ export async function GET(req: Request) {
 
     const { searchParams } = new URL(req.url);
     const requestedSubId = searchParams.get('subsidiaryId') || '';
-    const cacheKey = `hr-overview:${actor.id}:${requestedSubId}`;
+    const cacheKey = `hr-overview:v2:${actor.id}:${requestedSubId}`;
     const cached = await getDistributedCache<any>(cacheKey);
     if (cached) {
       return NextResponse.json(cached);
@@ -54,7 +54,7 @@ export async function GET(req: Request) {
     const employeeRelationSubFilter = useSubFilter
       ? {
           employee: {
-            role: 'STAFF',
+            role: { in: ['STAFF', 'CUSTOM_ADMIN'] },
             assignments: {
               some: {
                 subsidiaryId: { in: allowedSubIds },
@@ -99,7 +99,7 @@ export async function GET(req: Request) {
     ] = await Promise.all([
       prisma.employee.count({
         where: {
-          role: 'STAFF',
+          role: { in: ['STAFF', 'CUSTOM_ADMIN'] },
           status: 'ACTIVE',
           ...staffSubFilter,
         },
@@ -107,7 +107,7 @@ export async function GET(req: Request) {
 
       prisma.employee.count({
         where: {
-          role: 'STAFF',
+          role: { in: ['STAFF', 'CUSTOM_ADMIN'] },
           approvalStatus: 'PENDING_APPROVAL',
           ...staffSubFilter,
         },
@@ -240,7 +240,7 @@ export async function GET(req: Request) {
 
       prisma.employee.findMany({
         where: {
-          role: 'STAFF',
+          role: { in: ['STAFF', 'CUSTOM_ADMIN'] },
           status: 'ACTIVE',
           ...staffSubFilter,
         },

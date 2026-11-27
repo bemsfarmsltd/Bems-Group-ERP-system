@@ -149,7 +149,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ or
           where: {
             subsidiaryId: organizationId,
             status: 'ACTIVE',
-            employee: { role: 'STAFF' },
+            employee: { role: { in: ['STAFF', 'CUSTOM_ADMIN'] } },
           },
         });
         const currentlyAssignedEmpIds = new Set(existingOrgStaffAssignments.map((a) => a.employeeId));

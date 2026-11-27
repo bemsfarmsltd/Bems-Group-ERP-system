@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getAuthenticatedEmployee } from '@/lib/auth';
+import { getAuthenticatedEmployee, hasEmployeePermission } from '@/lib/auth';
 import { hasStaffAppModuleAccess } from '@/lib/staff-modules';
 import { resolveAuthorizedOrganizationScope } from '@/lib/organizations';
 import { prisma } from '@/lib/prisma';
@@ -156,7 +156,7 @@ export async function resolveProjectContext(req: Request, allowStaffPortal = fal
   const { searchParams } = new URL(req.url);
   const requestedSubId = searchParams.get('subsidiaryId') || '';
 
-  const staffPortal = allowStaffPortal && searchParams.get('view') === 'staff' && actor.role === 'CUSTOM_ADMIN';
+  const staffPortal = allowStaffPortal && actor.role === 'CUSTOM_ADMIN' && (searchParams.get('view') === 'staff' || !hasEmployeePermission(actor, 'projects'));
   const orgScope = await resolveAuthorizedOrganizationScope(actor, requestedSubId || 'ALL', staffPortal ? 'staff' : 'projects');
   if (!orgScope.organizationIds.length) {
     return {

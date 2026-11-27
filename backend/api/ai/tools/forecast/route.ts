@@ -88,7 +88,7 @@ async function handleForecast(req: NextRequest) {
     const activeAgreements = await prisma.employmentAgreement.findMany({
       where: {
         status: 'ACTIVE',
-        employee: { status: 'ACTIVE', role: 'STAFF' },
+        employee: { status: 'ACTIVE', role: { in: ['STAFF', 'CUSTOM_ADMIN'] } },
         ...(!scope.isGroup ? { employerEntityId: { in: scope.organizationIds } } : {}),
       },
       include: {

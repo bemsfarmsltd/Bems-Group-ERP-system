@@ -27,7 +27,7 @@ export async function GET(req: Request) {
 
     const whereClause: any = {
       employee: {
-        role: 'STAFF',
+        role: { in: ['STAFF', 'CUSTOM_ADMIN'] },
         ...(hrScope.isGlobal
           ? {}
           : {

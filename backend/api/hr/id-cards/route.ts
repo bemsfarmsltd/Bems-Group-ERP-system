@@ -91,7 +91,7 @@ export async function GET(req: NextRequest) {
     where: {
       status: 'ACTIVE',
       approvalStatus: 'APPROVED',
-      role: { in: ['GMD', 'SUPER_ADMIN', 'SYSTEM_ADMIN', 'STAFF'] },
+      role: { in: ['GMD', 'SUPER_ADMIN', 'SYSTEM_ADMIN', 'CUSTOM_ADMIN', 'STAFF'] },
       ...(useSubFilter
         ? {
             assignments: {

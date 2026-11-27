@@ -9,7 +9,7 @@ export async function GET(req: Request) {
     const { orgWhere, allowedSubIds, useSubFilter } = ctx;
 
     const empWhere = {
-      role: 'STAFF',
+      role: { in: ['STAFF', 'CUSTOM_ADMIN'] },
       ...(useSubFilter
         ? { assignments: { some: { subsidiaryId: { in: allowedSubIds }, status: 'ACTIVE' } } }
         : {}),

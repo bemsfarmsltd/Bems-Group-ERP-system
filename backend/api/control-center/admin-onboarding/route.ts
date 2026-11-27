@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
     const listMode = request.nextUrl.searchParams.get('list');
     if (listMode === 'staff') {
       const staff = await prisma.employee.findMany({
-        where: { role: 'STAFF', status: 'ACTIVE' },
+        where: { role: { in: ['STAFF', 'CUSTOM_ADMIN'] }, status: 'ACTIVE' },
         orderBy: { legalName: 'asc' },
         select: {
           id: true,
@@ -148,7 +148,7 @@ export async function POST(request: NextRequest) {
 
     if (mode === 'PROMOTE_STAFF') {
       const existing = await prisma.employee.findFirst({
-        where: { workEmail: { equals: workEmail, mode: 'insensitive' }, role: 'STAFF', status: 'ACTIVE', approvalStatus: 'APPROVED' },
+        where: { workEmail: { equals: workEmail, mode: 'insensitive' }, role: { in: ['STAFF', 'CUSTOM_ADMIN'] }, status: 'ACTIVE', approvalStatus: 'APPROVED' },
         include: {
           assignments: { where: { status: 'ACTIVE' }, take: 1 },
         },

@@ -3358,7 +3358,7 @@ function AppWorkspace({user,onSignOut,onAddBusiness,onEditBusiness,businesses:ra
         />
       );
     }
-    if (target === 'My wallet' && safeUser.role === 'STAFF') return <WalletView brandColor={activeBrandColor} />;
+    if (target === 'My wallet' && (safeUser.role === 'STAFF' || safeUser.role === 'CUSTOM_ADMIN')) return <WalletView brandColor={activeBrandColor} />;
 
     if (isStaff) return null;
 
@@ -3596,11 +3596,11 @@ function AppWorkspace({user,onSignOut,onAddBusiness,onEditBusiness,businesses:ra
     if(target==='HR Fund requests') return <FundRequestsModule business={current} setNotice={setNotice} onNavigate={(p)=>window.location.href=p}/>;
     if(target==='Executive briefing') return <ExecutiveBriefingModule business={current} setNotice={setNotice} onNavigate={(p)=>setActive(p)}/>;
     if(target==='Subsidiary portfolio') return <Businesses businesses={businesses} current={current} onSelect={selectBusiness} onAdd={onAddBusiness} onEdit={onEditBusiness}/>;
-    if(target==='Fund requests') return <FundRequestsModule business={current} setNotice={setNotice} onNavigate={(p)=>window.location.href=p} canCreate={currentRole !== 'GMD' && currentRole !== 'SYSTEM_ADMIN' && currentRole !== 'SUPER_ADMIN' && currentRole !== 'CUSTOM_ADMIN'}/>;
+    if(target==='Fund requests') return <FundRequestsModule business={current} setNotice={setNotice} onNavigate={(p)=>window.location.href=p} canCreate={currentRole !== 'GMD' && currentRole !== 'SYSTEM_ADMIN' && currentRole !== 'SUPER_ADMIN'}/>;
     if(target==='Approvals & payments'||target==='Approvals & Policy Hub'||target==='Approvals desk') return <FundFlowWorkspace businessName={current.name} userName={safeUser.fullName} scope={activeScope} businessId={current.id} businessCode={(current as any).code} onNavigate={setActive} onSelectBusiness={selectBusiness}/>;
     if(target==='New fund request') {
-      if (currentRole === 'GMD' || currentRole === 'SYSTEM_ADMIN' || currentRole === 'SUPER_ADMIN' || currentRole === 'CUSTOM_ADMIN') {
-        setNotice('GMD and Admin accounts are governance roles and do not submit staff fund requests.');
+      if (currentRole === 'GMD' || currentRole === 'SYSTEM_ADMIN' || currentRole === 'SUPER_ADMIN') {
+        setNotice('GMD and Super Admin accounts are governance roles and do not submit staff fund requests.');
         return null;
       }
       if (typeof window !== 'undefined') window.location.href = '/requests/new';

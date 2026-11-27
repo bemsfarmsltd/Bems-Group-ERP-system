@@ -62,7 +62,7 @@ export async function resolveInnovationContext(
   }
 
   const roleUpper = String(actor.role || 'STAFF').toUpperCase();
-  const isStaff = roleUpper === 'STAFF';
+  const isStaff = roleUpper === 'STAFF' || (roleUpper === 'CUSTOM_ADMIN' && !hasEmployeePermission(actor, 'innovation'));
 
   if (isStaff) {
     if (options.allowStaffApp === false) {

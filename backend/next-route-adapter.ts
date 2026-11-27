@@ -70,6 +70,14 @@ function isReadOnlyAllowedPath(cleanPath: string): boolean {
   if (cleanPath.startsWith('/api/wallet/withdrawals/')) return true;
   if (cleanPath.startsWith('/api/wallet/issues/')) return true;
   if (cleanPath.startsWith('/api/staff/me/')) return true;
+  if (cleanPath.startsWith('/api/staff/leave')) return true;
+  if (cleanPath.startsWith('/api/staff/attendance')) return true;
+  if (cleanPath.startsWith('/api/requests/create')) return true;
+  if (cleanPath.startsWith('/api/accountability/')) return true;
+  if (cleanPath.startsWith('/api/tasks')) return true;
+  if (cleanPath.startsWith('/api/projects/handover')) return true;
+  if (cleanPath.startsWith('/api/projects/staff-timelines')) return true;
+  if (cleanPath.startsWith('/api/innovation/staff/')) return true;
   return false;
 }
 

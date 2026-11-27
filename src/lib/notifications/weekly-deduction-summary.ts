@@ -33,7 +33,7 @@ export async function sendWeeklyStaffDeductionSummaries() {
   const staffList = await prisma.employee.findMany({
     where: {
       status: 'ACTIVE',
-      role: 'STAFF',
+      role: { in: ['STAFF', 'CUSTOM_ADMIN'] },
     },
     include: {
       assignments: {

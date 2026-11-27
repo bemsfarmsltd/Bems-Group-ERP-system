@@ -38,7 +38,7 @@ export async function GET(req: Request) {
 
       if (isHrOnly && !hrScope.isGlobal) {
         whereClause.employee = {
-          role: 'STAFF',
+          role: { in: ['STAFF', 'CUSTOM_ADMIN'] },
           assignments: {
             some: {
               subsidiaryId: { in: hrScope.subsidiaryIds },

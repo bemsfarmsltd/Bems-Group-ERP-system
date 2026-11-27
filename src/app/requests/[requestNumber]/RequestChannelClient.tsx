@@ -206,7 +206,7 @@ export function RequestChannelClient({ request: initialRequest, requestNumber }:
       if (res.ok) {
         const resData = await res.json().catch(() => ({}));
         setShowApproveModal(false);
-        const isStaff = !request.vendor && request.requester?.role === 'STAFF';
+        const isStaff = !request.vendor && ['STAFF', 'CUSTOM_ADMIN'].includes(request.requester?.role || 'STAFF');
         if (!isStaff) {
           const transferDetails: RequesterDisbursementAccount = resData.requesterDisbursementAccount || {
             bankName: request.requester?.bankName || null,
@@ -420,7 +420,7 @@ export function RequestChannelClient({ request: initialRequest, requestNumber }:
             </button>
             <button
               onClick={() => {
-                if (!request.vendor && (!request.requester?.role || request.requester.role === 'STAFF')) {
+                if (!request.vendor && (!request.requester?.role || ['STAFF', 'CUSTOM_ADMIN'].includes(request.requester.role))) {
                   setShowStaffWalletModal(true);
                 } else {
                   setShowApproveModal(true);
