@@ -15,10 +15,27 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Authentication required.' }, { status: 401 });
     }
 
+    const url = new URL(request.url);
+    const requestedStaffId = (url.searchParams.get('staffEmployeeId') || '').trim();
+    let targetEmployeeId = actor.id;
+    if (
+      requestedStaffId &&
+      requestedStaffId !== actor.id &&
+      (actor.role === 'SYSTEM_ADMIN' || actor.role === 'SUPER_ADMIN' || actor.role === 'GMD')
+    ) {
+      const staffEmp = await prisma.employee.findUnique({
+        where: { id: requestedStaffId },
+        select: { id: true, role: true, status: true },
+      });
+      if (staffEmp && staffEmp.status === 'ACTIVE' && (staffEmp.role === 'STAFF' || staffEmp.role === 'CUSTOM_ADMIN')) {
+        targetEmployeeId = staffEmp.id;
+      }
+    }
+
     await ensureFaceAttendanceSchema();
     const [empRecord, profileRows, modeConfig] = await Promise.all([
       prisma.employee.findUnique({
-        where: { id: actor.id },
+        where: { id: targetEmployeeId },
         select: { id: true, legalName: true, employeeNumber: true, role: true, isAttendanceExempt: true },
       }),
       prisma.$queryRawUnsafe<
@@ -40,7 +57,7 @@ export async function GET(request: Request) {
          FROM "EmployeeFaceProfile"
          WHERE "employeeId" = $1
          LIMIT 1`,
-        actor.id
+        targetEmployeeId
       ),
       getFaceAttendanceModeConfig(),
     ]);

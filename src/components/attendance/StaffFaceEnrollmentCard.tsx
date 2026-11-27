@@ -68,14 +68,26 @@ export function StaffFaceEnrollmentCard({
   const fetchProfile = useCallback(async () => {
     try {
       setLoading(true);
-      const { headers } = getStoredStaffAppSession();
-      const res = await fetch('/api/attendance/face/profile', {
+      const { headers, user } = getStoredStaffAppSession();
+      const employeeId = user?.id || '';
+      const url = employeeId
+        ? `/api/attendance/face/profile?staffEmployeeId=${encodeURIComponent(employeeId)}`
+        : '/api/attendance/face/profile';
+      const res = await fetch(url, {
         cache: 'no-store',
         headers,
       });
       if (res.ok) {
         const json = await res.json();
         setData(json);
+        if (
+          json.isExecutiveExempt ||
+          json.status === 'APPROVED' ||
+          json.status === 'PENDING_APPROVAL' ||
+          json.status === 'EXEMPT'
+        ) {
+          setPromptBannerOpen(false);
+        }
       }
     } catch {
       // ignore

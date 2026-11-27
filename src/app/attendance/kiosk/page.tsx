@@ -445,19 +445,30 @@ export default function AttendanceKioskPage() {
     void fetchToken();
   }, [fetchToken]);
 
-  // 45-second countdown timer (paused while locked behind password gate)
+  // 60-second countdown timer (refreshes 5s early + immediately on tab wake/focus so QR never expires on screen)
   useEffect(() => {
     if (requiresActivation || !stationData) return;
     const timer = setInterval(() => {
       setSecondsRemaining(prev => {
-        if (prev <= 1) {
+        if (prev <= 5) {
           void fetchToken();
-          return 45;
+          return 60;
         }
         return prev - 1;
       });
     }, 1000);
-    return () => clearInterval(timer);
+    const handleWake = () => {
+      if (document.visibilityState === 'visible') {
+        void fetchToken();
+      }
+    };
+    window.addEventListener('focus', handleWake);
+    document.addEventListener('visibilitychange', handleWake);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('focus', handleWake);
+      document.removeEventListener('visibilitychange', handleWake);
+    };
   }, [fetchToken, requiresActivation, stationData]);
 
   // Poll recent arrivals & detect live QR clock-in/clock-out every 3 seconds (only AFTER kiosk unlock)
@@ -1997,16 +2008,15 @@ export default function AttendanceKioskPage() {
               </div>
             </div>
 
-            {/* Staff List Body */}
+            {/* Staff Register Table Body (Enterprise Light Theme) */}
             <div
               style={{
                 flex: 1,
                 overflowY: 'auto',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '10px',
                 maxHeight: isFullscreen ? 'calc(100vh - 280px)' : '620px',
-                paddingRight: '4px',
+                borderRadius: '14px',
+                border: '1px solid #e2e8f0',
+                background: '#ffffff',
               }}
             >
               {filteredStaff.length === 0 ? (
@@ -2043,170 +2053,258 @@ export default function AttendanceKioskPage() {
                   <p style={{ fontSize: '12px', color: '#94a3b8', maxWidth: '300px', marginTop: '4px' }}>
                     {searchTerm
                       ? 'Try searching with a different employee name or role.'
-                      : 'Staff clock-ins scanned on the BEMS Staff App will immediately populate here live.'}
+                      : 'Staff clock-ins scanned on the BEMS Staff App or Face Kiosk will immediately populate here live.'}
                   </p>
                 </div>
               ) : (
-                filteredStaff.map((staff: any) => {
-                  const checkInFormatted = staff.checkInTime
-                    ? new Date(staff.checkInTime).toLocaleTimeString('en-US', {
-                        timeZone: 'Africa/Lagos',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                        hour12: true,
-                      })
-                    : '--:--';
-
-                  const hasCheckedOut = Boolean(staff.checkOutTime);
-                  const checkOutFormatted = staff.checkOutTime
-                    ? new Date(staff.checkOutTime).toLocaleTimeString('en-US', {
-                        timeZone: 'Africa/Lagos',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                        hour12: true,
-                      })
-                    : null;
-
-                  const isLate = staff.status === 'LATE';
-                  const initials = (staff.legalName || 'ST')
-                    .split(' ')
-                    .map((n: string) => n[0])
-                    .slice(0, 2)
-                    .join('')
-                    .toUpperCase();
-
-                  return (
-                    <div
-                      key={staff.employeeId}
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                  <thead>
+                    <tr
                       style={{
-                        padding: '12px 16px',
-                        borderRadius: '14px',
+                        position: 'sticky',
+                        top: 0,
+                        zIndex: 2,
                         background: '#f8fafc',
-                        border: '1px solid #e2e8f0',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        gap: '12px',
-                        flexWrap: 'wrap',
-                        transition: 'all 0.15s ease',
+                        borderBottom: '1px solid #e2e8f0',
                       }}
                     >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        {staff.avatarUrl ? (
-                          <img
-                            src={staff.avatarUrl}
-                            alt={staff.legalName}
-                            style={{
-                              width: '42px',
-                              height: '42px',
-                              borderRadius: '10px',
-                              objectFit: 'cover',
-                              border: `1.5px solid ${isLate ? '#fecaca' : '#a7f3d0'}`,
-                              flexShrink: 0,
-                              background: '#ffffff',
-                            }}
-                          />
-                        ) : (
-                          <div
-                            style={{
-                              width: '42px',
-                              height: '42px',
-                              borderRadius: '10px',
-                              background: isLate ? '#fef2f2' : '#ecfdf5',
-                              border: `1px solid ${isLate ? '#fecaca' : '#a7f3d0'}`,
-                              color: isLate ? '#dc2626' : '#059669',
-                              fontWeight: 800,
-                              fontSize: '13px',
-                              display: 'grid',
-                              placeItems: 'center',
-                              flexShrink: 0,
-                            }}
-                          >
-                            {initials}
-                          </div>
-                        )}
-                        <div>
-                          <div style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a' }}>
-                            {staff.legalName}
-                          </div>
-                          <div style={{ fontSize: '11px', color: '#64748b' }}>
-                            {staff.employeeNumber ? `${staff.employeeNumber} · ` : ''}{staff.department || staff.role}
-                            {staff.subsidiary ? ` · ${staff.subsidiary}` : ''}
-                          </div>
-                        </div>
-                      </div>
+                      <th
+                        style={{
+                          padding: '10px 14px',
+                          fontSize: '10.5px',
+                          fontWeight: 800,
+                          color: '#64748b',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.04em',
+                        }}
+                      >
+                        Staff Member
+                      </th>
+                      <th
+                        style={{
+                          padding: '10px 12px',
+                          fontSize: '10.5px',
+                          fontWeight: 800,
+                          color: '#64748b',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.04em',
+                        }}
+                      >
+                        Subsidiary & Dept
+                      </th>
+                      <th
+                        style={{
+                          padding: '10px 12px',
+                          fontSize: '10.5px',
+                          fontWeight: 800,
+                          color: '#64748b',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.04em',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        Clock In
+                      </th>
+                      <th
+                        style={{
+                          padding: '10px 14px',
+                          fontSize: '10.5px',
+                          fontWeight: 800,
+                          color: '#64748b',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.04em',
+                          textAlign: 'right',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        Clock Out / Shift
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredStaff.map((staff: any, idx: number) => {
+                      const checkInFormatted = staff.checkInTime
+                        ? new Date(staff.checkInTime).toLocaleTimeString('en-US', {
+                            timeZone: 'Africa/Lagos',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            hour12: true,
+                          })
+                        : '--:--';
 
-                      {/* Dual Clock-In & Clock-Out Status Block */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                        {/* 1. CLOCK IN STATUS */}
-                        <div
+                      const hasCheckedOut = Boolean(staff.checkOutTime);
+                      const checkOutFormatted = staff.checkOutTime
+                        ? new Date(staff.checkOutTime).toLocaleTimeString('en-US', {
+                            timeZone: 'Africa/Lagos',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            hour12: true,
+                          })
+                        : null;
+
+                      const isLate = staff.status === 'LATE';
+                      const initials = (staff.legalName || 'ST')
+                        .split(' ')
+                        .map((n: string) => n[0])
+                        .slice(0, 2)
+                        .join('')
+                        .toUpperCase();
+
+                      return (
+                        <tr
+                          key={staff.employeeId}
                           style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '6px',
-                            padding: '5px 10px',
-                            borderRadius: '10px',
+                            borderBottom: idx === filteredStaff.length - 1 ? 'none' : '1px solid #f1f5f9',
                             background: '#ffffff',
-                            border: `1px solid ${isLate ? '#fecaca' : '#a7f3d0'}`,
                           }}
                         >
-                          <span style={{ fontSize: '10px', fontWeight: 800, color: '#64748b', textTransform: 'uppercase' }}>
-                            IN:
-                          </span>
-                          <span style={{ fontSize: '11.5px', fontWeight: 800, color: '#0f172a' }}>
-                            {checkInFormatted}
-                          </span>
-                          <span
-                            style={{
-                              fontSize: '9.5px',
-                              fontWeight: 800,
-                              padding: '2px 6px',
-                              borderRadius: '5px',
-                              background: isLate ? '#fef2f2' : '#ecfdf5',
-                              color: isLate ? '#dc2626' : '#059669',
-                              letterSpacing: '0.3px',
-                            }}
-                          >
-                            {isLate ? 'LATE' : 'ON TIME'}
-                          </span>
-                        </div>
+                          {/* Col 1: Avatar + Name + Employee ID */}
+                          <td style={{ padding: '10px 14px', verticalAlign: 'middle' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+                              {staff.avatarUrl ? (
+                                <img
+                                  src={staff.avatarUrl}
+                                  alt={staff.legalName}
+                                  style={{
+                                    width: '36px',
+                                    height: '36px',
+                                    borderRadius: '10px',
+                                    objectFit: 'cover',
+                                    border: `1.5px solid ${isLate ? '#fecaca' : '#a7f3d0'}`,
+                                    flexShrink: 0,
+                                    background: '#f8fafc',
+                                  }}
+                                />
+                              ) : (
+                                <div
+                                  style={{
+                                    width: '36px',
+                                    height: '36px',
+                                    borderRadius: '10px',
+                                    background: isLate ? '#fef2f2' : '#ecfdf5',
+                                    border: `1px solid ${isLate ? '#fecaca' : '#a7f3d0'}`,
+                                    color: isLate ? '#dc2626' : '#059669',
+                                    fontWeight: 800,
+                                    fontSize: '12px',
+                                    display: 'grid',
+                                    placeItems: 'center',
+                                    flexShrink: 0,
+                                  }}
+                                >
+                                  {initials}
+                                </div>
+                              )}
+                              <div style={{ minWidth: 0 }}>
+                                <div
+                                  style={{
+                                    fontSize: '13px',
+                                    fontWeight: 800,
+                                    color: '#0f172a',
+                                    whiteSpace: 'nowrap',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    maxWidth: '210px',
+                                  }}
+                                >
+                                  {staff.legalName}
+                                </div>
+                                <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 600 }}>
+                                  {staff.employeeNumber || 'Staff'}
+                                </div>
+                              </div>
+                            </div>
+                          </td>
 
-                        {/* 2. CLOCK OUT STATUS */}
-                        <div
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '6px',
-                            padding: '5px 10px',
-                            borderRadius: '10px',
-                            background: '#ffffff',
-                            border: `1px solid ${hasCheckedOut ? '#ddd6fe' : '#bfdbfe'}`,
-                          }}
-                        >
-                          <span style={{ fontSize: '10px', fontWeight: 800, color: '#64748b', textTransform: 'uppercase' }}>
-                            OUT:
-                          </span>
-                          <span style={{ fontSize: '11.5px', fontWeight: 800, color: hasCheckedOut ? '#0f172a' : '#64748b' }}>
-                            {checkOutFormatted || '--:--'}
-                          </span>
-                          <span
+                          {/* Col 2: Subsidiary & Department */}
+                          <td style={{ padding: '10px 12px', verticalAlign: 'middle' }}>
+                            <div
+                              style={{
+                                fontSize: '12px',
+                                fontWeight: 700,
+                                color: '#334155',
+                                whiteSpace: 'nowrap',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                maxWidth: '220px',
+                              }}
+                            >
+                              {staff.subsidiary || 'BEMS Group'}
+                            </div>
+                            <div
+                              style={{
+                                fontSize: '11px',
+                                color: '#64748b',
+                                whiteSpace: 'nowrap',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                maxWidth: '220px',
+                              }}
+                            >
+                              {staff.department || staff.role || 'Operations'}
+                            </div>
+                          </td>
+
+                          {/* Col 3: Clock In Time + Punctuality Pill */}
+                          <td style={{ padding: '10px 12px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                              <span style={{ fontSize: '12.5px', fontWeight: 800, color: '#0f172a' }}>
+                                {checkInFormatted}
+                              </span>
+                              <span
+                                style={{
+                                  fontSize: '9.5px',
+                                  fontWeight: 800,
+                                  padding: '2px 7px',
+                                  borderRadius: '999px',
+                                  background: isLate ? '#fef2f2' : '#ecfdf5',
+                                  color: isLate ? '#dc2626' : '#059669',
+                                  border: `1px solid ${isLate ? '#fecaca' : '#a7f3d0'}`,
+                                }}
+                              >
+                                {isLate ? 'LATE' : 'ON TIME'}
+                              </span>
+                            </div>
+                          </td>
+
+                          {/* Col 4: Clock Out Time + Shift Pill */}
+                          <td
                             style={{
-                              fontSize: '9.5px',
-                              fontWeight: 800,
-                              padding: '2px 6px',
-                              borderRadius: '5px',
-                              background: hasCheckedOut ? '#f5f3ff' : '#eff6ff',
-                              color: hasCheckedOut ? '#6d28d9' : '#1d4ed8',
-                              letterSpacing: '0.3px',
+                              padding: '10px 14px',
+                              verticalAlign: 'middle',
+                              textAlign: 'right',
+                              whiteSpace: 'nowrap',
                             }}
                           >
-                            {hasCheckedOut ? 'CLOCKED OUT' : 'ON SHIFT'}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })
+                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', justifyContent: 'flex-end' }}>
+                              <span
+                                style={{
+                                  fontSize: '12px',
+                                  fontWeight: 700,
+                                  color: hasCheckedOut ? '#0f172a' : '#94a3b8',
+                                }}
+                              >
+                                {checkOutFormatted || '--:--'}
+                              </span>
+                              <span
+                                style={{
+                                  fontSize: '9.5px',
+                                  fontWeight: 800,
+                                  padding: '2px 7px',
+                                  borderRadius: '999px',
+                                  background: hasCheckedOut ? '#f5f3ff' : '#eff6ff',
+                                  color: hasCheckedOut ? '#6d28d9' : '#1d4ed8',
+                                  border: `1px solid ${hasCheckedOut ? '#ddd6fe' : '#bfdbfe'}`,
+                                }}
+                              >
+                                {hasCheckedOut ? 'CLOCKED OUT' : 'ON SHIFT'}
+                              </span>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               )}
             </div>
 

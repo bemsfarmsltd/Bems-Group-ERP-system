@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 
-// 45-second window for dynamic QR codes
-const WINDOW_DURATION_SECONDS = 45;
+// 60-second window for dynamic HMAC QR codes
+const WINDOW_DURATION_SECONDS = 60;
 
 /**
  * Calculates the great-circle distance between two points in meters using the Haversine formula.
@@ -64,8 +64,8 @@ export function verifyStationQrToken(token: string, stationCode: string, secret:
   const now = Math.floor(Date.now() / 1000);
   const currentWindow = Math.floor(now / WINDOW_DURATION_SECONDS);
 
-  // Accept current window or previous window
-  if (tokenWindow !== currentWindow && tokenWindow !== currentWindow - 1) {
+  // Accept current window, up to 2 preceding windows, or +1 clock-skew window (~2.5 min total tolerance for GPS lock & tab throttling)
+  if (tokenWindow < currentWindow - 2 || tokenWindow > currentWindow + 1) {
     return false;
   }
 

@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html>
+
 <head>
   <base href="/staff-app/">
 
@@ -18,25 +19,32 @@
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
 
   <!-- Favicon -->
-  <link rel="icon" type="image/png" href="favicon.png"/>
+  <link rel="icon" type="image/png" href="favicon.png" />
 
   <title>BEMS Staff Portal</title>
   <link rel="manifest" href="manifest.json">
 </head>
+
 <body>
-  <div id="bems-pwa-install" style="display:none;position:fixed;right:20px;bottom:20px;z-index:99999;background:#ffffff;border:1px solid #e2e8f0;border-radius:14px;padding:14px 16px;box-shadow:0 12px 32px rgba(15,23,42,0.14);font-family:system-ui,-apple-system,sans-serif;max-width:340px;align-items:center;gap:12px;">
-    <img src="icons/Icon-192.png" alt="BEMS Staff" style="width:40px;height:40px;border-radius:10px;border:1px solid #e2e8f0;flex-shrink:0;" />
+  <div id="bems-pwa-install"
+    style="display:none;position:fixed;right:20px;bottom:20px;z-index:99999;background:#ffffff;border:1px solid #e2e8f0;border-radius:14px;padding:14px 16px;box-shadow:0 12px 32px rgba(15,23,42,0.14);font-family:system-ui,-apple-system,sans-serif;max-width:340px;align-items:center;gap:12px;">
+    <img src="icons/Icon-192.png" alt="BEMS Staff"
+      style="width:40px;height:40px;border-radius:10px;border:1px solid #e2e8f0;flex-shrink:0;" />
     <div style="flex:1;min-width:0;">
       <div style="font-size:13px;font-weight:800;color:#0f172a;line-height:1.25;">Install BEMS Staff</div>
       <div style="font-size:11.5px;color:#475569;margin-top:2px;">Add as standalone desktop software on your PC.</div>
       <div style="display:flex;gap:8px;margin-top:10px;">
-        <button id="bems-pwa-install-btn" style="background:#ea580c;color:#ffffff;border:none;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;">Install on PC</button>
-        <button id="bems-pwa-dismiss-btn" style="background:#f8fafc;color:#475569;border:1px solid #e2e8f0;border-radius:8px;padding:6px 10px;font-size:12px;font-weight:600;cursor:pointer;">Not now</button>
+        <button id="bems-pwa-install-btn"
+          style="background:#ea580c;color:#ffffff;border:none;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;">Install
+          on PC</button>
+        <button id="bems-pwa-dismiss-btn"
+          style="background:#f8fafc;color:#475569;border:1px solid #e2e8f0;border-radius:8px;padding:6px 10px;font-size:12px;font-weight:600;cursor:pointer;">Not
+          now</button>
       </div>
     </div>
   </div>
   <script>
-    (function() {
+    (function () {
       var deferredPrompt = null;
       var banner = document.getElementById('bems-pwa-install');
       var installBtn = document.getElementById('bems-pwa-install-btn');
@@ -44,114 +52,112 @@
       var isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
       if (isStandalone || sessionStorage.getItem('bems_pwa_dismissed') === '1') return;
 
-      window.addEventListener('beforeinstallprompt', function(e) {
+      window.addEventListener('beforeinstallprompt', function (e) {
         e.preventDefault();
         deferredPrompt = e;
         if (banner) banner.style.display = 'flex';
       });
       if (installBtn) {
-        installBtn.addEventListener('click', function() {
+        installBtn.addEventListener('click', function () {
           if (!deferredPrompt) return;
           deferredPrompt.prompt();
-          deferredPrompt.userChoice.finally(function() {
+          deferredPrompt.userChoice.finally(function () {
             deferredPrompt = null;
             if (banner) banner.style.display = 'none';
           });
         });
       }
       if (dismissBtn) {
-        dismissBtn.addEventListener('click', function() {
+        dismissBtn.addEventListener('click', function () {
           sessionStorage.setItem('bems_pwa_dismissed', '1');
           if (banner) banner.style.display = 'none';
         });
       }
-      window.addEventListener('appinstalled', function() {
+      window.addEventListener('appinstalled', function () {
         deferredPrompt = null;
         if (banner) banner.style.display = 'none';
       });
     })();
   </script>
-  <div
-    id="bems-face-enroll-modal"
-    style="display:none;position:fixed;inset:0;z-index:100000;background:rgba(15,23,42,0.48);backdrop-filter:blur(4px);align-items:center;justify-content:center;padding:16px;font-family:system-ui,-apple-system,sans-serif;"
-  >
-    <div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:20px;max-width:420px;width:100%;padding:24px;box-shadow:0 20px 50px rgba(15,23,42,0.2);text-align:center;">
-      <div style="display:inline-block;padding:4px 10px;border-radius:999px;background:#fff7ed;border:1px solid #fed7aa;color:#ea580c;font-size:10.5px;font-weight:800;margin-bottom:10px;">
+  <div id="bems-face-enroll-modal"
+    style="display:none;position:fixed;inset:0;z-index:100000;background:rgba(15,23,42,0.48);backdrop-filter:blur(4px);align-items:center;justify-content:center;padding:16px;font-family:system-ui,-apple-system,sans-serif;">
+    <div
+      style="background:#ffffff;border:1px solid #e2e8f0;border-radius:20px;max-width:420px;width:100%;padding:24px;box-shadow:0 20px 50px rgba(15,23,42,0.2);text-align:center;">
+      <div
+        style="display:inline-block;padding:4px 10px;border-radius:999px;background:#fff7ed;border:1px solid #fed7aa;color:#ea580c;font-size:10.5px;font-weight:800;margin-bottom:10px;">
         ACTION REQUIRED · ATTENDANCE SETUP
       </div>
       <h3 id="bems-face-modal-title" style="margin:0 0 8px;font-size:18px;font-weight:900;color:#0f172a;">
         Register Your Kiosk Face ID
       </h3>
       <p id="bems-face-modal-desc" style="margin:0 0 18px;font-size:13px;color:#475569;line-height:1.55;">
-        Please take 15 seconds to enroll your Face ID now so the Office Reception Kiosk camera can identify and clock you in automatically.
+        Please take 15 seconds to enroll your Face ID now so the Office Reception Kiosk camera can identify and clock
+        you in automatically.
       </p>
       <div style="display:flex;flex-direction:column;gap:8px;">
-        <a
-          href="/attendance/face-enroll?autostart=1"
-          style="display:block;padding:11px 16px;border-radius:12px;background:#ea580c;color:#ffffff;font-size:13px;font-weight:800;text-decoration:none;box-shadow:0 4px 12px rgba(234,88,12,0.25);"
-        >
+        <a href="/attendance/face-enroll?autostart=1"
+          style="display:block;padding:11px 16px;border-radius:12px;background:#ea580c;color:#ffffff;font-size:13px;font-weight:800;text-decoration:none;box-shadow:0 4px 12px rgba(234,88,12,0.25);">
           Enroll My Face ID Now →
         </a>
-        <button
-          id="bems-face-modal-later"
-          type="button"
-          style="width:100%;padding:9px 14px;border-radius:12px;border:1px solid #e2e8f0;background:#f8fafc;color:#64748b;font-size:12px;font-weight:700;cursor:pointer;"
-        >
+        <button id="bems-face-modal-later" type="button"
+          style="width:100%;padding:9px 14px;border-radius:12px;border:1px solid #e2e8f0;background:#f8fafc;color:#64748b;font-size:12px;font-weight:700;cursor:pointer;">
           Remind Me Later
         </button>
       </div>
     </div>
   </div>
   <script>
-    (function() {
+    (function () {
       var modal = document.getElementById('bems-face-enroll-modal');
       var modalTitle = document.getElementById('bems-face-modal-title');
       var modalDesc = document.getElementById('bems-face-modal-desc');
       var laterBtn = document.getElementById('bems-face-modal-later');
       if (laterBtn && modal) {
-        laterBtn.addEventListener('click', function() {
+        laterBtn.addEventListener('click', function () {
           modal.style.display = 'none';
-          // Re-open after 5 seconds if still not enrolled
           setTimeout(checkFaceStatus, 5000);
         });
       }
-      function getStaffHeaders() {
+      if (!modal) return;
+      function getStaffSessionInfo() {
         var hdrs = {};
+        var empId = '';
         try {
           var raw = localStorage.getItem('flutter.bems_staff_user') || localStorage.getItem('bems_staff_user');
           if (raw) {
             var p = JSON.parse(raw);
             if (typeof p === 'string') p = JSON.parse(p);
             if (p && p.token) hdrs['Authorization'] = 'Bearer ' + p.token;
+            if (p && (p.id || p.employeeId)) empId = String(p.id || p.employeeId);
           }
-        } catch (e) {}
-        return hdrs;
+        } catch (e) { }
+        return { headers: hdrs, employeeId: empId };
       }
       function checkFaceStatus() {
-        fetch('/api/attendance/face/profile', { credentials: 'include', cache: 'no-store', headers: getStaffHeaders() })
-          .then(function(r) { return r.ok ? r.json() : null; })
-          .then(function(data) {
-            if (!data || data.isExecutiveExempt || data.status === 'EXEMPT') {
-              if (modal) modal.style.display = 'none';
+        var info = getStaffSessionInfo();
+        var url = info.employeeId
+          ? '/api/attendance/face/profile?staffEmployeeId=' + encodeURIComponent(info.employeeId)
+          : '/api/attendance/face/profile';
+        fetch(url, { credentials: 'include', cache: 'no-store', headers: info.headers })
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (data) {
+            if (!data || data.isExecutiveExempt || data.status === 'EXEMPT' || data.status === 'APPROVED' || data.status === 'PENDING_APPROVAL') {
+              modal.style.display = 'none';
               return;
             }
-            if (data.status === 'APPROVED' || data.status === 'PENDING_APPROVAL') {
-              if (modal) modal.style.display = 'none';
-            } else if (data.status === 'REJECTED') {
-              if (modal && data.shouldPromptEnrollment) {
+            if (data.status === 'REJECTED') {
+              if (data.shouldPromptEnrollment) {
                 if (modalTitle) modalTitle.textContent = 'Re-Register Your Kiosk Face ID';
                 if (modalDesc && data.profile && data.profile.rejectionReason) {
                   modalDesc.textContent = data.profile.rejectionReason;
                 }
                 modal.style.display = 'flex';
               }
-            } else {
-              if (modal && data.shouldPromptEnrollment) {
-                modal.style.display = 'flex';
-              }
+            } else if (data.shouldPromptEnrollment) {
+              modal.style.display = 'flex';
             }
           })
-          .catch(function() {});
+          .catch(function () { });
       }
       setTimeout(checkFaceStatus, 1000);
       setInterval(checkFaceStatus, 5000);
@@ -159,4 +165,5 @@
   </script>
   <script src="flutter_bootstrap.js?v=20261118_0806" async></script>
 </body>
+
 </html>
