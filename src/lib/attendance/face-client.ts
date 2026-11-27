@@ -348,12 +348,16 @@ function computeEyeAspectRatio(eye: Array<{ x: number; y: number }>): number {
 }
 
 function computeMouthAspectRatio(mouth: Array<{ x: number; y: number }>): number {
-  if (!mouth || mouth.length < 12) return 0.15;
-  // Outer mouth: left corner 0, right corner 6; top 3, bottom 9
-  const v = dist2D(mouth[3], mouth[9]);
+  if (!mouth || mouth.length < 20) return 0.05;
+  // Inner lip opening (landmarks 61-67, 62-66, 63-65 -> mouth indices 13-19, 14-18, 15-17)
+  // Divided by outer mouth corner width (48-54 -> mouth indices 0-6).
+  // Independent of lip fullness: ~0.02..0.10 when closed for ALL faces, >=0.24 when open.
+  const v1 = dist2D(mouth[13], mouth[19]);
+  const v2 = dist2D(mouth[14], mouth[18]);
+  const v3 = dist2D(mouth[15], mouth[17]);
   const h = dist2D(mouth[0], mouth[6]);
-  if (h <= 0.001) return 0.15;
-  return v / h;
+  if (h <= 0.001) return 0.05;
+  return (v1 + v2 + v3) / (3.0 * h);
 }
 
 function computeEyeWidthSymmetry(

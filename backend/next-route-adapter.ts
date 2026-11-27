@@ -20,7 +20,7 @@ import {
 
 export type NextRouteHandler = (
   request: NextRequest,
-  context: { params: Promise<Record<string, string>> }
+  context: { params: Promise<Record<string, string | string[]>> }
 ) => Promise<Response> | Response;
 
 export type NextRouteModule = {
@@ -221,6 +221,8 @@ export function mountNextRoute(
   routeModule: NextRouteModule
 ): void {
   const fastifyPath = toFastifyRoutePath(nextPath);
+  const catchAllMatch = nextPath.match(/\[\[?\.\.\.([^\]]+)\]\]?/);
+  const catchAllParamName = catchAllMatch ? catchAllMatch[1] : null;
 
   for (const method of HTTP_METHODS) {
     const handler = routeModule[method];
@@ -264,9 +266,17 @@ export function mountNextRoute(
         }
 
         const rawParams = (req.params as Record<string, string>) || {};
-        const params: Record<string, string> = {};
+        const params: Record<string, string | string[]> = {};
         for (const [k, v] of Object.entries(rawParams)) {
-          if (v !== undefined) params[k] = String(v);
+          if (v === undefined) continue;
+          if (k === '*' && catchAllParamName) {
+            params[catchAllParamName] = String(v)
+              .split('/')
+              .map((seg) => seg.trim())
+              .filter(Boolean);
+          } else {
+            params[k] = String(v);
+          }
         }
 
         const webRes = await handler(nextReq, {

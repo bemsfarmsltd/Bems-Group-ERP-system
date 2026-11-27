@@ -363,7 +363,7 @@ export function KioskFaceRecognitionView({
               if (Math.abs(primary.yawRatio) > 0.20) {
                 setScanProgress(35);
                 setStatusText('Look straight at the camera to begin verification...');
-              } else if (primary.mar > 0.23) {
+              } else if (primary.mar > 0.16) {
                 // Blocks pre-opened-mouth photos from ever starting the challenge!
                 setScanProgress(38);
                 setStatusText('Keep your mouth closed briefly, then follow the prompt...');
@@ -403,7 +403,7 @@ export function KioskFaceRecognitionView({
               const openDelta = startMar !== null ? Math.max(0, peakMar - startMar) : 0;
 
               if (stage === 'WAIT_OPEN') {
-                if (peakMar >= 0.35 && openDelta >= 0.14) {
+                if (peakMar >= 0.24 && openDelta >= 0.10) {
                   stage = 'WAIT_CLOSE';
                   setFlashPhase('cool');
                   setScanProgress(82);
@@ -420,7 +420,7 @@ export function KioskFaceRecognitionView({
 
               if (stage === 'WAIT_CLOSE') {
                 const closeDelta = Math.max(0, peakMar - primary.mar);
-                if (primary.mar <= 0.26 && closeDelta >= 0.10 && lockFrames >= 3) {
+                if (primary.mar <= 0.16 && closeDelta >= 0.08 && lockFrames >= 3) {
                   const avgAntispoof =
                     antispoofScores.length > 0
                       ? antispoofScores.reduce((a, b) => a + b, 0) / antispoofScores.length
