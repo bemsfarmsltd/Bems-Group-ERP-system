@@ -12,6 +12,9 @@ declare global {
 }
 
 let loadPromise: Promise<any> | null = null;
+let antispoofModel: any = null;
+let livenessModel: any = null;
+let neuralPadModelsLoaded = false;
 
 export async function loadFaceApiModels(): Promise<any> {
   if (typeof window === 'undefined') {
@@ -73,6 +76,22 @@ export async function loadFaceApiModels(): Promise<any> {
       faceapi.nets.faceRecognitionNet.loadFromUri(modelPath),
     ]);
 
+    // Load self-hosted Neural Anti-Spoofing & Liveness GraphModels (PAD CNNs)
+    if (faceapi.tf && typeof faceapi.tf.loadGraphModel === 'function' && !neuralPadModelsLoaded) {
+      try {
+        const [asModel, lvModel] = await Promise.all([
+          faceapi.tf.loadGraphModel(`${modelPath}/antispoof.json`),
+          faceapi.tf.loadGraphModel(`${modelPath}/liveness.json`),
+        ]);
+        antispoofModel = asModel;
+        livenessModel = lvModel;
+        neuralPadModelsLoaded = true;
+      } catch {
+        // Non-fatal fallback: non-rigid mouth cycle & anti-swap still enforce strict liveness
+        neuralPadModelsLoaded = false;
+      }
+    }
+
     return faceapi;
   })().catch((err) => {
     loadPromise = null;
@@ -115,6 +134,113 @@ export interface LiveFaceFrameAnalysis {
 }
 
 let lumaCanvas: HTMLCanvasElement | null = null;
+let padCropCanvas: HTMLCanvasElement | null = null;
+
+export interface NeuralPadResult {
+  neuralReady: boolean;
+  antispoofScore: number; // 0..1 (higher = real human skin/depth; lower = phone screen / flat photo)
+  livenessScore: number;  // 0..1 (higher = live face)
+}
+
+/**
+ * Runs the self-hosted Neural Anti-Spoofing (128x128) and Liveness (32x32) CNN GraphModels
+ * on the cropped face region (with 15% border margin to catch phone bezels & screen edges).
+ */
+export async function evaluateNeuralAntiSpoof(
+  videoEl: HTMLVideoElement,
+  box: { x: number; y: number; width: number; height: number }
+): Promise<NeuralPadResult> {
+  const tf = window.faceapi?.tf;
+  if (!neuralPadModelsLoaded || !antispoofModel || !livenessModel || !tf) {
+    return { neuralReady: false, antispoofScore: 1, livenessScore: 1 };
+  }
+  try {
+    if (!padCropCanvas) {
+      padCropCanvas = document.createElement('canvas');
+      padCropCanvas.width = 128;
+      padCropCanvas.height = 128;
+    }
+    const ctx = padCropCanvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return { neuralReady: false, antispoofScore: 1, livenessScore: 1 };
+
+    const padX = box.width * 0.15;
+    const padY = box.height * 0.15;
+    const sx = Math.max(0, Math.floor(box.x - padX));
+    const sy = Math.max(0, Math.floor(box.y - padY));
+    const sw = Math.max(16, Math.min(videoEl.videoWidth - sx, Math.floor(box.width + padX * 2)));
+    const sh = Math.max(16, Math.min(videoEl.videoHeight - sy, Math.floor(box.height + padY * 2)));
+
+    ctx.drawImage(videoEl, sx, sy, sw, sh, 0, 0, 128, 128);
+
+    const pixels = tf.browser.fromPixels(padCropCanvas);
+    const input128 = pixels.toFloat().expandDims(0);
+    const input32 = tf.image.resizeBilinear(input128, [32, 32], false);
+
+    let antispoofScore = 0.5;
+    let livenessScore = 0.5;
+    let asOut: any = null;
+    let lvOut: any = null;
+    try {
+      asOut = antispoofModel.execute(input128);
+      lvOut = livenessModel.execute(input32);
+      const asData = await asOut.data();
+      const lvData = await lvOut.data();
+      antispoofScore = Math.max(0, Math.min(1, Number(asData?.[0] ?? 0.5)));
+      livenessScore = Math.max(0, Math.min(1, Number(lvData?.[0] ?? 0.5)));
+    } finally {
+      tf.dispose([pixels, input128, input32, asOut, lvOut].filter(Boolean));
+    }
+
+    return {
+      neuralReady: true,
+      antispoofScore: Number(antispoofScore.toFixed(3)),
+      livenessScore: Number(livenessScore.toFixed(3)),
+    };
+  } catch {
+    return { neuralReady: false, antispoofScore: 1, livenessScore: 1 };
+  }
+}
+
+/**
+ * Measures mean RGB channel intensity on the face box for Active Screen-Flash Reflection sensing.
+ */
+export function measureFaceRgbMean(
+  videoEl: HTMLVideoElement,
+  box: { x: number; y: number; width: number; height: number }
+): { r: number; g: number; b: number } {
+  try {
+    if (!lumaCanvas) {
+      lumaCanvas = document.createElement('canvas');
+      lumaCanvas.width = 32;
+      lumaCanvas.height = 32;
+    }
+    const ctx = lumaCanvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return { r: 128, g: 128, b: 128 };
+    const sx = Math.max(0, Math.floor(box.x));
+    const sy = Math.max(0, Math.floor(box.y));
+    const sw = Math.max(8, Math.min(videoEl.videoWidth - sx, Math.floor(box.width)));
+    const sh = Math.max(8, Math.min(videoEl.videoHeight - sy, Math.floor(box.height)));
+    ctx.drawImage(videoEl, sx, sy, sw, sh, 0, 0, 32, 32);
+    const data = ctx.getImageData(0, 0, 32, 32).data;
+    let r = 0;
+    let g = 0;
+    let b = 0;
+    const pixels = 32 * 32;
+    for (let i = 0; i < data.length; i += 4) {
+      r += data[i];
+      g += data[i + 1];
+      b += data[i + 2];
+    }
+    return {
+      r: Number((r / pixels).toFixed(2)),
+      g: Number((g / pixels).toFixed(2)),
+      b: Number((b / pixels).toFixed(2)),
+    };
+  } catch {
+    return { r: 128, g: 128, b: 128 };
+  }
+}
+
 function measureBoxBrightness(
   videoEl: HTMLVideoElement,
   box: { x: number; y: number; width: number; height: number }

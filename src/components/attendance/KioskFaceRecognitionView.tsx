@@ -19,7 +19,9 @@ import {
   analyzeVideoFaceFrame,
   averageFaceDescriptors,
   draw3dBiometricFaceMesh,
+  evaluateNeuralAntiSpoof,
   loadFaceApiModels,
+  measureFaceRgbMean,
   playKioskChime,
   speakFaceVoicePrompt,
   stopFaceVoicePrompt,
@@ -62,6 +64,7 @@ export function KioskFaceRecognitionView({
   const [verifying, setVerifying] = useState(false);
   const [scanProgress, setScanProgress] = useState(0); // 0..100 live biometric lock progress
   const [lightingAlert, setLightingAlert] = useState<string | null>(null);
+  const [flashPhase, setFlashPhase] = useState<'idle' | 'warm' | 'cool'>('idle');
   const [internalFullscreen, setInternalFullscreen] = useState(false);
   const [popup, setPopup] = useState<PopupModalState | null>(null);
   const [isEveningShift, setIsEveningShift] = useState(false);
@@ -188,41 +191,35 @@ export function KioskFaceRecognitionView({
         await videoRef.current.play();
       }
 
-      type LivenessChallenge = 'CHALLENGE_MOUTH_OPEN' | 'CHALLENGE_TURN_LEFT' | 'CHALLENGE_TURN_RIGHT';
-      const CHALLENGE_PROMPTS: Record<LivenessChallenge, { banner: string; voice: string }> = {
-        CHALLENGE_MOUTH_OPEN: {
-          banner: 'Liveness Check: Please OPEN YOUR MOUTH slightly',
-          voice: 'Face locked. Please open your mouth slightly to verify.',
-        },
-        CHALLENGE_TURN_LEFT: {
-          banner: 'Liveness Check: Please TURN YOUR HEAD slightly LEFT',
-          voice: 'Face locked. Please turn your head slightly to the left to verify.',
-        },
-        CHALLENGE_TURN_RIGHT: {
-          banner: 'Liveness Check: Please TURN YOUR HEAD slightly RIGHT',
-          voice: 'Face locked. Please turn your head slightly to the right to verify.',
-        },
-      };
+      type MouthCycleStage = 'IDLE' | 'WAIT_OPEN' | 'WAIT_CLOSE';
 
       activeRef.current = true;
       let capturedDescriptors: number[][] = [];
       let lockFrames = 0;
-      let activeChallenge: LivenessChallenge | null = null;
+      let stage: MouthCycleStage = 'IDLE';
       let startMar: number | null = null;
       let peakMar = 0;
-      let startYaw: number | null = null;
-      let peakYawLeft = 0;
-      let peakYawRight = 0;
+      let prevBox: { cx: number; cy: number; w: number } | null = null;
+      let baselineRgb: { r: number; g: number; b: number } | null = null;
+      let maxFlashRgbDelta = 0;
+      let neuralReadyFlag = false;
+      let antispoofScores: number[] = [];
+      let livenessScores: number[] = [];
+      let consecutiveSpoofFrames = 0;
 
       const resetLivenessBuffer = () => {
         capturedDescriptors = [];
         lockFrames = 0;
-        activeChallenge = null;
+        stage = 'IDLE';
         startMar = null;
         peakMar = 0;
-        startYaw = null;
-        peakYawLeft = 0;
-        peakYawRight = 0;
+        prevBox = null;
+        baselineRgb = null;
+        maxFlashRgbDelta = 0;
+        antispoofScores = [];
+        livenessScores = [];
+        consecutiveSpoofFrames = 0;
+        setFlashPhase('idle');
       };
 
       // Auto-recover if the camera track stops unexpectedly
@@ -246,7 +243,7 @@ export function KioskFaceRecognitionView({
         if (!activeRef.current || !videoRef.current) return;
 
         try {
-          // Continuous 3D radar tracks all faces in view, while strictly enforcing randomized Active Challenge-Response liveness
+          // Continuous 3D radar tracks all faces in view, while strictly enforcing 3-layer Bank-Style Anti-Spoofing
           const frame = await analyzeVideoFaceFrame(videoRef.current, true, {
             allowMultiple: true,
             longRange: true,
@@ -262,9 +259,9 @@ export function KioskFaceRecognitionView({
             (f) => f.descriptor && f.faceSizeRatio >= 0.05 && f.detectionScore >= 0.25
           );
 
-          // High-clarity faces eligible for biometric identity + active liveness challenge
+          // High-clarity faces eligible for biometric identity + neural anti-spoofing + mouth-cycle challenge
           const matchableFaces = trackedFaces.filter(
-            (f) => f.faceSizeRatio >= 0.11 && f.detectionScore >= 0.45 && Math.abs(f.yawRatio) <= 0.45
+            (f) => f.faceSizeRatio >= 0.11 && f.detectionScore >= 0.45 && Math.abs(f.yawRatio) <= 0.42
           );
 
           if (trackedFaces.length === 0) {
@@ -292,8 +289,60 @@ export function KioskFaceRecognitionView({
               frame.faceBrightness < 44 ? 'Low lighting detected — auto-exposure boost active' : null
             );
 
-            // Frame-to-frame identity stability check (only when looking straight)
-            if (primary.descriptor && Math.abs(primary.yawRatio) <= 0.22) {
+            // Layer 1: Self-Hosted Neural Anti-Spoofing & Liveness CNN evaluation (catches phone screens & prints)
+            const pad = await evaluateNeuralAntiSpoof(videoRef.current, primary.box);
+            if (pad.neuralReady) {
+              neuralReadyFlag = true;
+              antispoofScores.push(pad.antispoofScore);
+              livenessScores.push(pad.livenessScore);
+              if (antispoofScores.length > 8) antispoofScores.shift();
+              if (livenessScores.length > 8) livenessScores.shift();
+
+              if (pad.antispoofScore < 0.34 && pad.livenessScore < 0.34) {
+                consecutiveSpoofFrames++;
+              } else {
+                consecutiveSpoofFrames = 0;
+              }
+
+              // Immediate Neural Spoof Block if 3 consecutive frames are flagged as flat phone screen / photo
+              if (consecutiveSpoofFrames >= 3) {
+                cooldownUntilRef.current = Date.now() + 4200;
+                resetLivenessBuffer();
+                setScanProgress(0);
+                playKioskChime('error');
+                speakFaceVoicePrompt(
+                  'Spoof detected. Phone screens and photos are strictly blocked. Please step up in person.',
+                  { force: true, muted: false }
+                );
+                setPopup({
+                  variant: 'error',
+                  badgeText: 'NEURAL ANTI-SPOOF · SCREEN / PHOTO BLOCKED',
+                  message:
+                    'A phone screen or flat photo was detected by the neural anti-spoofing guard. Please step up to the kiosk in person.',
+                });
+                if (activeRef.current) setTimeout(tick, 220);
+                return;
+              }
+            }
+
+            // Anti-Photo-Swap Guard: detect sudden box jump or scale jump (swiping between two photos on a phone)
+            const curCx = primary.normBox.x + primary.normBox.width / 2;
+            const curCy = primary.normBox.y + primary.normBox.height / 2;
+            const curW = Math.max(0.05, primary.normBox.width);
+            if (prevBox && stage !== 'IDLE') {
+              const jumpDist = Math.hypot(curCx - prevBox.cx, curCy - prevBox.cy);
+              const scaleDiff = Math.abs(curW - prevBox.w) / prevBox.w;
+              if (jumpDist > prevBox.w * 0.24 || scaleDiff > 0.26) {
+                resetLivenessBuffer();
+                setStatusText('Movement interrupted — hold steady and look straight at the camera');
+                if (activeRef.current) setTimeout(tick, 180);
+                return;
+              }
+            }
+            prevBox = { cx: curCx, cy: curCy, w: curW };
+
+            // Frame-to-frame 128-D identity stability check (only when looking straight)
+            if (primary.descriptor && Math.abs(primary.yawRatio) <= 0.24) {
               if (capturedDescriptors.length > 0) {
                 const prev = capturedDescriptors[capturedDescriptors.length - 1];
                 let sumSq = 0;
@@ -309,29 +358,27 @@ export function KioskFaceRecognitionView({
               if (capturedDescriptors.length > 3) capturedDescriptors.shift();
             }
 
-            // Wait for a clean straight-facing baseline frame before starting the randomized challenge
-            if (!activeChallenge) {
-              if (Math.abs(primary.yawRatio) > 0.16) {
+            // Layer 2 & 3: Non-Rigid Bidirectional Mouth Cycle (Closed -> Open -> Closed) + Active Screen-Flash Sensing
+            if (stage === 'IDLE') {
+              if (Math.abs(primary.yawRatio) > 0.20) {
                 setScanProgress(35);
-                setStatusText('Look straight at the camera to start verification...');
+                setStatusText('Look straight at the camera to begin verification...');
+              } else if (primary.mar > 0.23) {
+                // Blocks pre-opened-mouth photos from ever starting the challenge!
+                setScanProgress(38);
+                setStatusText('Keep your mouth closed briefly, then follow the prompt...');
               } else {
-                // Pick a random challenge that cannot be pre-staged by a photo:
-                // If mouth is already open (>0.20), force a head-turn challenge so open-mouth photos can't pass!
-                const pool: LivenessChallenge[] =
-                  primary.mar <= 0.20
-                    ? ['CHALLENGE_MOUTH_OPEN', 'CHALLENGE_TURN_LEFT', 'CHALLENGE_TURN_RIGHT']
-                    : ['CHALLENGE_TURN_LEFT', 'CHALLENGE_TURN_RIGHT'];
-                activeChallenge = pool[Math.floor(Math.random() * pool.length)];
+                stage = 'WAIT_OPEN';
                 startMar = primary.mar;
                 peakMar = primary.mar;
-                startYaw = primary.yawRatio;
-                peakYawLeft = primary.yawRatio;
-                peakYawRight = primary.yawRatio;
                 lockFrames = 1;
-                setScanProgress(50);
+                baselineRgb = measureFaceRgbMean(videoRef.current, primary.box);
+                maxFlashRgbDelta = 0;
+                setFlashPhase('warm');
+                setScanProgress(52);
                 playKioskChime('lock');
-                setStatusText(CHALLENGE_PROMPTS[activeChallenge].banner);
-                speakFaceVoicePrompt(CHALLENGE_PROMPTS[activeChallenge].voice, {
+                setStatusText('Liveness Check: Please OPEN YOUR MOUTH slightly, then close it');
+                speakFaceVoicePrompt('Face locked. Please open your mouth, then close it to verify.', {
                   force: true,
                   muted: false,
                 });
@@ -339,69 +386,96 @@ export function KioskFaceRecognitionView({
             } else {
               lockFrames++;
               if (primary.mar > peakMar) peakMar = primary.mar;
-              if (primary.yawRatio < peakYawLeft) peakYawLeft = primary.yawRatio;
-              if (primary.yawRatio > peakYawRight) peakYawRight = primary.yawRatio;
 
-              const marDelta = startMar !== null ? Math.max(0, peakMar - startMar) : 0;
-              // Note: video is horizontally mirrored with scaleX(-1):
-              // User turning THEIR head LEFT moves nose toward positive yawRatio or negative depending on mirror,
-              // so we check the exact landmark yaw direction matching mirrored preview!
-              const leftYawDelta = startYaw !== null ? Math.max(0, startYaw - peakYawLeft) : 0;
-              const rightYawDelta = startYaw !== null ? Math.max(0, peakYawRight - startYaw) : 0;
+              // Alternate subtle light-theme screen-flash ring (warm orange <-> cool sky) and measure skin RGB reflection
+              if (lockFrames === 4) setFlashPhase('cool');
+              else if (lockFrames === 8) setFlashPhase('warm');
+              if (baselineRgb) {
+                const curRgb = measureFaceRgbMean(videoRef.current, primary.box);
+                const rgbDelta = Math.hypot(
+                  curRgb.r - baselineRgb.r,
+                  curRgb.g - baselineRgb.g,
+                  curRgb.b - baselineRgb.b
+                );
+                if (rgbDelta > maxFlashRgbDelta) maxFlashRgbDelta = rgbDelta;
+              }
+
+              const openDelta = startMar !== null ? Math.max(0, peakMar - startMar) : 0;
+
+              if (stage === 'WAIT_OPEN') {
+                if (peakMar >= 0.35 && openDelta >= 0.14) {
+                  stage = 'WAIT_CLOSE';
+                  setFlashPhase('cool');
+                  setScanProgress(82);
+                  playKioskChime('lock');
+                  setStatusText('Great! Now CLOSE YOUR MOUTH to complete verification');
+                } else {
+                  setScanProgress(Math.min(76, 52 + Math.round(lockFrames * 1.0)));
+                  setStatusText('Liveness Check: Please OPEN YOUR MOUTH slightly, then close it');
+                }
+              }
 
               let challengePassed = false;
               let livenessProof: Record<string, any> | null = null;
 
-              if (
-                activeChallenge === 'CHALLENGE_MOUTH_OPEN' &&
-                startMar !== null &&
-                startMar <= 0.22 &&
-                peakMar >= 0.34 &&
-                marDelta >= 0.14
-              ) {
-                challengePassed = true;
-                livenessProof = {
-                  method: 'CHALLENGE_MOUTH_OPEN',
-                  startMar: Number(startMar.toFixed(4)),
-                  peakMar: Number(peakMar.toFixed(4)),
-                  marDelta: Number(marDelta.toFixed(4)),
-                  framesAnalyzed: lockFrames,
-                };
-              } else if (
-                activeChallenge === 'CHALLENGE_TURN_LEFT' &&
-                startYaw !== null &&
-                peakYawLeft <= -0.22 &&
-                leftYawDelta >= 0.16
-              ) {
-                challengePassed = true;
-                livenessProof = {
-                  method: 'CHALLENGE_TURN_LEFT',
-                  startYaw: Number(startYaw.toFixed(4)),
-                  peakYaw: Number(peakYawLeft.toFixed(4)),
-                  yawDelta: Number(leftYawDelta.toFixed(4)),
-                  framesAnalyzed: lockFrames,
-                };
-              } else if (
-                activeChallenge === 'CHALLENGE_TURN_RIGHT' &&
-                startYaw !== null &&
-                peakYawRight >= 0.22 &&
-                rightYawDelta >= 0.16
-              ) {
-                challengePassed = true;
-                livenessProof = {
-                  method: 'CHALLENGE_TURN_RIGHT',
-                  startYaw: Number(startYaw.toFixed(4)),
-                  peakYaw: Number(peakYawRight.toFixed(4)),
-                  yawDelta: Number(rightYawDelta.toFixed(4)),
-                  framesAnalyzed: lockFrames,
-                };
+              if (stage === 'WAIT_CLOSE') {
+                const closeDelta = Math.max(0, peakMar - primary.mar);
+                if (primary.mar <= 0.26 && closeDelta >= 0.10 && lockFrames >= 3) {
+                  const avgAntispoof =
+                    antispoofScores.length > 0
+                      ? antispoofScores.reduce((a, b) => a + b, 0) / antispoofScores.length
+                      : 1;
+                  const avgLiveness =
+                    livenessScores.length > 0
+                      ? livenessScores.reduce((a, b) => a + b, 0) / livenessScores.length
+                      : 1;
+
+                  const neuralPadPassed = !neuralReadyFlag || avgAntispoof >= 0.42 || avgLiveness >= 0.45;
+                  if (!neuralPadPassed) {
+                    cooldownUntilRef.current = Date.now() + 4200;
+                    resetLivenessBuffer();
+                    setScanProgress(0);
+                    playKioskChime('error');
+                    speakFaceVoicePrompt(
+                      'Neural anti-spoofing blocked this scan. Phone screens and video replays are not allowed.',
+                      { force: true, muted: false }
+                    );
+                    setPopup({
+                      variant: 'error',
+                      badgeText: 'NEURAL ANTI-SPOOF · SCREEN REPLAY BLOCKED',
+                      message:
+                        'Our neural anti-spoofing model detected a screen or video replay. Please step up to the kiosk in person.',
+                    });
+                    if (activeRef.current) setTimeout(tick, 220);
+                    return;
+                  }
+
+                  challengePassed = true;
+                  livenessProof = {
+                    method: 'CHALLENGE_MOUTH_CYCLE',
+                    startMar: Number((startMar ?? 0).toFixed(4)),
+                    peakMar: Number(peakMar.toFixed(4)),
+                    openDelta: Number(openDelta.toFixed(4)),
+                    endMar: Number(primary.mar.toFixed(4)),
+                    closeDelta: Number(closeDelta.toFixed(4)),
+                    neuralReady: neuralReadyFlag,
+                    antispoofScore: Number(avgAntispoof.toFixed(3)),
+                    livenessScore: Number(avgLiveness.toFixed(3)),
+                    flashReflectionDelta: Number(maxFlashRgbDelta.toFixed(2)),
+                    framesAnalyzed: lockFrames,
+                  };
+                } else {
+                  setScanProgress(Math.min(92, 82 + Math.round(lockFrames * 0.4)));
+                  setStatusText('Great! Now CLOSE YOUR MOUTH to complete verification');
+                }
               }
 
               if (challengePassed && livenessProof && capturedDescriptors.length >= 1) {
+                setFlashPhase('idle');
                 setLivenessReady(true);
                 setVerifying(true);
                 setScanProgress(100);
-                setStatusText('Live challenge passed — matching 3D Face ID...');
+                setStatusText('Live anti-spoof passed — matching 3D Face ID...');
                 cooldownUntilRef.current = Date.now() + 4500;
 
                 const fusedDescriptor = averageFaceDescriptors(capturedDescriptors);
@@ -481,25 +555,22 @@ export function KioskFaceRecognitionView({
                       'Could not verify Face ID. Ensure your Face ID is registered on the Staff Portal and look toward the kiosk camera.',
                   });
                 }
-              } else if (lockFrames >= 34) {
-                // Failed to perform the requested physical challenge within ~6.5 seconds (photo / phone screen!)
+              } else if (lockFrames >= 38) {
+                // Failed to complete Closed -> Open -> Closed cycle within ~7 seconds (photo / phone screen!)
                 cooldownUntilRef.current = Date.now() + 4200;
                 resetLivenessBuffer();
                 setScanProgress(0);
                 playKioskChime('error');
                 speakFaceVoicePrompt(
-                  'Liveness challenge failed. Photos and phone screens are blocked. Please step up in person and follow the prompt.',
+                  'Liveness check failed. Photos and phone screens are blocked. Please step up in person, open your mouth, and close it.',
                   { force: true, muted: false }
                 );
                 setPopup({
                   variant: 'error',
-                  badgeText: 'SPOOF BLOCKED · LIVENESS CHALLENGE FAILED',
+                  badgeText: 'SPOOF BLOCKED · LIVENESS CHECK FAILED',
                   message:
-                    'The requested live facial action was not completed. Photos and phone screens are strictly blocked. Please step up in person and follow the prompt.',
+                    'The live open-and-close mouth check was not completed. Photos and phone screens are strictly blocked. Please step up in person.',
                 });
-              } else {
-                setScanProgress(Math.min(86, 50 + Math.round(lockFrames * 1.1)));
-                setStatusText(CHALLENGE_PROMPTS[activeChallenge].banner);
               }
             }
           }
@@ -596,11 +667,11 @@ export function KioskFaceRecognitionView({
             fontWeight: 800,
           }}
         >
-          <ShieldCheck size={13} /> Liveness Guard Active
+          <ShieldCheck size={13} /> Neural Anti-Spoof Active
         </span>
       </div>
 
-      {/* Biometric Camera Viewfinder with Corner Reticle Brackets */}
+      {/* Biometric Camera Viewfinder with Corner Reticle Brackets & Active Screen-Flash Illumination Ring */}
       <div
         style={{
           position: 'relative',
@@ -609,6 +680,20 @@ export function KioskFaceRecognitionView({
           aspectRatio: isFullscreen ? '16 / 10.5' : '4 / 3.2',
           maxHeight: isFullscreen ? '64vh' : undefined,
           padding: '10px',
+          borderRadius: '26px',
+          background:
+            flashPhase === 'warm'
+              ? 'rgba(251, 146, 60, 0.22)'
+              : flashPhase === 'cool'
+              ? 'rgba(56, 189, 248, 0.22)'
+              : 'transparent',
+          boxShadow:
+            flashPhase === 'warm'
+              ? '0 0 0 4px rgba(234, 88, 12, 0.28), 0 0 38px rgba(251, 146, 60, 0.35)'
+              : flashPhase === 'cool'
+              ? '0 0 0 4px rgba(14, 165, 233, 0.28), 0 0 38px rgba(56, 189, 248, 0.35)'
+              : 'none',
+          transition: 'background 0.22s ease, box-shadow 0.22s ease',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',

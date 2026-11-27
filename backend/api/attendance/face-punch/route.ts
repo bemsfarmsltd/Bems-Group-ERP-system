@@ -36,40 +36,43 @@ export async function POST(request: Request) {
           method?: string;
           startMar?: number;
           peakMar?: number;
-          marDelta?: number;
-          startYaw?: number;
-          peakYaw?: number;
-          yawDelta?: number;
+          openDelta?: number;
+          endMar?: number;
+          closeDelta?: number;
+          neuralReady?: boolean;
+          antispoofScore?: number;
+          livenessScore?: number;
+          flashReflectionDelta?: number;
           framesAnalyzed?: number;
         }
       | undefined;
     const requestedAction = typeof body?.action === 'string' ? body.action.toUpperCase() : 'AUTO';
     const requestedStationCode = typeof body?.stationCode === 'string' ? body.stationCode.trim() : '';
 
-    // Strict Active Challenge-Response Liveness Validation (impossible for static photos or phone screens)
-    const validMouthChallenge =
-      livenessProof?.method === 'CHALLENGE_MOUTH_OPEN' &&
-      Number(livenessProof?.startMar ?? 1) <= 0.22 &&
-      Number(livenessProof?.peakMar ?? 0) >= 0.34 &&
-      Number(livenessProof?.marDelta ?? 0) >= 0.14;
+    // Strict Multi-Layer Anti-Spoofing Validation:
+    // 1. Only non-rigid bidirectional mouth articulation (Closed -> Open -> Closed) is accepted.
+    //    Head-turn challenges are permanently removed because tilting a phone can fake 2D yaw.
+    // 2. When Neural PAD CNN models are loaded in browser, require passing real-vs-spoof score.
+    const validMouthCycle =
+      livenessProof?.method === 'CHALLENGE_MOUTH_CYCLE' &&
+      Number(livenessProof?.startMar ?? 1) <= 0.23 &&
+      Number(livenessProof?.peakMar ?? 0) >= 0.35 &&
+      Number(livenessProof?.openDelta ?? 0) >= 0.14 &&
+      Number(livenessProof?.endMar ?? 1) <= 0.26 &&
+      Number(livenessProof?.closeDelta ?? 0) >= 0.10 &&
+      Number(livenessProof?.framesAnalyzed ?? 0) >= 3;
 
-    const validTurnLeftChallenge =
-      livenessProof?.method === 'CHALLENGE_TURN_LEFT' &&
-      Math.abs(Number(livenessProof?.startYaw ?? 1)) <= 0.18 &&
-      Number(livenessProof?.peakYaw ?? 0) <= -0.22 &&
-      Number(livenessProof?.yawDelta ?? 0) >= 0.16;
+    const neuralReady = livenessProof?.neuralReady === true;
+    const antispoofScore = Number(livenessProof?.antispoofScore ?? 0);
+    const livenessScore = Number(livenessProof?.livenessScore ?? 0);
+    const neuralPadPassed = !neuralReady || antispoofScore >= 0.42 || livenessScore >= 0.45;
 
-    const validTurnRightChallenge =
-      livenessProof?.method === 'CHALLENGE_TURN_RIGHT' &&
-      Math.abs(Number(livenessProof?.startYaw ?? 1)) <= 0.18 &&
-      Number(livenessProof?.peakYaw ?? 0) >= 0.22 &&
-      Number(livenessProof?.yawDelta ?? 0) >= 0.16;
-
-    if (!livenessVerified || (!validMouthChallenge && !validTurnLeftChallenge && !validTurnRightChallenge)) {
+    if (!livenessVerified || !validMouthCycle || !neuralPadPassed) {
       return NextResponse.json(
         {
-          error:
-            'Anti-Spoofing Challenge Failed: Photos and phone screens cannot clock in. Please step up in person and follow the on-screen liveness prompt.',
+          error: !neuralPadPassed
+            ? 'Neural Anti-Spoofing Blocked: Phone screen or printed photo detected. Please step up in person.'
+            : 'Anti-Spoofing Challenge Failed: Photos and phone screens cannot clock in. Please open and close your mouth in person.',
           spoofBlocked: true,
         },
         { status: 403 }
