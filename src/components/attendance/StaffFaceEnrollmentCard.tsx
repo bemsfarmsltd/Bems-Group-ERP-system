@@ -49,6 +49,7 @@ export function StaffFaceEnrollmentCard({
   const [statusHint, setStatusHint] = useState('Initializing camera & biometric models...');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [lightingStatus, setLightingStatus] = useState<'GOOD' | 'TOO_DARK' | 'TOO_BRIGHT'>('GOOD');
   const [voiceMuted, setVoiceMuted] = useState(false);
   const voiceMutedRef = useRef(false);
 
@@ -204,7 +205,22 @@ export function StaffFaceEnrollmentCard({
               muted: voiceMutedRef.current,
               minIntervalMs: 4500,
             });
+          } else if (frame.faceBrightness < 72) {
+            setLightingStatus('TOO_DARK');
+            setStatusHint('Too dark — move to a well-lit area facing the light before capturing.');
+            speakFaceVoicePrompt(
+              'Lighting is too dark for Face ID enrollment. Please move to a well-lit place facing the light.',
+              { muted: voiceMutedRef.current, minIntervalMs: 5500 }
+            );
+          } else if (frame.faceBrightness > 225) {
+            setLightingStatus('TOO_BRIGHT');
+            setStatusHint('Too much direct glare — step slightly away from harsh glare for clear capture.');
+            speakFaceVoicePrompt(
+              'Too much glare on your face. Please adjust your angle for even lighting.',
+              { muted: voiceMutedRef.current, minIntervalMs: 5500 }
+            );
           } else if (currentStep === 'STRAIGHT') {
+            setLightingStatus('GOOD');
             if (Math.abs(frame.yawRatio) <= 0.16 && frame.detectionScore >= 0.5) {
               samplesRef.current.push(frame.descriptor);
               baselineEarRef.current = Math.max(0.24, frame.ear);
@@ -220,6 +236,7 @@ export function StaffFaceEnrollmentCard({
               setStatusHint('Step 1 of 3: Look straight at the camera in clear lighting.');
             }
           } else if (currentStep === 'TURN_HEAD') {
+            setLightingStatus('GOOD');
             if (Math.abs(frame.yawRatio) >= 0.16 && Math.abs(frame.yawRatio) <= 0.28 && frame.detectionScore >= 0.48) {
               samplesRef.current.push(frame.descriptor);
               currentStep = 'BLINK';
@@ -233,6 +250,7 @@ export function StaffFaceEnrollmentCard({
               setStatusHint('Step 2 of 3: Gently turn your head slightly left or right (keep both eyes visible).');
             }
           } else if (currentStep === 'BLINK') {
+            setLightingStatus('GOOD');
             if (frame.ear > 0.24) openEyeFrames++;
             const blinked = openEyeFrames >= 1 && frame.ear < Math.min(0.22, baselineEarRef.current * 0.82);
             const oppositeTurn = Math.abs(frame.yawRatio) <= 0.12 && openEyeFrames >= 4;
@@ -661,6 +679,33 @@ export function StaffFaceEnrollmentCard({
                     transform: 'scaleX(-1)',
                   }}
                 />
+                {/* Live Lighting Quality Badge */}
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: '10px',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    padding: '4px 11px',
+                    borderRadius: '999px',
+                    fontSize: '11px',
+                    fontWeight: 800,
+                    background:
+                      lightingStatus === 'GOOD'
+                        ? 'rgba(236, 253, 245, 0.94)'
+                        : 'rgba(254, 242, 242, 0.96)',
+                    color: lightingStatus === 'GOOD' ? '#047857' : '#b91c1c',
+                    border: `1px solid ${lightingStatus === 'GOOD' ? '#a7f3d0' : '#fecaca'}`,
+                    boxShadow: '0 2px 8px rgba(15, 23, 42, 0.12)',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {lightingStatus === 'GOOD'
+                    ? '✓ Lighting Good'
+                    : lightingStatus === 'TOO_DARK'
+                    ? '⚠ Too Dark — Face the Light'
+                    : '⚠ Too Much Glare — Adjust Angle'}
+                </div>
                 {/* Oval Face Guide */}
                 <div
                   style={{

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { Camera, CheckCircle2, QrCode, RefreshCw, RotateCcw, Search, ShieldCheck, XCircle } from 'lucide-react';
+import { Camera, CheckCircle2, QrCode, RefreshCw, RotateCcw, Search, ShieldCheck, X, XCircle, ZoomIn } from 'lucide-react';
 
 export function TopBarAttendanceModeSwitcher({
   onOpenFaceTab,
@@ -111,6 +111,16 @@ export function HrFaceRegistryPanel({ onModeChanged }: HrFaceRegistryPanelProps)
   const [filter, setFilter] = useState<'ALL' | 'PENDING_APPROVAL' | 'APPROVED' | 'NOT_ENROLLED'>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [previewRow, setPreviewRow] = useState<any | null>(null);
+
+  useEffect(() => {
+    if (!previewRow) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setPreviewRow(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [previewRow]);
 
   const loadData = useCallback(async () => {
     try {
@@ -518,17 +528,53 @@ export function HrFaceRegistryPanel({ onModeChanged }: HrFaceRegistryPanelProps)
                   </td>
                   <td style={{ padding: '10px 12px' }}>
                     {row.referencePhotoUrl ? (
-                      <img
-                        src={row.referencePhotoUrl}
-                        alt={row.legalName}
+                      <button
+                        type="button"
+                        onClick={() => setPreviewRow(row)}
+                        title="Click to inspect Face Snapshot in full screen"
                         style={{
-                          width: '40px',
-                          height: '40px',
+                          position: 'relative',
+                          padding: 0,
+                          border: 'none',
+                          background: 'transparent',
+                          cursor: 'zoom-in',
+                          display: 'inline-flex',
+                          alignItems: 'center',
                           borderRadius: '10px',
-                          objectFit: 'cover',
-                          border: '1px solid #cbd5e1',
                         }}
-                      />
+                      >
+                        <img
+                          src={row.referencePhotoUrl}
+                          alt={row.legalName}
+                          style={{
+                            width: '44px',
+                            height: '44px',
+                            borderRadius: '10px',
+                            objectFit: 'cover',
+                            border: '1.5px solid #cbd5e1',
+                            display: 'block',
+                          }}
+                        />
+                        <span
+                          style={{
+                            position: 'absolute',
+                            right: '-4px',
+                            bottom: '-4px',
+                            width: '18px',
+                            height: '18px',
+                            borderRadius: '999px',
+                            background: '#ffffff',
+                            border: '1px solid #cbd5e1',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            color: '#ea580c',
+                            boxShadow: '0 1px 3px rgba(15, 23, 42, 0.14)',
+                          }}
+                        >
+                          <ZoomIn size={10} />
+                        </span>
+                      </button>
                     ) : (
                       <span style={{ fontSize: '11px', color: '#94a3b8' }}>—</span>
                     )}
@@ -670,6 +716,120 @@ export function HrFaceRegistryPanel({ onModeChanged }: HrFaceRegistryPanelProps)
           </tbody>
         </table>
       </div>
+      {/* Full-Screen Face Snapshot Lightbox Modal */}
+      {previewRow && previewRow.referencePhotoUrl && (
+        <div
+          onClick={() => setPreviewRow(null)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 100020,
+            background: 'rgba(15, 23, 42, 0.72)',
+            backdropFilter: 'blur(6px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '24px',
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: '#ffffff',
+              border: '1px solid #e2e8f0',
+              borderRadius: '24px',
+              maxWidth: '520px',
+              width: '100%',
+              padding: '22px',
+              boxShadow: '0 24px 60px rgba(15, 23, 42, 0.28)',
+              position: 'relative',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+              <div>
+                <div style={{ fontSize: '16px', fontWeight: 900, color: '#0f172a' }}>{previewRow.legalName}</div>
+                <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 600 }}>
+                  {previewRow.employeeNumber} · {previewRow.subsidiaryName}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewRow(null)}
+                style={{
+                  width: '34px',
+                  height: '34px',
+                  borderRadius: '10px',
+                  border: '1px solid #e2e8f0',
+                  background: '#f8fafc',
+                  color: '#475569',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                }}
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div
+              style={{
+                width: '100%',
+                aspectRatio: '1 / 1',
+                borderRadius: '18px',
+                overflow: 'hidden',
+                border: '1px solid #e2e8f0',
+                background: '#f8fafc',
+                marginBottom: '16px',
+              }}
+            >
+              <img
+                src={previewRow.referencePhotoUrl}
+                alt={previewRow.legalName}
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'cover',
+                  display: 'block',
+                }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 600 }}>
+                {previewRow.enrolledAt
+                  ? `Enrolled ${new Date(previewRow.enrolledAt).toLocaleString()}`
+                  : 'Face ID Snapshot'}
+              </span>
+              <button
+                type="button"
+                disabled={busyId === previewRow.employeeId}
+                onClick={async () => {
+                  const empId = previewRow.employeeId;
+                  await handleProfileAction(empId, 'RESET');
+                  setPreviewRow(null);
+                }}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '9px 14px',
+                  borderRadius: '10px',
+                  border: 'none',
+                  background: '#ea580c',
+                  color: '#ffffff',
+                  fontSize: '12px',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                }}
+              >
+                <RotateCcw size={13} />
+                Reset &amp; Email to Re-Enroll in Good Light
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

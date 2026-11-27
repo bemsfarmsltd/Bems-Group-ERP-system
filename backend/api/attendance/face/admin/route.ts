@@ -179,93 +179,6 @@ export async function POST(request: Request) {
       });
     }
 
-    if (action === 'ENFORCE_ALL_UNENROLLED') {
-      const [activeStaff, faceRows] = await Promise.all([
-        prisma.employee.findMany({
-          where: {
-            status: 'ACTIVE',
-            role: { in: ['STAFF', 'CUSTOM_ADMIN'] },
-            isAttendanceExempt: false,
-          },
-          select: {
-            id: true,
-            legalName: true,
-            employeeNumber: true,
-            workEmail: true,
-            isOfflineStaff: true,
-          },
-        }),
-        prisma.$queryRawUnsafe<Array<{ employeeId: string; status: string }>>(
-          `SELECT "employeeId", "status" FROM "EmployeeFaceProfile"`
-        ),
-      ]);
-
-      const enrolledIds = new Set(
-        faceRows
-          .filter((r) => r.status === 'APPROVED' || r.status === 'PENDING_APPROVAL')
-          .map((r) => r.employeeId)
-      );
-
-      const unenrolled = activeStaff.filter((s) => !enrolledIds.has(s.id));
-
-      if (unenrolled.length > 0) {
-        await prisma.systemNotification.createMany({
-          data: unenrolled.map((s) => ({
-            employeeId: s.id,
-            kind: 'ALERT',
-            title: 'MANDATORY: Enroll Your Kiosk Face ID Now',
-            body: 'BEMS Management requires all active staff to register their Face ID immediately for reception kiosk attendance. Tap to enroll in 15 seconds.',
-            linkUrl: '/attendance/face-enroll?autostart=1',
-          })),
-        });
-      }
-
-      let emailsSent = 0;
-      const enrollUrl = 'https://bemserp.work/attendance/face-enroll?autostart=1';
-      for (const s of unenrolled) {
-        if (!s.workEmail || s.workEmail.endsWith('@bems.internal') || s.isOfflineStaff) continue;
-        const res = await sendEmail({
-          to: s.workEmail,
-          subject: 'MANDATORY ACTION REQUIRED: Enroll Your BEMS Kiosk Face ID Now',
-          html: `
-            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px; background: #f8fafc; border-radius: 16px;">
-              <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 28px;">
-                <div style="display:inline-block;padding:4px 10px;border-radius:999px;background:#fff7ed;border:1px solid #fed7aa;color:#ea580c;font-size:10.5px;font-weight:800;letter-spacing:0.06em;">
-                  BEMS GROUP · MANDATORY ATTENDANCE COMPLIANCE
-                </div>
-                <h2 style="margin: 12px 0 10px; color: #0f172a; font-size: 20px;">Hello ${s.legalName},</h2>
-                <p style="color: #334155; font-size: 14px; line-height: 1.6;">
-                  Management has enforced <strong>Mandatory Kiosk Face ID Enrollment</strong> for all BEMS Group staff (Staff ID: <strong>${s.employeeNumber}</strong>).
-                </p>
-                <p style="color: #475569; font-size: 13.5px; line-height: 1.6;">
-                  You must complete your 15-second voice-guided Face ID registration immediately so the Office Reception Kiosk camera can identify and clock you in and out automatically. Attendance clock-in requires an active Face ID profile.
-                </p>
-                <div style="margin: 24px 0;">
-                  <a href="${enrollUrl}" style="display: inline-block; background: #ea580c; color: #ffffff; text-decoration: none; font-weight: 800; font-size: 13.5px; padding: 12px 22px; border-radius: 10px;">
-                    Enroll My Face ID Now (15 Seconds) →
-                  </a>
-                </div>
-                <p style="color: #94a3b8; font-size: 11.5px; margin: 0;">
-                  Or open your BEMS Staff App and tap "Enroll My Face ID Now" on the pop-up prompt: ${enrollUrl}
-                </p>
-              </div>
-            </div>
-          `,
-          text: `Hello ${s.legalName}, BEMS Management has enforced Mandatory Kiosk Face ID Enrollment for all active staff. Please register your Face ID now (takes 15 seconds): ${enrollUrl}`,
-          eventType: 'FACE_ID_ENFORCEMENT_ALERT',
-        }).catch(() => ({ success: false }));
-        if (res && res.success) emailsSent++;
-      }
-
-      return NextResponse.json({
-        success: true,
-        unenrolledCount: unenrolled.length,
-        notificationsCreated: unenrolled.length,
-        emailsSent,
-        message: `Mandatory Face ID enforcement dispatched to ${unenrolled.length} unenrolled staff (${emailsSent} compliance emails sent + in-app pop-up alerts activated).`,
-      });
-    }
-
     const employeeId = typeof body?.employeeId === 'string' ? body.employeeId.trim() : '';
     if (!employeeId) {
       return NextResponse.json({ error: 'employeeId is required.' }, { status: 400 });
@@ -315,13 +228,81 @@ export async function POST(request: Request) {
     }
 
     if (action === 'RESET') {
+      const targetEmp = await prisma.employee.findUnique({
+        where: { id: employeeId },
+        select: { id: true, legalName: true, employeeNumber: true, workEmail: true, isOfflineStaff: true },
+      });
+
       await prisma.$executeRawUnsafe(
         `DELETE FROM "EmployeeFaceProfile" WHERE "employeeId" = $1`,
         employeeId
       );
+
+      let emailSent = false;
+      if (targetEmp) {
+        const enrollUrl = 'https://bemserp.work/attendance/face-enroll?autostart=1';
+        const reasonText =
+          typeof body?.reason === 'string' && body.reason.trim()
+            ? body.reason.trim()
+            : 'Your previous Face ID photo was taken in poor lighting or needs a clearer front-facing capture.';
+
+        await prisma.systemNotification
+          .create({
+            data: {
+              employeeId: targetEmp.id,
+              kind: 'ALERT',
+              title: 'ACTION REQUIRED: Re-Enroll Your Kiosk Face ID in Clear Lighting',
+              body: `${reasonText} Please re-register your Face ID in a well-lit area facing the light.`,
+              linkUrl: '/attendance/face-enroll?autostart=1',
+            },
+          })
+          .catch(() => {});
+
+        if (targetEmp.workEmail && !targetEmp.workEmail.endsWith('@bems.internal') && !targetEmp.isOfflineStaff) {
+          const emailRes = await sendEmail({
+            to: targetEmp.workEmail,
+            subject: 'ACTION REQUIRED: Please Re-Enroll Your BEMS Kiosk Face ID in Clear Lighting',
+            html: `
+              <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:560px;margin:0 auto;padding:24px;background:#f8fafc;border-radius:16px;">
+                <div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:14px;padding:28px;">
+                  <div style="display:inline-block;padding:4px 10px;border-radius:999px;background:#fff7ed;border:1px solid #fed7aa;color:#ea580c;font-size:10.5px;font-weight:800;letter-spacing:0.06em;">
+                    BEMS GROUP · FACE ID RE-ENROLLMENT REQUIRED
+                  </div>
+                  <h2 style="margin:12px 0 10px;color:#0f172a;font-size:20px;">Hello ${targetEmp.legalName},</h2>
+                  <p style="color:#334155;font-size:14px;line-height:1.6;">
+                    Your Kiosk Face ID enrollment (Staff ID: <strong>${targetEmp.employeeNumber}</strong>) has been reset by HR / Management.
+                  </p>
+                  <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:12px 14px;margin:14px 0;">
+                    <div style="font-size:12px;font-weight:800;color:#9a3412;margin-bottom:3px;">Reason for Reset</div>
+                    <div style="font-size:13px;color:#7c2d12;line-height:1.5;">${reasonText}</div>
+                  </div>
+                  <p style="color:#475569;font-size:13.5px;line-height:1.6;">
+                    Please step into a <strong>well-lit area facing the light</strong> (avoid standing with a bright window behind you) and complete your 15-second Face ID enrollment again before Evening Sign-Out today.
+                  </p>
+                  <div style="margin:22px 0;">
+                    <a href="${enrollUrl}" style="display:inline-block;background:#ea580c;color:#ffffff;text-decoration:none;font-weight:800;font-size:13.5px;padding:12px 22px;border-radius:10px;">
+                      Re-Enroll My Face ID Now →
+                    </a>
+                  </div>
+                  <p style="color:#94a3b8;font-size:11.5px;margin:0;">
+                    Direct link: ${enrollUrl}
+                  </p>
+                </div>
+              </div>
+            `,
+            text: `Hello ${targetEmp.legalName}, your BEMS Kiosk Face ID enrollment (${targetEmp.employeeNumber}) has been reset. ${reasonText} Please move to a well-lit area facing the light and re-enroll now: ${enrollUrl}`,
+            eventType: 'FACE_ID_RESET_REENROLL_NOTICE',
+          }).catch(() => ({ success: false }));
+          emailSent = Boolean(emailRes && emailRes.success);
+        }
+      }
+
       return NextResponse.json({
         success: true,
-        message: 'Face ID reset. Staff member can now register a new Face ID.',
+        emailSent,
+        message: emailSent
+          ? `Face ID reset for ${targetEmp?.legalName || 'staff'}. Re-enrollment email & in-app alert sent.`
+          : 'Face ID reset. Staff member has been notified in-app to re-enroll in clear lighting.',
       });
     }
 
