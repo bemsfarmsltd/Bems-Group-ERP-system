@@ -1278,15 +1278,15 @@ export default function AttendanceKioskPage() {
               <span>Refresh</span>
             </button>
 
-            {/* Fullscreen 1: QR Code Only Fullscreen */}
+            {/* Fullscreen 1: QR Code or Face Kiosk Only Fullscreen */}
             <button
               onClick={() => setIsQrOnlyFullscreen(true)}
               style={{
                 padding: '8px 16px',
                 borderRadius: '10px',
-                background: '#ecfdf5',
-                border: '1px solid #a7f3d0',
-                color: '#059669',
+                background: stationData?.attendanceMode === 'FACE' ? '#fff7ed' : '#ecfdf5',
+                border: stationData?.attendanceMode === 'FACE' ? '1px solid #fed7aa' : '1px solid #a7f3d0',
+                color: stationData?.attendanceMode === 'FACE' ? '#ea580c' : '#059669',
                 fontWeight: 800,
                 fontSize: '13px',
                 cursor: 'pointer',
@@ -1294,10 +1294,10 @@ export default function AttendanceKioskPage() {
                 alignItems: 'center',
                 gap: '6px',
               }}
-              title="Expand only QR code to full screen"
+              title="Expand scanner to full screen"
             >
               <Maximize2 size={14} />
-              <span>Fullscreen QR</span>
+              <span>{stationData?.attendanceMode === 'FACE' ? 'Fullscreen Face ID' : 'Fullscreen QR'}</span>
             </button>
 
             {/* Fullscreen 2: System Fullscreen (Hides header, fills entire monitor) */}
@@ -1527,6 +1527,9 @@ export default function AttendanceKioskPage() {
                 stationCode={stationData.stationCode}
                 stationName={stationData.stationName}
                 closingTime={stationData.closingTime || '17:00'}
+                earliestCheckInTime={stationData.earliestCheckInTime || '07:00'}
+                externalFullscreen={isQrOnlyFullscreen}
+                onCloseExternalFullscreen={() => setIsQrOnlyFullscreen(false)}
                 onSuccessPunch={() => {
                   fetchRecent();
                 }}
@@ -2239,7 +2242,7 @@ export default function AttendanceKioskPage() {
       </main>
 
       {/* FULLSCREEN 1: DEDICATED QR ONLY FULLSCREEN OVERLAY */}
-      {isQrOnlyFullscreen && (
+      {isQrOnlyFullscreen && stationData?.attendanceMode !== 'FACE' && (
         <div
           style={{
             position: 'fixed',

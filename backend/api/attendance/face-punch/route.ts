@@ -31,7 +31,7 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => ({}));
     const descriptor = body?.descriptor;
     const livenessVerified = body?.livenessVerified === true;
-    const action = body?.action === 'CHECK_OUT' ? 'CHECK_OUT' : 'CHECK_IN';
+    const requestedAction = typeof body?.action === 'string' ? body.action.toUpperCase() : 'AUTO';
     const requestedStationCode = typeof body?.stationCode === 'string' ? body.stationCode.trim() : '';
 
     if (!livenessVerified) {
@@ -152,6 +152,21 @@ export async function POST(request: Request) {
       },
     });
 
+    const [cHour, cMin] = closingTime.split(':').map(Number);
+    const closingMinutes = (Number.isFinite(cHour) ? cHour : 17) * 60 + (Number.isFinite(cMin) ? cMin : 0);
+
+    // Smart Auto-Mode:
+    // - If employee has NOT checked in today -> CHECK_IN (unless it's already >= closingTime and they explicitly requested CHECK_OUT)
+    // - If employee HAS already checked in today:
+    //   - If current WAT time >= closingTime (17:00) -> automatically CHECK_OUT
+    //   - If current WAT time < closingTime (17:00) -> inform them they are already clocked in and sign-out opens at closingTime
+    const action: 'CHECK_IN' | 'CHECK_OUT' =
+      requestedAction === 'CHECK_IN' || requestedAction === 'CHECK_OUT'
+        ? (requestedAction as 'CHECK_IN' | 'CHECK_OUT')
+        : existing && existing.checkInTime && minutesSinceMidnight >= closingMinutes
+        ? 'CHECK_OUT'
+        : 'CHECK_IN';
+
     if (action === 'CHECK_OUT') {
       if (!existing || !existing.checkInTime) {
         return NextResponse.json(
@@ -159,6 +174,7 @@ export async function POST(request: Request) {
             error: `Hello ${matched.legalName} — you have not checked in yet today (${workDate}).`,
             employeeName: matched.legalName,
             employeeNumber: matched.employeeNumber,
+            avatarUrl: matched.avatarUrl || null,
             confidencePercent: matchResult.confidencePercent,
           },
           { status: 400 }
@@ -176,13 +192,11 @@ export async function POST(request: Request) {
           avatarUrl: matched.avatarUrl || null,
           confidencePercent: matchResult.confidencePercent,
           timeStr: existingOutStr,
-          message: `${matched.legalName} already checked out today at ${existingOutStr}.`,
+          message: `${matched.legalName} already signed out today at ${existingOutStr}.`,
           record: serializeAttendanceRecord(existing),
         });
       }
 
-      const [cHour, cMin] = closingTime.split(':').map(Number);
-      const closingMinutes = (Number.isFinite(cHour) ? cHour : 17) * 60 + (Number.isFinite(cMin) ? cMin : 0);
       if (minutesSinceMidnight < closingMinutes) {
         return NextResponse.json(
           {
@@ -190,6 +204,7 @@ export async function POST(request: Request) {
             lockedUntil: closingTime,
             employeeName: matched.legalName,
             employeeNumber: matched.employeeNumber,
+            avatarUrl: matched.avatarUrl || null,
             confidencePercent: matchResult.confidencePercent,
           },
           { status: 400 }
@@ -240,7 +255,7 @@ export async function POST(request: Request) {
         status: existing.status,
         confidencePercent: matchResult.confidencePercent,
         timeStr: existingInStr,
-        message: `${matched.legalName} (${matched.employeeNumber}) is already checked in for today (${workDate}) at ${existingInStr}.`,
+        message: `${matched.legalName} (${matched.employeeNumber}) is already clocked in for today at ${existingInStr}. Evening sign-out opens automatically at ${closingTime} (5:00 PM).`,
         record: serializeAttendanceRecord(existing),
       });
     }

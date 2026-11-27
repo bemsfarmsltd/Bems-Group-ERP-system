@@ -1,7 +1,22 @@
 'use client';
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Camera, CheckCircle2, LogIn, LogOut, RefreshCw, ShieldAlert, Sparkles, Volume2, VolumeX } from 'lucide-react';
+import {
+  Camera,
+  CheckCircle2,
+  Clock,
+  Maximize2,
+  Minimize2,
+  RefreshCw,
+  ShieldAlert,
+  ShieldCheck,
+  Sparkles,
+  Sun,
+  Sunset,
+  Volume2,
+  VolumeX,
+  X,
+} from 'lucide-react';
 import {
   analyzeVideoFaceFrame,
   loadFaceApiModels,
@@ -13,34 +28,49 @@ interface KioskFaceRecognitionViewProps {
   stationCode: string;
   stationName: string;
   closingTime?: string;
+  earliestCheckInTime?: string;
+  externalFullscreen?: boolean;
+  onCloseExternalFullscreen?: () => void;
   onSuccessPunch?: (result: any) => void;
+}
+
+interface PopupModalState {
+  variant: 'success' | 'warning' | 'error';
+  badgeText: string;
+  employeeName?: string | null;
+  employeeNumber?: string | null;
+  department?: string | null;
+  subsidiary?: string | null;
+  timeStr?: string | null;
+  confidence?: number;
+  message: string;
 }
 
 export function KioskFaceRecognitionView({
   stationCode,
   stationName,
   closingTime = '17:00',
+  earliestCheckInTime = '07:00',
+  externalFullscreen = false,
+  onCloseExternalFullscreen,
   onSuccessPunch,
 }: KioskFaceRecognitionViewProps) {
-  const [action, setAction] = useState<'CHECK_IN' | 'CHECK_OUT'>('CHECK_IN');
-  const [statusText, setStatusText] = useState('Loading BEMS Face Recognition camera...');
+  const [statusText, setStatusText] = useState('Step up & center your face inside the oval guide');
   const [faceDetected, setFaceDetected] = useState(false);
   const [livenessReady, setLivenessReady] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [voiceMuted, setVoiceMuted] = useState(false);
-  const voiceMutedRef = useRef(false);
-  const [banner, setBanner] = useState<{
-    type: 'success' | 'error';
-    title: string;
-    message: string;
-    confidence?: number;
-  } | null>(null);
+  const [internalFullscreen, setInternalFullscreen] = useState(false);
+  const [popup, setPopup] = useState<PopupModalState | null>(null);
+  const [isEveningShift, setIsEveningShift] = useState(false);
+
+  const isFullscreen = externalFullscreen || internalFullscreen;
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const activeRef = useRef<boolean>(false);
   const cooldownUntilRef = useRef<number>(0);
-  const actionRef = useRef<'CHECK_IN' | 'CHECK_OUT'>(action);
+  const voiceMutedRef = useRef(false);
   const onSuccessPunchRef = useRef(onSuccessPunch);
 
   useEffect(() => {
@@ -48,13 +78,53 @@ export function KioskFaceRecognitionView({
   }, [onSuccessPunch]);
 
   useEffect(() => {
-    actionRef.current = action;
-  }, [action]);
-
-  useEffect(() => {
     voiceMutedRef.current = voiceMuted;
     if (voiceMuted) stopFaceVoicePrompt();
   }, [voiceMuted]);
+
+  // Automatically determine whether current Lagos WAT time is Morning Check-In or Evening Sign-Out (>= closingTime)
+  useEffect(() => {
+    const checkShift = () => {
+      try {
+        const parts = new Intl.DateTimeFormat('en-GB', {
+          timeZone: 'Africa/Lagos',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false,
+        }).formatToParts(new Date());
+        const h = Number(parts.find((p) => p.type === 'hour')?.value ?? 0);
+        const m = Number(parts.find((p) => p.type === 'minute')?.value ?? 0);
+        const [cH, cM] = (closingTime || '17:00').split(':').map(Number);
+        const closingMins = (Number.isFinite(cH) ? cH : 17) * 60 + (Number.isFinite(cM) ? cM : 0);
+        setIsEveningShift(h * 60 + m >= closingMins);
+      } catch {}
+    };
+    checkShift();
+    const id = setInterval(checkShift, 15000);
+    return () => clearInterval(id);
+  }, [closingTime]);
+
+  // Auto-dismiss popup after 4.8 seconds
+  useEffect(() => {
+    if (!popup) return;
+    const t = setTimeout(() => setPopup(null), 4800);
+    return () => clearTimeout(t);
+  }, [popup]);
+
+  // Esc key exits fullscreen or closes popup
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (popup) setPopup(null);
+        else if (isFullscreen) {
+          setInternalFullscreen(false);
+          onCloseExternalFullscreen?.();
+        }
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isFullscreen, onCloseExternalFullscreen, popup]);
 
   const stopCamera = useCallback(() => {
     activeRef.current = false;
@@ -67,12 +137,12 @@ export function KioskFaceRecognitionView({
 
   const startScanner = useCallback(async () => {
     stopCamera();
-    setBanner(null);
-    setStatusText('Starting kiosk camera & biometric engine...');
+    setPopup(null);
+    setStatusText('Initializing biometric camera...');
     try {
       await loadFaceApiModels();
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
+        video: { facingMode: 'user', width: { ideal: 720 }, height: { ideal: 540 } },
         audio: false,
       });
       streamRef.current = stream;
@@ -101,27 +171,27 @@ export function KioskFaceRecognitionView({
             setLivenessReady(false);
             seenFrames = 0;
             baselineYaw = null;
-            setStatusText('One person at a time — multiple faces in frame.');
+            setStatusText('One person at a time — multiple faces detected in frame');
           } else if (!frame.detected || !frame.descriptor) {
             setFaceDetected(false);
             setLivenessReady(false);
             seenFrames = 0;
             baselineYaw = null;
-            setStatusText('Step up & center your face inside the oval guide to clock in.');
+            setStatusText('Step up & center your face inside the oval guide');
           } else if (frame.faceSizeRatio < 0.18) {
             setFaceDetected(true);
             setLivenessReady(false);
-            setStatusText('Step slightly closer to the kiosk camera.');
+            setStatusText('Move slightly closer to the kiosk camera');
           } else {
             setFaceDetected(true);
             seenFrames++;
             if (seenFrames === 1) {
               baselineEar = Math.max(0.24, frame.ear);
               baselineYaw = frame.yawRatio;
-              setStatusText('Face detected — blink naturally or slightly nod/turn head to verify liveness...');
+              setStatusText('Face locked — blink naturally or slightly nod to verify');
               speakFaceVoicePrompt('Face detected. Please blink naturally or nod slightly.', {
                 muted: voiceMutedRef.current,
-                minIntervalMs: 5000,
+                minIntervalMs: 5500,
               });
             } else {
               const blinked = frame.ear < Math.min(0.22, baselineEar * 0.84);
@@ -130,14 +200,14 @@ export function KioskFaceRecognitionView({
                 setLivenessReady(true);
                 setVerifying(true);
                 setStatusText('Verifying Face ID against BEMS staff roster...');
-                cooldownUntilRef.current = Date.now() + 4500;
+                cooldownUntilRef.current = Date.now() + 5200;
 
                 const res = await fetch('/api/attendance/face-punch', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({
                     stationCode,
-                    action: actionRef.current,
+                    action: 'AUTO',
                     descriptor: frame.descriptor,
                     livenessVerified: true,
                   }),
@@ -150,36 +220,56 @@ export function KioskFaceRecognitionView({
 
                 if (res.ok && json.success) {
                   const firstName = String(json.employeeName || 'Staff').split(' ')[0];
-                  const spoken =
-                    json.alreadyCheckedIn
-                      ? `Hello ${firstName}, you are already checked in for today at ${json.timeStr}.`
-                      : json.alreadyCheckedOut
-                      ? `Hello ${firstName}, you already checked out today at ${json.timeStr}.`
-                      : actionRef.current === 'CHECK_OUT'
-                      ? `Goodbye ${firstName}! Checked out at ${json.timeStr}.`
-                      : json.status === 'LATE'
-                      ? `Welcome ${firstName}! Clocked in late at ${json.timeStr}.`
-                      : `Welcome ${firstName}! Clocked in on time at ${json.timeStr}.`;
+                  const isNoticeOnly = Boolean(json.alreadyCheckedIn || json.alreadyCheckedOut);
+                  const spoken = json.alreadyCheckedIn
+                    ? `Hello ${firstName}, you are already clocked in for today at ${json.timeStr}.`
+                    : json.alreadyCheckedOut
+                    ? `Hello ${firstName}, you already signed out today at ${json.timeStr}.`
+                    : json.action === 'CHECK_OUT'
+                    ? `Goodbye ${firstName}! Signed out at ${json.timeStr}.`
+                    : json.status === 'LATE'
+                    ? `Welcome ${firstName}! Clocked in late at ${json.timeStr}.`
+                    : `Welcome ${firstName}! Clocked in on time at ${json.timeStr}.`;
+
                   speakFaceVoicePrompt(spoken, { force: true, muted: voiceMutedRef.current });
-                  setBanner({
-                    type: 'success',
-                    title: `${json.employeeName} (${json.employeeNumber})`,
-                    message: json.message,
+
+                  setPopup({
+                    variant: isNoticeOnly ? 'warning' : 'success',
+                    badgeText: json.alreadyCheckedIn
+                      ? 'ALREADY CLOCKED IN TODAY'
+                      : json.alreadyCheckedOut
+                      ? 'SHIFT ALREADY COMPLETED'
+                      : json.action === 'CHECK_OUT'
+                      ? 'EVENING SIGN-OUT VERIFIED'
+                      : json.status === 'LATE'
+                      ? 'MORNING CHECK-IN · LATE'
+                      : 'MORNING CHECK-IN · ON TIME',
+                    employeeName: json.employeeName,
+                    employeeNumber: json.employeeNumber,
+                    department: json.department,
+                    subsidiary: json.subsidiary,
+                    timeStr: json.timeStr,
                     confidence: json.confidencePercent,
+                    message: json.message,
                   });
                   onSuccessPunchRef.current?.(json);
                 } else {
-                  const matchedTitle = json?.employeeName
-                    ? `Recognized: ${json.employeeName} (${json.confidencePercent || 95}% match)`
-                    : 'Face ID Check-In Not Completed';
+                  const isRecognizedWindowLock = Boolean(json?.employeeName);
                   speakFaceVoicePrompt(
                     json?.error || 'Face not recognized. Please look directly at the camera.',
                     { force: true, muted: voiceMutedRef.current }
                   );
-                  setBanner({
-                    type: 'error',
-                    title: matchedTitle,
-                    message: json?.error || 'Could not verify Face ID. Please face the camera clearly.',
+                  setPopup({
+                    variant: isRecognizedWindowLock ? 'warning' : 'error',
+                    badgeText: isRecognizedWindowLock
+                      ? 'TIME WINDOW LOCKED'
+                      : 'BIOMETRIC MATCH NOT FOUND',
+                    employeeName: json?.employeeName || null,
+                    employeeNumber: json?.employeeNumber || null,
+                    confidence: json?.confidencePercent,
+                    message:
+                      json?.error ||
+                      'Could not verify Face ID. Ensure your Face ID is registered on the Staff Portal and look directly at the camera.',
                   });
                 }
               }
@@ -190,14 +280,14 @@ export function KioskFaceRecognitionView({
         }
 
         if (activeRef.current) {
-          setTimeout(tick, 300);
+          setTimeout(tick, 280);
         }
       };
 
-      setTimeout(tick, 450);
+      setTimeout(tick, 420);
     } catch (err: any) {
       setStatusText(
-        err?.message || 'Camera access blocked. Please allow camera permission on this kiosk browser.'
+        err?.message || 'Camera permission blocked. Please allow camera access on this kiosk browser.'
       );
     }
   }, [stationCode, stopCamera]);
@@ -207,216 +297,640 @@ export function KioskFaceRecognitionView({
     return () => stopCamera();
   }, [startScanner, stopCamera]);
 
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
-      {/* Check-In / Check-Out Action Toggle */}
+  const cornerColor = verifying
+    ? '#ea580c'
+    : livenessReady || faceDetected
+    ? '#10b981'
+    : '#ea580c';
+
+  const content = (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        width: '100%',
+        maxWidth: isFullscreen ? '640px' : '100%',
+        margin: '0 auto',
+      }}
+    >
+      {/* Top Auto-Shift Intelligence Pill */}
       <div
         style={{
-          display: 'inline-flex',
-          background: '#f1f5f9',
-          border: '1px solid #e2e8f0',
-          borderRadius: '12px',
-          padding: '4px',
-          gap: '4px',
-          marginBottom: '12px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '10px',
+          width: '100%',
+          marginBottom: '14px',
+          flexWrap: 'wrap',
         }}
       >
-        <button
-          type="button"
-          onClick={() => {
-            setAction('CHECK_IN');
-            setBanner(null);
-          }}
+        <div
           style={{
             display: 'inline-flex',
             alignItems: 'center',
-            gap: '6px',
-            padding: '7px 16px',
-            borderRadius: '9px',
-            border: 'none',
-            background: action === 'CHECK_IN' ? '#ea580c' : 'transparent',
-            color: action === 'CHECK_IN' ? '#ffffff' : '#475569',
-            fontSize: '12px',
+            gap: '7px',
+            padding: '6px 13px',
+            borderRadius: '999px',
+            background: isEveningShift ? '#f8fafc' : '#fff7ed',
+            border: `1px solid ${isEveningShift ? '#cbd5e1' : '#fed7aa'}`,
+            color: isEveningShift ? '#0f172a' : '#c2410c',
+            fontSize: '11.5px',
             fontWeight: 800,
-            cursor: 'pointer',
           }}
         >
-          <LogIn size={14} /> Morning Check-In
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setAction('CHECK_OUT');
-            setBanner(null);
-          }}
+          {isEveningShift ? (
+            <Sunset size={14} color="#ea580c" />
+          ) : (
+            <Sun size={14} color="#ea580c" />
+          )}
+          <span>
+            {isEveningShift
+              ? `AUTO-DETECT: EVENING SIGN-OUT (${closingTime}+)`
+              : `AUTO-DETECT: MORNING CHECK-IN (${earliestCheckInTime}+)`}
+          </span>
+        </div>
+
+        <span
           style={{
             display: 'inline-flex',
             alignItems: 'center',
-            gap: '6px',
-            padding: '7px 16px',
-            borderRadius: '9px',
-            border: 'none',
-            background: action === 'CHECK_OUT' ? '#0f172a' : 'transparent',
-            color: action === 'CHECK_OUT' ? '#ffffff' : '#475569',
-            fontSize: '12px',
+            gap: '5px',
+            padding: '5px 11px',
+            borderRadius: '999px',
+            background: '#ecfdf5',
+            border: '1px solid #a7f3d0',
+            color: '#047857',
+            fontSize: '11px',
             fontWeight: 800,
-            cursor: 'pointer',
           }}
         >
-          <LogOut size={14} /> Evening Sign-Out ({closingTime})
-        </button>
+          <ShieldCheck size={13} /> Liveness Guard Active
+        </span>
       </div>
 
-      {/* Camera Viewfinder */}
+      {/* Biometric Camera Viewfinder with Corner Reticle Brackets */}
       <div
         style={{
           position: 'relative',
           width: '100%',
-          maxWidth: '340px',
-          aspectRatio: '4 / 3',
-          borderRadius: '20px',
-          overflow: 'hidden',
-          background: '#f8fafc',
-          border: `3px solid ${
-            verifying ? '#ea580c' : livenessReady ? '#10b981' : faceDetected ? '#f97316' : '#cbd5e1'
-          }`,
-          boxShadow: faceDetected
-            ? '0 10px 28px rgba(234, 88, 12, 0.18)'
-            : '0 6px 20px rgba(15, 23, 42, 0.06)',
-          transition: 'border-color 0.25s ease, box-shadow 0.25s ease',
+          maxWidth: isFullscreen ? '560px' : '370px',
+          aspectRatio: '4 / 3.2',
+          padding: '10px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
         }}
       >
-        <video
-          ref={videoRef}
-          muted
-          playsInline
+        {/* 4 Corner Brackets */}
+        <div
           style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: '28px',
+            height: '28px',
+            borderTop: `4px solid ${cornerColor}`,
+            borderLeft: `4px solid ${cornerColor}`,
+            borderRadius: '12px 0 0 0',
+            transition: 'border-color 0.25s ease',
+          }}
+        />
+        <div
+          style={{
+            position: 'absolute',
+            top: 0,
+            right: 0,
+            width: '28px',
+            height: '28px',
+            borderTop: `4px solid ${cornerColor}`,
+            borderRight: `4px solid ${cornerColor}`,
+            borderRadius: '0 12px 0 0',
+            transition: 'border-color 0.25s ease',
+          }}
+        />
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 0,
+            left: 0,
+            width: '28px',
+            height: '28px',
+            borderBottom: `4px solid ${cornerColor}`,
+            borderLeft: `4px solid ${cornerColor}`,
+            borderRadius: '0 0 0 12px',
+            transition: 'border-color 0.25s ease',
+          }}
+        />
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 0,
+            right: 0,
+            width: '28px',
+            height: '28px',
+            borderBottom: `4px solid ${cornerColor}`,
+            borderRight: `4px solid ${cornerColor}`,
+            borderRadius: '0 0 12px 0',
+            transition: 'border-color 0.25s ease',
+          }}
+        />
+
+        {/* Video Frame */}
+        <div
+          style={{
+            position: 'relative',
             width: '100%',
             height: '100%',
-            objectFit: 'cover',
-            transform: 'scaleX(-1)',
-          }}
-        />
-        {/* Face Oval Guide */}
-        <div
-          style={{
-            position: 'absolute',
-            inset: '10% 24%',
-            border: `2.5px dashed ${faceDetected ? '#10b981' : '#ea580c'}`,
-            borderRadius: '50%',
-            pointerEvents: 'none',
-          }}
-        />
-        <div
-          style={{
-            position: 'absolute',
-            top: '8px',
-            left: '10px',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '5px',
-            padding: '3px 9px',
-            borderRadius: '999px',
-            background: 'rgba(255, 255, 255, 0.92)',
-            border: '1px solid #e2e8f0',
-            fontSize: '10px',
-            fontWeight: 800,
-            color: '#0f172a',
+            borderRadius: '20px',
+            overflow: 'hidden',
+            background: '#f1f5f9',
+            border: `2px solid ${faceDetected ? '#10b981' : '#e2e8f0'}`,
+            boxShadow: faceDetected
+              ? '0 14px 34px rgba(16, 185, 129, 0.18)'
+              : '0 10px 28px rgba(15, 23, 42, 0.08)',
+            transition: 'all 0.25s ease',
           }}
         >
-          <Sparkles size={11} color="#ea580c" /> LIVE FACE ID · LIVENESS GUARD
+          <video
+            ref={videoRef}
+            muted
+            playsInline
+            style={{
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover',
+              transform: 'scaleX(-1)',
+            }}
+          />
+
+          {/* Top Floating Camera Pill */}
+          <div
+            style={{
+              position: 'absolute',
+              top: '12px',
+              left: '12px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '5px 11px',
+              borderRadius: '999px',
+              background: 'rgba(255, 255, 255, 0.94)',
+              backdropFilter: 'blur(8px)',
+              border: '1px solid #e2e8f0',
+              fontSize: '10.5px',
+              fontWeight: 800,
+              color: '#0f172a',
+              boxShadow: '0 2px 8px rgba(15, 23, 42, 0.08)',
+            }}
+          >
+            <span
+              style={{
+                width: '7px',
+                height: '7px',
+                borderRadius: '50%',
+                background: faceDetected ? '#10b981' : '#ea580c',
+              }}
+            />
+            <span>{faceDetected ? 'FACE LOCKED · VERIFYING' : 'BEMS FACE ID SCANNER'}</span>
+          </div>
+
+          {/* Center Oval Biometric Reticle */}
+          <div
+            style={{
+              position: 'absolute',
+              inset: '11% 25%',
+              border: `2.5px dashed ${faceDetected ? '#10b981' : 'rgba(234, 88, 12, 0.85)'}`,
+              borderRadius: '50%',
+              pointerEvents: 'none',
+              boxShadow: faceDetected
+                ? '0 0 24px rgba(16, 185, 129, 0.35)'
+                : '0 0 0 999px rgba(15, 23, 42, 0.10)',
+              transition: 'all 0.25s ease',
+            }}
+          />
+
+          {/* Overlaid Bottom Glass Instruction Bar */}
+          <div
+            style={{
+              position: 'absolute',
+              left: '12px',
+              right: '12px',
+              bottom: '12px',
+              padding: '9px 14px',
+              borderRadius: '12px',
+              background: 'rgba(255, 255, 255, 0.94)',
+              backdropFilter: 'blur(8px)',
+              border: `1px solid ${faceDetected ? '#a7f3d0' : '#fed7aa'}`,
+              color: faceDetected ? '#065f46' : '#9a3412',
+              fontSize: isFullscreen ? '13.5px' : '12px',
+              fontWeight: 800,
+              textAlign: 'center',
+              boxShadow: '0 4px 14px rgba(15, 23, 42, 0.10)',
+            }}
+          >
+            {verifying ? 'Matching your Face ID...' : statusText}
+          </div>
         </div>
       </div>
 
-      {/* Live Status Instruction */}
+      {/* Bottom Action Controls (Voice, Restart, Fullscreen) */}
       <div
         style={{
-          marginTop: '10px',
-          padding: '8px 14px',
-          borderRadius: '10px',
-          background: '#fff7ed',
-          border: '1px solid #fed7aa',
-          color: '#9a3412',
-          fontSize: '12px',
-          fontWeight: 700,
-          textAlign: 'center',
-          maxWidth: '340px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '8px',
+          marginTop: '14px',
+          flexWrap: 'wrap',
           width: '100%',
         }}
       >
-        {verifying ? 'Matching your Face ID...' : statusText}
-      </div>
-
-      {/* Result Banner */}
-      {banner && (
-        <div
-          style={{
-            marginTop: '10px',
-            padding: '10px 14px',
-            borderRadius: '12px',
-            maxWidth: '340px',
-            width: '100%',
-            background: banner.type === 'success' ? '#ecfdf5' : '#fef2f2',
-            border: `1px solid ${banner.type === 'success' ? '#a7f3d0' : '#fecaca'}`,
-            color: banner.type === 'success' ? '#065f46' : '#991b1b',
-            display: 'flex',
-            alignItems: 'flex-start',
-            gap: '8px',
-          }}
-        >
-          {banner.type === 'success' ? (
-            <CheckCircle2 size={18} color="#059669" style={{ flexShrink: 0, marginTop: '2px' }} />
-          ) : (
-            <ShieldAlert size={18} color="#dc2626" style={{ flexShrink: 0, marginTop: '2px' }} />
-          )}
-          <div style={{ fontSize: '12px', lineHeight: 1.4 }}>
-            <div style={{ fontWeight: 800 }}>{banner.title}</div>
-            <div>{banner.message}</div>
-          </div>
-        </div>
-      )}
-
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
         <button
           type="button"
           onClick={() => setVoiceMuted((m) => !m)}
           style={{
             display: 'inline-flex',
             alignItems: 'center',
-            gap: '5px',
-            padding: '5px 10px',
-            borderRadius: '8px',
+            gap: '6px',
+            padding: '8px 13px',
+            borderRadius: '10px',
             border: '1px solid #e2e8f0',
             background: voiceMuted ? '#f8fafc' : '#fff7ed',
             color: voiceMuted ? '#64748b' : '#ea580c',
-            fontSize: '11px',
+            fontSize: '12px',
             fontWeight: 700,
             cursor: 'pointer',
           }}
         >
-          {voiceMuted ? <VolumeX size={11} /> : <Volume2 size={11} />}
-          {voiceMuted ? 'Voice Guide Off' : 'Voice Guide On'}
+          {voiceMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}
+          <span>{voiceMuted ? 'Voice Off' : 'Voice Guide On'}</span>
         </button>
+
         <button
           type="button"
           onClick={startScanner}
           style={{
             display: 'inline-flex',
             alignItems: 'center',
-            gap: '5px',
-            padding: '5px 10px',
-            borderRadius: '8px',
+            gap: '6px',
+            padding: '8px 13px',
+            borderRadius: '10px',
             border: '1px solid #e2e8f0',
             background: '#ffffff',
-            color: '#64748b',
-            fontSize: '11px',
+            color: '#475569',
+            fontSize: '12px',
             fontWeight: 700,
             cursor: 'pointer',
           }}
         >
-          <RefreshCw size={11} /> Restart Camera
+          <RefreshCw size={13} />
+          <span>Restart Camera</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            if (isFullscreen) {
+              setInternalFullscreen(false);
+              onCloseExternalFullscreen?.();
+            } else {
+              setInternalFullscreen(true);
+            }
+          }}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '8px 14px',
+            borderRadius: '10px',
+            border: '1px solid #fed7aa',
+            background: '#fff7ed',
+            color: '#ea580c',
+            fontSize: '12px',
+            fontWeight: 800,
+            cursor: 'pointer',
+          }}
+        >
+          {isFullscreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+          <span>{isFullscreen ? 'Exit Fullscreen' : 'Fullscreen Face Kiosk'}</span>
         </button>
       </div>
+
+      {/* NEAT POP-UP MODAL FOR CHECK-IN / SIGN-OUT / TIME-WINDOW LOCK / ERROR */}
+      {popup && (
+        <div
+          onClick={() => setPopup(null)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 100005,
+            background: 'rgba(15, 23, 42, 0.48)',
+            backdropFilter: 'blur(5px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '20px',
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: '#ffffff',
+              borderRadius: '24px',
+              border: `2px solid ${
+                popup.variant === 'success'
+                  ? '#10b981'
+                  : popup.variant === 'warning'
+                  ? '#f59e0b'
+                  : '#ef4444'
+              }`,
+              maxWidth: '440px',
+              width: '100%',
+              padding: '26px 24px 22px',
+              boxShadow: '0 25px 60px rgba(15, 23, 42, 0.22)',
+              textAlign: 'center',
+              position: 'relative',
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setPopup(null)}
+              style={{
+                position: 'absolute',
+                top: '14px',
+                right: '14px',
+                width: '30px',
+                height: '30px',
+                borderRadius: '8px',
+                border: '1px solid #e2e8f0',
+                background: '#f8fafc',
+                color: '#64748b',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+              }}
+            >
+              <X size={15} />
+            </button>
+
+            {/* Status Icon Circle */}
+            <div
+              style={{
+                width: '60px',
+                height: '60px',
+                borderRadius: '18px',
+                margin: '0 auto 14px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background:
+                  popup.variant === 'success'
+                    ? '#ecfdf5'
+                    : popup.variant === 'warning'
+                    ? '#fffbeb'
+                    : '#fef2f2',
+                border: `1px solid ${
+                  popup.variant === 'success'
+                    ? '#a7f3d0'
+                    : popup.variant === 'warning'
+                    ? '#fde68a'
+                    : '#fecaca'
+                }`,
+              }}
+            >
+              {popup.variant === 'success' ? (
+                <CheckCircle2 size={32} color="#059669" />
+              ) : popup.variant === 'warning' ? (
+                <Clock size={32} color="#d97706" />
+              ) : (
+                <ShieldAlert size={32} color="#dc2626" />
+              )}
+            </div>
+
+            {/* Status Pill */}
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '4px 12px',
+                borderRadius: '999px',
+                fontSize: '11px',
+                fontWeight: 800,
+                letterSpacing: '0.04em',
+                marginBottom: '10px',
+                background:
+                  popup.variant === 'success'
+                    ? '#ecfdf5'
+                    : popup.variant === 'warning'
+                    ? '#fffbeb'
+                    : '#fef2f2',
+                color:
+                  popup.variant === 'success'
+                    ? '#047857'
+                    : popup.variant === 'warning'
+                    ? '#b45309'
+                    : '#b91c1c',
+                border: `1px solid ${
+                  popup.variant === 'success'
+                    ? '#a7f3d0'
+                    : popup.variant === 'warning'
+                    ? '#fde68a'
+                    : '#fecaca'
+                }`,
+              }}
+            >
+              <Sparkles size={12} />
+              <span>{popup.badgeText}</span>
+            </div>
+
+            {/* Recognized Employee Identity */}
+            {popup.employeeName && (
+              <div style={{ marginBottom: '10px' }}>
+                <div style={{ fontSize: '19px', fontWeight: 900, color: '#0f172a', lineHeight: 1.2 }}>
+                  {popup.employeeName}
+                </div>
+                <div
+                  style={{
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    color: '#64748b',
+                    marginTop: '3px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  {popup.employeeNumber && <span>{popup.employeeNumber}</span>}
+                  {popup.confidence !== undefined && (
+                    <span
+                      style={{
+                        padding: '1px 8px',
+                        borderRadius: '999px',
+                        background: '#f1f5f9',
+                        color: '#0f172a',
+                        fontSize: '11px',
+                        fontWeight: 800,
+                      }}
+                    >
+                      ✓ {popup.confidence}% Face Match
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Message Body */}
+            <div
+              style={{
+                padding: '12px 14px',
+                borderRadius: '14px',
+                background: '#f8fafc',
+                border: '1px solid #e2e8f0',
+                color: '#334155',
+                fontSize: '13px',
+                fontWeight: 600,
+                lineHeight: 1.5,
+                marginBottom: '16px',
+              }}
+            >
+              {popup.message}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setPopup(null)}
+              style={{
+                width: '100%',
+                padding: '10px 16px',
+                borderRadius: '12px',
+                border: 'none',
+                background:
+                  popup.variant === 'success'
+                    ? '#059669'
+                    : popup.variant === 'warning'
+                    ? '#ea580c'
+                    : '#0f172a',
+                color: '#ffffff',
+                fontSize: '13px',
+                fontWeight: 800,
+                cursor: 'pointer',
+              }}
+            >
+              Done · Ready for Next Staff
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
+
+  if (isFullscreen) {
+    return (
+      <div
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 99999,
+          background: '#f8fafc',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '24px',
+        }}
+      >
+        {/* Top Floating Header in Fullscreen */}
+        <div
+          style={{
+            position: 'absolute',
+            top: '20px',
+            left: '28px',
+            right: '28px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            background: '#ffffff',
+            border: '1px solid #e2e8f0',
+            borderRadius: '16px',
+            padding: '12px 20px',
+            boxShadow: '0 4px 16px rgba(15, 23, 42, 0.04)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div
+              style={{
+                width: '38px',
+                height: '38px',
+                borderRadius: '10px',
+                background: '#fff7ed',
+                border: '1px solid #fed7aa',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#ea580c',
+              }}
+            >
+              <Camera size={20} />
+            </div>
+            <div>
+              <div style={{ fontSize: '16px', fontWeight: 900, color: '#0f172a' }}>
+                {stationName || 'BEMS Reception Face ID Kiosk'}
+              </div>
+              <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 600 }}>
+                Automatic Morning Check-In &amp; Evening Sign-Out Biometric Terminal
+              </div>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              setInternalFullscreen(false);
+              onCloseExternalFullscreen?.();
+            }}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '9px 16px',
+              borderRadius: '10px',
+              border: 'none',
+              background: '#0f172a',
+              color: '#ffffff',
+              fontSize: '12.5px',
+              fontWeight: 800,
+              cursor: 'pointer',
+            }}
+          >
+            <Minimize2 size={14} />
+            <span>Exit Fullscreen (Esc)</span>
+          </button>
+        </div>
+
+        <div
+          style={{
+            background: '#ffffff',
+            border: '1px solid #e2e8f0',
+            borderRadius: '28px',
+            padding: '28px 32px',
+            boxShadow: '0 20px 50px rgba(15, 23, 42, 0.07)',
+            width: '100%',
+            maxWidth: '680px',
+            marginTop: '48px',
+          }}
+        >
+          {content}
+        </div>
+      </div>
+    );
+  }
+
+  return content;
 }
