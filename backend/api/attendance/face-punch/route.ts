@@ -30,6 +30,8 @@ export async function POST(request: Request) {
 
     const body = await request.json().catch(() => ({}));
     const descriptor = body?.descriptor;
+    const mode = typeof body?.mode === 'string' ? body.mode.toUpperCase() : 'PUNCH';
+    const expectedEmployeeId = typeof body?.expectedEmployeeId === 'string' ? body.expectedEmployeeId.trim() : '';
     const livenessVerified = body?.livenessVerified === true;
     const livenessProof = body?.livenessProof as
       | {
@@ -66,64 +68,66 @@ export async function POST(request: Request) {
     const requestedAction = typeof body?.action === 'string' ? body.action.toUpperCase() : 'AUTO';
     const requestedStationCode = typeof body?.stationCode === 'string' ? body.stationCode.trim() : '';
 
-    // Strict Multi-Layer Anti-Spoofing Validation powered by Google MediaPipe 478-Point 3D Neural Blendshapes & 3D Pose:
-    // Accepts ONLY genuine dynamic interval challenges (BLINK, JAW_CYCLE, NOD, HEAD_TURN) + Neural PAD CNN.
-    const validMediaPipeBlink =
-      livenessProof?.method === 'MEDIAPIPE_BLINK' &&
-      Number(livenessProof?.startBlink ?? 1) <= 0.24 &&
-      Number(livenessProof?.peakBlinkLeft ?? 0) >= 0.44 &&
-      Number(livenessProof?.peakBlinkRight ?? 0) >= 0.44 &&
-      Number(livenessProof?.blinkDelta ?? 0) >= 0.26 &&
-      Number(livenessProof?.endBlink ?? 1) <= 0.22 &&
-      Number(livenessProof?.framesAnalyzed ?? 0) >= 3;
+    if (mode !== 'IDENTIFY_ONLY') {
+      // Strict Multi-Layer Anti-Spoofing Validation powered by Google MediaPipe 478-Point 3D Neural Blendshapes & 3D Pose:
+      // Accepts ONLY genuine dynamic interval challenges (BLINK, JAW_CYCLE, NOD, HEAD_TURN) + Neural PAD CNN.
+      const validMediaPipeBlink =
+        livenessProof?.method === 'MEDIAPIPE_BLINK' &&
+        Number(livenessProof?.startBlink ?? 1) <= 0.24 &&
+        Number(livenessProof?.peakBlinkLeft ?? 0) >= 0.44 &&
+        Number(livenessProof?.peakBlinkRight ?? 0) >= 0.44 &&
+        Number(livenessProof?.blinkDelta ?? 0) >= 0.26 &&
+        Number(livenessProof?.endBlink ?? 1) <= 0.22 &&
+        Number(livenessProof?.framesAnalyzed ?? 0) >= 3;
 
-    const validMediaPipeJawCycle =
-      livenessProof?.method === 'MEDIAPIPE_JAW_CYCLE' &&
-      Number(livenessProof?.startJaw ?? 1) <= 0.14 &&
-      Number(livenessProof?.peakJaw ?? 0) >= 0.28 &&
-      Number(livenessProof?.openDelta ?? 0) >= 0.20 &&
-      Number(livenessProof?.endJaw ?? 1) <= 0.12 &&
-      Number(livenessProof?.closeDelta ?? 0) >= 0.16 &&
-      Number(livenessProof?.framesAnalyzed ?? 0) >= 3;
+      const validMediaPipeJawCycle =
+        livenessProof?.method === 'MEDIAPIPE_JAW_CYCLE' &&
+        Number(livenessProof?.startJaw ?? 1) <= 0.14 &&
+        Number(livenessProof?.peakJaw ?? 0) >= 0.28 &&
+        Number(livenessProof?.openDelta ?? 0) >= 0.20 &&
+        Number(livenessProof?.endJaw ?? 1) <= 0.12 &&
+        Number(livenessProof?.closeDelta ?? 0) >= 0.16 &&
+        Number(livenessProof?.framesAnalyzed ?? 0) >= 3;
 
-    const validMediaPipeNod =
-      livenessProof?.method === 'MEDIAPIPE_NOD' &&
-      Number(livenessProof?.nodDownDelta ?? 0) >= 0.12 &&
-      Number(livenessProof?.nodReturnDelta ?? 0) >= 0.08 &&
-      Number(livenessProof?.framesAnalyzed ?? 0) >= 4;
+      const validMediaPipeNod =
+        livenessProof?.method === 'MEDIAPIPE_NOD' &&
+        Number(livenessProof?.nodDownDelta ?? 0) >= 0.12 &&
+        Number(livenessProof?.nodReturnDelta ?? 0) >= 0.08 &&
+        Number(livenessProof?.framesAnalyzed ?? 0) >= 4;
 
-    const validMediaPipeHeadTurn =
-      livenessProof?.method === 'MEDIAPIPE_HEAD_TURN' &&
-      Number(livenessProof?.minYaw ?? 0) <= -0.22 &&
-      Number(livenessProof?.maxYaw ?? 0) >= 0.22 &&
-      Number(livenessProof?.yawSweep ?? 0) >= 0.48 &&
-      Number(livenessProof?.framesAnalyzed ?? 0) >= 4;
+      const validMediaPipeHeadTurn =
+        livenessProof?.method === 'MEDIAPIPE_HEAD_TURN' &&
+        Number(livenessProof?.minYaw ?? 0) <= -0.22 &&
+        Number(livenessProof?.maxYaw ?? 0) >= 0.22 &&
+        Number(livenessProof?.yawSweep ?? 0) >= 0.48 &&
+        Number(livenessProof?.framesAnalyzed ?? 0) >= 4;
 
-    const isPoseChallenge = validMediaPipeNod || validMediaPipeHeadTurn;
-    const neuralReady = livenessProof?.neuralReady === true;
-    const antispoofScore = Number(livenessProof?.antispoofScore ?? 0);
-    const livenessScore = Number(livenessProof?.livenessScore ?? 0);
-    // Pose challenges require slightly stricter Neural PAD CNN pass to keep tilted phone screens blocked
-    const neuralPadPassed = !neuralReady
-      ? true
-      : isPoseChallenge
-      ? antispoofScore >= 0.46 || livenessScore >= 0.48
-      : antispoofScore >= 0.38 || livenessScore >= 0.40;
+      const isPoseChallenge = validMediaPipeNod || validMediaPipeHeadTurn;
+      const neuralReady = livenessProof?.neuralReady === true;
+      const antispoofScore = Number(livenessProof?.antispoofScore ?? 0);
+      const livenessScore = Number(livenessProof?.livenessScore ?? 0);
+      // Pose challenges require slightly stricter Neural PAD CNN pass to keep tilted phone screens blocked
+      const neuralPadPassed = !neuralReady
+        ? true
+        : isPoseChallenge
+        ? antispoofScore >= 0.46 || livenessScore >= 0.48
+        : antispoofScore >= 0.38 || livenessScore >= 0.40;
 
-    if (
-      !livenessVerified ||
-      (!validMediaPipeBlink && !validMediaPipeJawCycle && !validMediaPipeNod && !validMediaPipeHeadTurn) ||
-      !neuralPadPassed
-    ) {
-      return NextResponse.json(
-        {
-          error: !neuralPadPassed
-            ? 'Anti-Spoofing Guard: Phone screen or photo detected. Please step up to the kiosk in person.'
-            : 'Liveness Check Incomplete: Please follow the on-screen step calmly in person.',
-          spoofBlocked: true,
-        },
-        { status: 403 }
-      );
+      if (
+        !livenessVerified ||
+        (!validMediaPipeBlink && !validMediaPipeJawCycle && !validMediaPipeNod && !validMediaPipeHeadTurn) ||
+        !neuralPadPassed
+      ) {
+        return NextResponse.json(
+          {
+            error: !neuralPadPassed
+              ? 'Anti-Spoofing Guard: Phone screen or photo detected. Please step up to the kiosk in person.'
+              : 'Liveness Check Incomplete: Please follow the on-screen step calmly in person.',
+            spoofBlocked: true,
+          },
+          { status: 403 }
+        );
+      }
     }
 
     if (!isValidFaceDescriptor(descriptor)) {
@@ -183,6 +187,15 @@ export async function POST(request: Request) {
 
     const matchResult = matchFaceDescriptorAgainstRoster(descriptor, candidates);
     if (!matchResult.matched || !matchResult.employeeId) {
+      if (mode === 'IDENTIFY_ONLY') {
+        return NextResponse.json({
+          recognized: false,
+          confidencePercent: matchResult.confidencePercent,
+          reason:
+            matchResult.reason ||
+            'Face not registered in BEMS. Please enroll your Face ID on the Staff App first.',
+        });
+      }
       return NextResponse.json(
         {
           error:
@@ -191,6 +204,17 @@ export async function POST(request: Request) {
           confidencePercent: matchResult.confidencePercent,
         },
         { status: 401 }
+      );
+    }
+
+    // Prevent face-swapping between Stage 1 (Identify) and Stage 2 (Liveness Punch)
+    if (mode !== 'IDENTIFY_ONLY' && expectedEmployeeId && matchResult.employeeId !== expectedEmployeeId) {
+      return NextResponse.json(
+        {
+          error: 'Identity mismatch between face lock and liveness verification. Please try again in person.',
+          spoofBlocked: true,
+        },
+        { status: 403 }
       );
     }
 
@@ -213,6 +237,18 @@ export async function POST(request: Request) {
 
     if (!matched) {
       return NextResponse.json({ error: 'Matched staff account not found.' }, { status: 404 });
+    }
+
+    // Stage 1 Read-Only Identification: confirms staff exists in BEMS before locking & starting Stage 2 liveness
+    if (mode === 'IDENTIFY_ONLY') {
+      const firstName = String(matched.legalName || 'Staff').trim().split(/\s+/)[0] || 'Staff';
+      return NextResponse.json({
+        recognized: true,
+        employeeId: matched.id,
+        firstName,
+        employeeName: matched.legalName,
+        confidencePercent: matchResult.confidencePercent,
+      });
     }
 
     const now = new Date();

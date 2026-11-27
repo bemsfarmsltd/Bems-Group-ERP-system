@@ -202,16 +202,20 @@ export function KioskFaceRecognitionView({
         | 'MEDIAPIPE_JAW_CYCLE'
         | 'MEDIAPIPE_NOD'
         | 'MEDIAPIPE_HEAD_TURN';
-      type FlowStage = 'LOCKING' | 'LOCK_PAUSE' | 'WAIT_ACTION' | 'WAIT_RETURN';
+      type FlowStage = 'SCANNING' | 'LOCK_PAUSE' | 'WAIT_ACTION' | 'WAIT_RETURN';
 
       activeRef.current = true;
       let lastChallenge: ActiveChallengeType | null = null;
-      let flowStage: FlowStage = 'LOCKING';
-      let lockStartedAt = 0;
+      let flowStage: FlowStage = 'SCANNING';
+      let scanStartedAt = 0;
       let lockPauseUntil = 0;
       let challengeStartedAt = 0;
       let lockFrames = 0;
       let activeChallenge: ActiveChallengeType | null = null;
+
+      // Stage 1 Recognized Staff State (Face ONLY locks when confirmed in BEMS!)
+      let identifiedEmployeeId: string | null = null;
+      let identifiedFirstName: string | null = null;
 
       // Blink metrics
       let startBlink = 0;
@@ -241,12 +245,14 @@ export function KioskFaceRecognitionView({
       let livenessScores: number[] = [];
 
       const resetLivenessBuffer = () => {
-        flowStage = 'LOCKING';
-        lockStartedAt = 0;
+        flowStage = 'SCANNING';
+        scanStartedAt = 0;
         lockPauseUntil = 0;
         challengeStartedAt = 0;
         lockFrames = 0;
         activeChallenge = null;
+        identifiedEmployeeId = null;
+        identifiedFirstName = null;
         startBlink = 0;
         peakBlinkLeft = 0;
         peakBlinkRight = 0;
@@ -263,6 +269,7 @@ export function KioskFaceRecognitionView({
         maxFlashRgbDelta = 0;
         antispoofScores = [];
         livenessScores = [];
+        setFaceDetected(false);
         setFlashPhase('idle');
       };
 
@@ -309,27 +316,26 @@ export function KioskFaceRecognitionView({
             resetLivenessBuffer();
             setStatusText('3D Radar Active — Step up and look at the camera...');
           } else if (matchableFaces.length === 0) {
-            setFaceDetected(true);
+            setFaceDetected(false);
             setLivenessReady(false);
-            setScanProgress(15);
+            setScanProgress(12);
             resetLivenessBuffer();
             const nearest = trackedFaces[0];
             if (nearest.faceSizeRatio < 0.11) {
-              setStatusText('Face detected — step slightly closer to begin');
+              setStatusText('Face in view — step slightly closer to identify');
             } else {
-              setStatusText('Face detected — look straight at the camera');
+              setStatusText('Face in view — look straight at the camera');
             }
           } else {
             const primary = matchableFaces[0];
-            setFaceDetected(true);
             const { eyeBlinkLeft, eyeBlinkRight, jawOpen } = primary.blendshapes;
             const blinkAvg = (eyeBlinkLeft + eyeBlinkRight) / 2;
 
-            // Anti-Photo-Swap Guard: reset cleanly if face box jumps suddenly (swiping between two photos)
+            // Anti-Photo-Swap Guard during Stage 2 (after face is locked)
             const curCx = primary.normBox.x + primary.normBox.width / 2;
             const curCy = primary.normBox.y + primary.normBox.height / 2;
             const curW = Math.max(0.05, primary.normBox.width);
-            if (prevBox && flowStage !== 'LOCKING') {
+            if (prevBox && flowStage !== 'SCANNING') {
               const jumpDist = Math.hypot(curCx - prevBox.cx, curCy - prevBox.cy);
               const scaleDiff = Math.abs(curW - prevBox.w) / prevBox.w;
               if (jumpDist > prevBox.w * 0.28 || scaleDiff > 0.28) {
@@ -341,9 +347,8 @@ export function KioskFaceRecognitionView({
             }
             prevBox = { cx: curCx, cy: curCy, w: curW };
 
-            // Quietly accumulate Neural Anti-Spoofing CNN samples across the entire calm sequence
-            // (Evaluated ONCE at the end — zero mid-scan false spoof popups!)
-            if (lockFrames % 5 === 0) {
+            // Quietly accumulate Neural Anti-Spoofing CNN samples (evaluated ONCE at the end — zero flicker)
+            if (flowStage !== 'SCANNING' && lockFrames % 5 === 0) {
               const pad = await evaluateNeuralAntiSpoof(videoRef.current, primary.box);
               if (pad.neuralReady) {
                 neuralReadyFlag = true;
@@ -355,30 +360,85 @@ export function KioskFaceRecognitionView({
             }
 
             // =========================================================================
-            // INTERVAL 1: CALM FACE LOCK (~1.0 second steady straight-facing hold)
+            // STAGE 1: IDENTIFY FIRST — Verify person EXISTS in BEMS before locking!
             // =========================================================================
-            if (flowStage === 'LOCKING') {
-              if (Math.abs(primary.yawRatio) > 0.22) {
-                lockStartedAt = 0;
-                setScanProgress(20);
-                setStatusText('Step 1 of 2 · Look straight at the camera to lock your face');
-              } else {
-                if (lockStartedAt === 0) lockStartedAt = Date.now();
-                const heldMs = Date.now() - lockStartedAt;
-                lockFrames++;
-                setScanProgress(Math.min(42, 20 + Math.round((heldMs / 950) * 22)));
-                setStatusText('Step 1 of 2 · Hold steady — locking your face...');
+            if (flowStage === 'SCANNING') {
+              // Keep wireframe amber/unlocked until confirmed in database
+              setFaceDetected(false);
 
-                if (heldMs >= 950) {
-                  // Face cleanly locked! Pause 450ms calmly before issuing the dynamic challenge
+              if (Math.abs(primary.yawRatio) > 0.22) {
+                scanStartedAt = 0;
+                setScanProgress(18);
+                setStatusText('Step 1 of 2 · Look straight at the camera to identify');
+              } else {
+                if (scanStartedAt === 0) scanStartedAt = Date.now();
+                const heldMs = Date.now() - scanStartedAt;
+                setScanProgress(Math.min(38, 18 + Math.round((heldMs / 650) * 20)));
+                setStatusText('Step 1 of 2 · Checking BEMS Staff Registry...');
+
+                if (heldMs >= 650) {
+                  // Extract 2 crisp 128-D descriptors and check if this person exists in BEMS
+                  const idSamples: number[][] = [];
+                  for (let attempt = 0; attempt < 2; attempt++) {
+                    if (!videoRef.current) break;
+                    const idFrame = await analyzeVideoFaceFrame(videoRef.current, true, {
+                      allowMultiple: true,
+                      longRange: true,
+                    });
+                    if (idFrame.descriptor) idSamples.push(idFrame.descriptor);
+                  }
+
+                  if (idSamples.length === 0) {
+                    scanStartedAt = 0;
+                    setScanProgress(18);
+                    setStatusText('Step 1 of 2 · Look straight at the camera clearly...');
+                    if (activeRef.current) setTimeout(tick, 120);
+                    return;
+                  }
+
+                  const probeDescriptor = averageFaceDescriptors(idSamples);
+                  const idRes = await fetch('/api/attendance/face-punch', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      stationCode,
+                      mode: 'IDENTIFY_ONLY',
+                      descriptor: probeDescriptor,
+                    }),
+                  });
+                  const idJson = await idRes.json().catch(() => ({}));
+
+                  if (!idRes.ok || !idJson?.recognized || !idJson?.employeeId) {
+                    // Person does NOT exist in BEMS — NO face lock, NO liveness check!
+                    cooldownUntilRef.current = Date.now() + 3600;
+                    resetLivenessBuffer();
+                    setScanProgress(0);
+                    playKioskChime('error');
+                    setStatusText('Face not registered in BEMS — please enroll on the Staff App');
+                    setPopup({
+                      variant: 'error',
+                      badgeText: 'FACE NOT REGISTERED',
+                      message:
+                        idJson?.reason ||
+                        'This face is not enrolled in BEMS yet. Please register your Face ID on the BEMS Staff App first.',
+                    });
+                    if (activeRef.current) setTimeout(tick, 140);
+                    return;
+                  }
+
+                  // Person CONFIRMED in BEMS! NOW lock the face (green mesh) & pause calmly before Stage 2
+                  identifiedEmployeeId = idJson.employeeId;
+                  identifiedFirstName = idJson.firstName || 'Staff';
+                  setFaceDetected(true);
                   flowStage = 'LOCK_PAUSE';
-                  lockPauseUntil = Date.now() + 450;
+                  lockPauseUntil = Date.now() + 500;
                   setScanProgress(46);
                   playKioskChime('lock');
-                  setStatusText('Step 1 of 2 · Face Locked ✓ Preparing live check...');
+                  setStatusText(`Step 1 of 2 · Face Locked: ${identifiedFirstName} ✓`);
                 }
               }
             } else if (flowStage === 'LOCK_PAUSE') {
+              setFaceDetected(true);
               lockFrames++;
               if (Date.now() >= lockPauseUntil) {
                 // Dynamically pick 1 of 4 unpredictable challenges, NEVER repeating the previous one
@@ -412,30 +472,38 @@ export function KioskFaceRecognitionView({
                 setFlashPhase('warm');
                 setScanProgress(52);
 
+                const namePrefix = identifiedFirstName ? `${identifiedFirstName}, ` : '';
                 if (activeChallenge === 'MEDIAPIPE_BLINK') {
-                  setStatusText('Step 2 of 2 · Please BLINK naturally');
-                  speakFaceVoicePrompt('Face locked. Please blink naturally.', { force: true, muted: false });
+                  setStatusText(`Step 2 of 2 · ${namePrefix}please BLINK naturally`);
+                  speakFaceVoicePrompt(`Hello ${identifiedFirstName || ''}. Please blink naturally.`, {
+                    force: true,
+                    muted: false,
+                  });
                 } else if (activeChallenge === 'MEDIAPIPE_JAW_CYCLE') {
-                  setStatusText('Step 2 of 2 · Please OPEN your mouth, then close it');
-                  speakFaceVoicePrompt('Face locked. Please open your mouth, then close it.', {
+                  setStatusText(`Step 2 of 2 · ${namePrefix}please OPEN your mouth, then close it`);
+                  speakFaceVoicePrompt(`Hello ${identifiedFirstName || ''}. Please open your mouth, then close it.`, {
                     force: true,
                     muted: false,
                   });
                 } else if (activeChallenge === 'MEDIAPIPE_NOD') {
-                  setStatusText('Step 2 of 2 · Please NOD your head down and up');
-                  speakFaceVoicePrompt('Face locked. Please nod your head gently.', { force: true, muted: false });
-                } else {
-                  setStatusText('Step 2 of 2 · Please TURN your head LEFT, then RIGHT');
-                  speakFaceVoicePrompt('Face locked. Please turn your head slightly left, then right.', {
+                  setStatusText(`Step 2 of 2 · ${namePrefix}please NOD your head down and up`);
+                  speakFaceVoicePrompt(`Hello ${identifiedFirstName || ''}. Please nod your head gently.`, {
                     force: true,
                     muted: false,
                   });
+                } else {
+                  setStatusText(`Step 2 of 2 · ${namePrefix}please TURN your head LEFT, then RIGHT`);
+                  speakFaceVoicePrompt(
+                    `Hello ${identifiedFirstName || ''}. Please turn your head slightly left, then right.`,
+                    { force: true, muted: false }
+                  );
                 }
               }
             } else {
               // =========================================================================
-              // INTERVAL 2: DYNAMIC UNPREDICTABLE CHALLENGE (8.5s calm window)
+              // STAGE 2: DYNAMIC UNPREDICTABLE LIVENESS CHECK (ONLY for recognized staff!)
               // =========================================================================
+              setFaceDetected(true);
               lockFrames++;
               const elapsedMs = Date.now() - challengeStartedAt;
 
@@ -453,6 +521,7 @@ export function KioskFaceRecognitionView({
 
               let challengePassed = false;
               let livenessProof: Record<string, any> | null = null;
+              const namePrefix = identifiedFirstName ? `${identifiedFirstName}, ` : '';
 
               if (activeChallenge === 'MEDIAPIPE_BLINK') {
                 if (eyeBlinkLeft > peakBlinkLeft) peakBlinkLeft = eyeBlinkLeft;
@@ -467,7 +536,7 @@ export function KioskFaceRecognitionView({
                     setScanProgress(85);
                   } else {
                     setScanProgress(Math.min(78, 52 + Math.round(elapsedMs / 220)));
-                    setStatusText('Step 2 of 2 · Please BLINK naturally');
+                    setStatusText(`Step 2 of 2 · ${namePrefix}please BLINK naturally`);
                   }
                 }
                 if (flowStage === 'WAIT_RETURN' && blinkAvg <= 0.22 && lockFrames >= 3) {
@@ -492,10 +561,10 @@ export function KioskFaceRecognitionView({
                     setFlashPhase('cool');
                     setScanProgress(84);
                     playKioskChime('lock');
-                    setStatusText('Step 2 of 2 · Great! Now CLOSE your mouth');
+                    setStatusText(`Step 2 of 2 · Great ${identifiedFirstName || ''}! Now CLOSE your mouth`);
                   } else {
                     setScanProgress(Math.min(78, 52 + Math.round(elapsedMs / 220)));
-                    setStatusText('Step 2 of 2 · Please OPEN your mouth, then close it');
+                    setStatusText(`Step 2 of 2 · ${namePrefix}please OPEN your mouth, then close it`);
                   }
                 }
                 if (flowStage === 'WAIT_RETURN') {
@@ -512,7 +581,7 @@ export function KioskFaceRecognitionView({
                       framesAnalyzed: lockFrames,
                     };
                   } else {
-                    setStatusText('Step 2 of 2 · Great! Now CLOSE your mouth');
+                    setStatusText(`Step 2 of 2 · Great ${identifiedFirstName || ''}! Now CLOSE your mouth`);
                   }
                 }
               } else if (activeChallenge === 'MEDIAPIPE_NOD') {
@@ -525,10 +594,10 @@ export function KioskFaceRecognitionView({
                     setFlashPhase('cool');
                     setScanProgress(84);
                     playKioskChime('lock');
-                    setStatusText('Step 2 of 2 · Great! Now lift your head back up');
+                    setStatusText(`Step 2 of 2 · Great ${identifiedFirstName || ''}! Now lift your head back up`);
                   } else {
                     setScanProgress(Math.min(78, 52 + Math.round(elapsedMs / 220)));
-                    setStatusText('Step 2 of 2 · Please NOD your head down and up');
+                    setStatusText(`Step 2 of 2 · ${namePrefix}please NOD your head down and up`);
                   }
                 }
                 if (flowStage === 'WAIT_RETURN') {
@@ -544,7 +613,7 @@ export function KioskFaceRecognitionView({
                       framesAnalyzed: lockFrames,
                     };
                   } else {
-                    setStatusText('Step 2 of 2 · Great! Now lift your head back up');
+                    setStatusText(`Step 2 of 2 · Great ${identifiedFirstName || ''}! Now lift your head back up`);
                   }
                 }
               } else if (activeChallenge === 'MEDIAPIPE_HEAD_TURN') {
@@ -565,18 +634,18 @@ export function KioskFaceRecognitionView({
                   };
                 } else if (turnedLeft && !turnedRight) {
                   setScanProgress(78);
-                  setStatusText('Step 2 of 2 · Great! Now turn slightly to the other side');
+                  setStatusText(`Step 2 of 2 · Great ${identifiedFirstName || ''}! Now turn slightly to the other side`);
                 } else if (turnedRight && !turnedLeft) {
                   setScanProgress(78);
-                  setStatusText('Step 2 of 2 · Great! Now turn slightly to the other side');
+                  setStatusText(`Step 2 of 2 · Great ${identifiedFirstName || ''}! Now turn slightly to the other side`);
                 } else {
                   setScanProgress(Math.min(72, 52 + Math.round(elapsedMs / 240)));
-                  setStatusText('Step 2 of 2 · Please TURN your head LEFT, then RIGHT');
+                  setStatusText(`Step 2 of 2 · ${namePrefix}please TURN your head LEFT, then RIGHT`);
                 }
               }
 
               // =========================================================================
-              // INTERVAL 3: SINGLE DECISIVE VERDICT (Clean 5.5s cooldown — never contradicts)
+              // FINAL STEP: SINGLE DECISIVE VERDICT (Clean 5.5s cooldown — never contradicts)
               // =========================================================================
               if (challengePassed && livenessProof) {
                 const avgAntispoof =
@@ -619,10 +688,9 @@ export function KioskFaceRecognitionView({
                 setLivenessReady(true);
                 setVerifying(true);
                 setScanProgress(94);
-                setStatusText('Live check passed ✓ Matching 3D Face ID...');
+                setStatusText(`Liveness verified ✓ Recording attendance for ${identifiedFirstName || 'Staff'}...`);
                 cooldownUntilRef.current = Date.now() + 5500;
 
-                // Calmly pause 180ms so the face settles straight before extracting the 128-D vector
                 await new Promise((r) => setTimeout(r, 180));
 
                 const descriptors: number[][] = [];
@@ -641,7 +709,7 @@ export function KioskFaceRecognitionView({
                   resetLivenessBuffer();
                   setLivenessReady(false);
                   cooldownUntilRef.current = Date.now() + 1800;
-                  setStatusText('Look straight at the camera briefly to complete Face ID match...');
+                  setStatusText('Look straight at the camera briefly to complete verification...');
                   if (activeRef.current) setTimeout(tick, 140);
                   return;
                 }
@@ -654,6 +722,8 @@ export function KioskFaceRecognitionView({
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({
                     stationCode,
+                    mode: 'PUNCH',
+                    expectedEmployeeId: identifiedEmployeeId || undefined,
                     action: 'AUTO',
                     descriptor: fusedDescriptor,
                     livenessVerified: true,
