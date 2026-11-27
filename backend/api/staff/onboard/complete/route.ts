@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { NextResponse } from 'next/server';
-import { createEmployeeSession, hashPassword, invalidateSessionCache, publicEmployee, verifyPassword } from '@/lib/auth';
+import { createEmployeeSession, getSessionCookieOptions, hashPassword, invalidateSessionCache, publicEmployee, verifyPassword } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import {
   assertSingleActiveGmd,
@@ -47,7 +47,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Invitation link was not found or has expired.' }, { status: 404 });
     }
 
-    if (invitation.status === 'COMPLETED' || invitation.status === 'ACCEPTED') {
+    if ((invitation.status === 'COMPLETED' || invitation.status === 'ACCEPTED') && invitation.role !== 'CUSTOM_ADMIN') {
       return NextResponse.json({ error: 'This invitation has already been completed. Please sign in directly.' }, { status: 400 });
     }
 
@@ -126,7 +126,10 @@ export async function POST(request: Request) {
     const employee = await prisma.$transaction(async (tx) => {
       // Re-check invitation status atomically inside transaction
       const consumeResult = await tx.adminInvitation.updateMany({
-        where: { id: invitation.id, status: 'PENDING' },
+        where: {
+          id: invitation.id,
+          status: isCustomAdmin ? { in: ['PENDING', 'COMPLETED', 'ACCEPTED'] } : 'PENDING',
+        },
         data: { status: 'COMPLETED' },
       });
       if (consumeResult.count === 0) {
@@ -237,17 +240,11 @@ export async function POST(request: Request) {
     const res = NextResponse.json({
       success: true,
       user: publicEmployee(employee),
+      token: session.token,
       message: `Welcome to BEMS Group, ${employee.legalName}. Your executive profile is active.`,
     });
 
-    res.cookies.set('bems_session', session.token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 7 * 24 * 60 * 60,
-      expires: session.expiresAt,
-    });
+    res.cookies.set('bems_session', session.token, getSessionCookieOptions(session.expiresAt));
 
     return res;
   } catch (error) {

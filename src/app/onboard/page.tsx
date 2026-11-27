@@ -69,7 +69,7 @@ function OnboardingContent() {
       return;
     }
 
-    fetch(`/api/staff/invite?token=${encodeURIComponent(token)}`)
+    fetch(`/api/staff/invite?token=${encodeURIComponent(token)}`, { cache: 'no-store', credentials: 'include' })
       .then((res) => res.json())
       .then((data) => {
         if (!data.valid) {
@@ -115,6 +115,7 @@ function OnboardingContent() {
     try {
       const res = await fetch('/api/staff/onboard/complete', {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           token,
@@ -135,6 +136,11 @@ function OnboardingContent() {
         return;
       }
 
+      try {
+        sessionStorage.setItem('bems_show_welcome', '1');
+        sessionStorage.setItem('bems_entry_mode', 'login');
+      } catch {}
+
       setSuccess(true);
       setTimeout(() => {
         if (
@@ -142,13 +148,13 @@ function OnboardingContent() {
           data.user?.role === 'SYSTEM_ADMIN' ||
           data.user?.role === 'SUPER_ADMIN'
         ) {
-          router.push('/finance');
+          window.location.href = '/finance';
         } else if (data.user?.role === 'STAFF') {
-          router.push('/staff');
+          window.location.href = '/staff';
         } else {
-          router.push('/');
+          window.location.href = '/';
         }
-      }, 1800);
+      }, 1500);
     } catch (err) {
       console.error('Submission error:', err);
       setSubmitError('An unexpected network error occurred. Please try again.');

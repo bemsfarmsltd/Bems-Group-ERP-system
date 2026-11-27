@@ -47,7 +47,7 @@ export async function GET(request: Request) {
         return NextResponse.json({ valid: false, error: 'Invitation link was not found or has expired.' }, { status: 404 });
       }
 
-      if (invitation.status === 'COMPLETED' || invitation.status === 'ACCEPTED') {
+      if ((invitation.status === 'COMPLETED' || invitation.status === 'ACCEPTED') && invitation.role !== 'CUSTOM_ADMIN') {
         return NextResponse.json({ valid: false, error: 'This invitation has already been completed. Please proceed to sign in.' }, { status: 400 });
       }
 
