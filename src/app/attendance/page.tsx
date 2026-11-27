@@ -807,11 +807,21 @@ export default function AttendanceDeskPage() {
       const res = await fetch('/api/attendance/admin/override', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ employeeId, workDate, excuseDecision }),
+        body: JSON.stringify({
+          employeeId,
+          workDate,
+          excuseDecision,
+          status: excuseDecision === 'APPROVE' ? 'EXCUSED' : undefined,
+          deductionPercent: excuseDecision === 'APPROVE' ? 0 : undefined,
+          reason:
+            excuseDecision === 'APPROVE'
+              ? 'Executive approved staff attendance excuse and waived penalty.'
+              : 'Executive declined staff attendance excuse request.',
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Could not process excuse request.');
-      setNotice(data.message);
+      setNotice(data.message || (excuseDecision === 'APPROVE' ? 'Attendance excuse approved and penalty waived.' : 'Attendance excuse declined.'));
       setTimeout(() => setNotice(null), 5000);
       loadTimesheet(selectedDate);
       loadDailyRoster(dailyDate, dailySubsidiaryFilter, dailySearch);
