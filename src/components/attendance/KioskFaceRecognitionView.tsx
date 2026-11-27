@@ -322,8 +322,8 @@ export function KioskFaceRecognitionView({
               // Update real biological liveness signals across frames
               if (primary.ear > maxEar) maxEar = primary.ear;
               if (primary.ear < minEar) minEar = primary.ear;
-              if (primary.ear >= 0.22) sawEyesOpen = true;
-              if (sawEyesOpen && primary.ear <= Math.min(0.21, maxEar * 0.80)) {
+              if (primary.ear >= 0.20) sawEyesOpen = true;
+              if (sawEyesOpen && primary.ear <= maxEar - 0.026) {
                 sawBlinkDip = true;
               }
 
@@ -335,10 +335,10 @@ export function KioskFaceRecognitionView({
               if (eyeSymDelta > maxEyeSymDelta) maxEyeSymDelta = eyeSymDelta;
               if (marDelta > maxMarDelta) maxMarDelta = marDelta;
 
-              // Genuine Biological Liveness Proof (impossible for a static photo or phone screen!)
-              const blinkVerified = sawBlinkDip && earDelta >= 0.045 && primary.ear >= minEar + 0.025;
-              const head3dVerified = maxYawDelta >= 0.13 && maxEyeSymDelta >= 0.07;
-              const expressionVerified = maxMarDelta >= 0.09;
+              // Balanced Biological Liveness Proof: effortless for real staff, still blocks static photos/screens
+              const blinkVerified = sawBlinkDip && earDelta >= 0.028;
+              const head3dVerified = maxYawDelta >= 0.08 && maxEyeSymDelta >= 0.035;
+              const expressionVerified = maxMarDelta >= 0.045;
 
               const livenessMethod = blinkVerified
                 ? 'BLINK'
@@ -440,8 +440,8 @@ export function KioskFaceRecognitionView({
                       'Could not verify Face ID. Ensure your Face ID is registered on the Staff Portal and look toward the kiosk camera.',
                   });
                 }
-              } else if (lockFrames >= 18) {
-                // Held up a static photo / phone screen for >3.5 seconds with ZERO blink, ZERO 3D turn, ZERO expression!
+              } else if (lockFrames >= 32) {
+                // Held up a static photo / phone screen for >6 seconds with ZERO blink, ZERO 3D turn, ZERO expression!
                 cooldownUntilRef.current = Date.now() + 4200;
                 resetLivenessBuffer();
                 setScanProgress(0);

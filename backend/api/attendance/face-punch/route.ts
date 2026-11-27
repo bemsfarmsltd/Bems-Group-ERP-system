@@ -45,13 +45,13 @@ export async function POST(request: Request) {
     const requestedStationCode = typeof body?.stationCode === 'string' ? body.stationCode.trim() : '';
 
     const validBlinkProof =
-      livenessProof?.method === 'BLINK' && Number(livenessProof?.earDelta || 0) >= 0.045;
+      livenessProof?.method === 'BLINK' && Number(livenessProof?.earDelta || 0) >= 0.025;
     const valid3dTurnProof =
       livenessProof?.method === 'HEAD_3D_TURN' &&
-      Number(livenessProof?.yawDelta || 0) >= 0.13 &&
-      Number(livenessProof?.eyeSymDelta || 0) >= 0.07;
+      Number(livenessProof?.yawDelta || 0) >= 0.075 &&
+      Number(livenessProof?.eyeSymDelta || 0) >= 0.03;
     const validExpressionProof =
-      livenessProof?.method === 'EXPRESSION' && Number(livenessProof?.marDelta || 0) >= 0.09;
+      livenessProof?.method === 'EXPRESSION' && Number(livenessProof?.marDelta || 0) >= 0.04;
 
     if (!livenessVerified || (!validBlinkProof && !valid3dTurnProof && !validExpressionProof)) {
       return NextResponse.json(
